@@ -20,6 +20,7 @@ package: `tolo.tenant.v1`
 ## 補足
 
 - 許容外の状態遷移は `failed_precondition` を返す
+- テナント名は一意とし、同名のテナントを登録しようとした場合は `already_exists` を返す
 - アーカイブは論理削除であり `GetEvent` は archived でも返す（宙づり参照を生まない）
 - アーカイブ済みテナント／イベントの扱い: 書き込み系 RPC は `failed_precondition`、参照系は継続
   既存所属は保持し、archived イベントへの Token Exchange は拒否
@@ -31,3 +32,4 @@ package: `tolo.tenant.v1`
   課金・プロビジョニング導入時に再設計の余地を残す
 - RegisterTenant の補償規約: AddTenantMember が失敗した場合は RegisterTenant 全体を失敗として返し、作成済みテナントを取り消す
   オーナー不在のテナントを残さない（部分成功を外部に見せない）。取り消しの実装手段（トランザクション or 補償削除）は実装フェーズ
+- RegisterTenant が Relation の AddTenantMember を呼び出す際は、受信した API Gateway 発行の内部 JWT を Authorization ヘッダーとしてそのまま転送する。Relation は JWT の subject から作成者を特定し、`tenant.register` をオンボーディング時の所属作成に許可する

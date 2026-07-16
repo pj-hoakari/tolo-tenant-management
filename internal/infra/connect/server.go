@@ -6,14 +6,15 @@ import (
 	"net/http"
 
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1/tenantv1connect"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
 )
 
-func NewHandler() http.Handler {
+func NewHandler(registerTenant application.RegisterTenantUseCase) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealthz)
 
 	path, handler := tenantv1connect.NewTenantServiceHandlerWithAuthz(
-		NewService(),
+		NewService(registerTenant),
 		newExampleTenantAuthzVerifier(),
 	)
 	mux.Handle(path, handler)
