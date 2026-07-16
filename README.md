@@ -70,9 +70,9 @@ cd clients/connect-es && npm install
 - [x] `go mod tidy` を実行
 - [x] `task proto:gen:go` で connect-go を再生成し、`gen/` をコミット
 
-- [ ] connect-es の `package.json`（`name` / `description` / `repository.url`）を更新
-- [ ] `clients/connect-es` で `npm install` を実行し `package-lock.json` を同期
-- [ ] `publish-client-es.yml` の `scope` を `@<owner>` に変更
+- [x] connect-es の `package.json`（`name` / `description` / `repository.url`）を更新
+- [x] `clients/connect-es` で `npm install` を実行し `package-lock.json` を同期
+- [x] `publish-client-es.yml` の `scope` を `@<owner>` に変更
 
 - [ ] `main.go` のログ文字列
 - [ ] README のテンプレート説明を書き換え
