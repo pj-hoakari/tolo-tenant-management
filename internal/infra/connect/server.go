@@ -9,12 +9,12 @@ import (
 	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
 )
 
-func NewHandler(registerTenant application.RegisterTenantUseCase) http.Handler {
+func NewHandler(tenantService application.TenantUseCases) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealthz)
 
 	path, handler := tenantv1connect.NewTenantServiceHandlerWithAuthz(
-		NewService(registerTenant),
+		NewService(tenantService),
 		newExampleTenantAuthzVerifier(),
 	)
 	mux.Handle(path, handler)

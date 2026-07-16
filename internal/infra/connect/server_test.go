@@ -137,3 +137,73 @@ func TestRegisterTenantRejectsDuplicateName(t *testing.T) {
 		t.Fatalf("second RegisterTenant() error code = %v, want %v", connectrpc.CodeOf(err), connectrpc.CodeAlreadyExists)
 	}
 }
+
+func TestCreateEvent(t *testing.T) {
+	tenantRepository := infra.NewInMemoryTenantRepository()
+	tenantService := application.NewTenantService(tenantRepository, infra.NewRelationService())
+	httpServer := httptest.NewServer(NewHandler(tenantService))
+	t.Cleanup(httpServer.Close)
+	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
+
+	registerRequest := connectrpc.NewRequest(&tenantv1.RegisterTenantRequest{
+		Name:         "Event Host",
+		ContractPlan: "standard",
+	})
+	registerRequest.Header().Set("Authorization", exampleTenantAuthorizationHeader())
+
+	registeredTenant, err := client.RegisterTenant(context.Background(), registerRequest)
+	if err != nil {
+		t.Fatalf("RegisterTenant() error = %v", err)
+	}
+
+	createRequest := connectrpc.NewRequest(&tenantv1.CreateEventRequest{
+		TenantId: registeredTenant.Msg.GetTenant().GetTenantId(),
+		Name:     "Summer Festival",
+		Type:     tenantv1.EventType_EVENT_TYPE_SHORT_TERM,
+	})
+	createRequest.Header().Set("Authorization", exampleTenantAuthorizationHeader())
+
+	eventResponse, err := client.CreateEvent(context.Background(), createRequest)
+	if err != nil {
+		t.Fatalf("CreateEvent() error = %v", err)
+	}
+
+	event := eventResponse.Msg.GetEvent()
+	if got, want := event.GetTenantId(), registeredTenant.Msg.GetTenant().GetTenantId(); got != want {
+		t.Errorf("Event.TenantId = %q, want %q", got, want)
+	}
+
+	if got, want := event.GetName(), "Summer Festival"; got != want {
+		t.Errorf("Event.Name = %q, want %q", got, want)
+	}
+
+	if got, want := event.GetType(), tenantv1.EventType_EVENT_TYPE_SHORT_TERM; got != want {
+		t.Errorf("Event.Type = %v, want %v", got, want)
+	}
+
+	if got, want := event.GetStatus(), tenantv1.EventStatus_EVENT_STATUS_DRAFT; got != want {
+		t.Errorf("Event.Status = %v, want %v", got, want)
+	}
+
+	if got := event.GetEventId(); got == "" {
+		t.Error("Event.EventId is empty")
+	}
+}
+
+func TestCreateEventRejectsUnknownTenant(t *testing.T) {
+	tenantService := application.NewTenantService(infra.NewInMemoryTenantRepository(), infra.NewRelationService())
+	httpServer := httptest.NewServer(NewHandler(tenantService))
+	t.Cleanup(httpServer.Close)
+	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
+
+	req := connectrpc.NewRequest(&tenantv1.CreateEventRequest{
+		TenantId: "tenant-missing",
+		Name:     "Summer Festival",
+	})
+	req.Header().Set("Authorization", exampleTenantAuthorizationHeader())
+
+	_, err := client.CreateEvent(context.Background(), req)
+	if connectrpc.CodeOf(err) != connectrpc.CodeNotFound {
+		t.Fatalf("CreateEvent() error code = %v, want %v", connectrpc.CodeOf(err), connectrpc.CodeNotFound)
+	}
+}
