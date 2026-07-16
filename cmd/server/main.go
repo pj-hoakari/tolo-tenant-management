@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/infra"
 	connectinfra "github.com/pj-hoakari/tolo-tenant-management/internal/infra/connect"
 )
 
@@ -30,9 +32,10 @@ func run() error {
 	defer stop()
 
 	addr := getenv("SERVER_ADDR", defaultAddr)
+	registerTenant := application.NewTenantService(infra.NewInMemoryTenantRepository())
 	httpServer := &http.Server{
 		Addr:              addr,
-		Handler:           connectinfra.NewHandler(),
+		Handler:           connectinfra.NewHandler(registerTenant),
 		ReadHeaderTimeout: readHeaderTimeout,
 	}
 

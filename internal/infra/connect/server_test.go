@@ -9,12 +9,15 @@ import (
 
 	tenantv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1"
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1/tenantv1connect"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/infra"
 )
 
 func TestTenantServiceAuthorizationAndSkeleton(t *testing.T) {
 	t.Parallel()
 
-	httpServer := httptest.NewServer(NewHandler())
+	registerTenant := application.NewTenantService(infra.NewInMemoryTenantRepository())
+	httpServer := httptest.NewServer(NewHandler(registerTenant))
 	t.Cleanup(httpServer.Close)
 	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
 
@@ -27,15 +30,43 @@ func TestTenantServiceAuthorizationAndSkeleton(t *testing.T) {
 		}
 	})
 
-	t.Run("authorizes request before skeleton returns unimplemented", func(t *testing.T) {
+	t.Run("registers tenant in the repository", func(t *testing.T) {
 		t.Parallel()
 
-		req := connectrpc.NewRequest(&tenantv1.RegisterTenantRequest{Name: "Acme"})
+		req := connectrpc.NewRequest(&tenantv1.RegisterTenantRequest{Name: "Acme", ContractPlan: "standard"})
+		req.Header().Set("Authorization", exampleTenantAuthorizationHeader())
+
+		res, err := client.RegisterTenant(context.Background(), req)
+		if err != nil {
+			t.Fatalf("RegisterTenant() error = %v", err)
+		}
+
+		if got, want := res.Msg.GetTenant().GetName(), "Acme"; got != want {
+			t.Errorf("Tenant.Name = %q, want %q", got, want)
+		}
+
+		if got, want := res.Msg.GetTenant().GetContractPlan(), "standard"; got != want {
+			t.Errorf("Tenant.ContractPlan = %q, want %q", got, want)
+		}
+
+		if got := res.Msg.GetTenant().GetTenantId(); got == "" {
+			t.Error("Tenant.TenantId is empty")
+		}
+
+		if res.Msg.GetTenant().GetArchived() {
+			t.Error("Tenant.Archived = true, want false")
+		}
+	})
+
+	t.Run("rejects missing required fields", func(t *testing.T) {
+		t.Parallel()
+
+		req := connectrpc.NewRequest(&tenantv1.RegisterTenantRequest{ContractPlan: "standard"})
 		req.Header().Set("Authorization", exampleTenantAuthorizationHeader())
 
 		_, err := client.RegisterTenant(context.Background(), req)
-		if connectrpc.CodeOf(err) != connectrpc.CodeUnimplemented {
-			t.Fatalf("RegisterTenant() error code = %v, want %v", connectrpc.CodeOf(err), connectrpc.CodeUnimplemented)
+		if connectrpc.CodeOf(err) != connectrpc.CodeInvalidArgument {
+			t.Fatalf("RegisterTenant() error code = %v, want %v", connectrpc.CodeOf(err), connectrpc.CodeInvalidArgument)
 		}
 	})
 }
