@@ -4,6 +4,7 @@ package application
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/pj-hoakari/tolo-tenant-management/internal/repository"
 )
@@ -35,11 +36,15 @@ type RegisterTenantUseCase interface {
 
 // TenantService implements tenant use cases.
 type TenantService struct {
-	tenantRepository repository.TenantRepository
+	tenantRepository  repository.TenantRepository
+	tenantMemberships TenantMembershipService
 }
 
-func NewTenantService(tenantRepository repository.TenantRepository) *TenantService {
-	return &TenantService{tenantRepository: tenantRepository}
+func NewTenantService(tenantRepository repository.TenantRepository, tenantMemberships TenantMembershipService) *TenantService {
+	return &TenantService{
+		tenantRepository:  tenantRepository,
+		tenantMemberships: tenantMemberships,
+	}
 }
 
 func (s *TenantService) RegisterTenant(ctx context.Context, input RegisterTenantInput) (Tenant, error) {
@@ -57,6 +62,17 @@ func (s *TenantService) RegisterTenant(ctx context.Context, input RegisterTenant
 	})
 	if err != nil {
 		return Tenant{}, err
+	}
+
+	if err := s.tenantMemberships.AddTenantMember(ctx, AddTenantMemberInput{
+		TenantID: tenant.ID,
+		Role:     TenantOwnerRole,
+	}); err != nil {
+		if deleteErr := s.tenantRepository.DeleteTenant(ctx, tenant.ID); deleteErr != nil {
+			return Tenant{}, fmt.Errorf("add tenant owner: %w (compensating delete tenant: %v)", err, deleteErr)
+		}
+
+		return Tenant{}, fmt.Errorf("add tenant owner: %w", err)
 	}
 
 	return Tenant{

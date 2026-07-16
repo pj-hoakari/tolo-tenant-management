@@ -3,6 +3,7 @@ package connect
 import (
 	"context"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	connectrpc "connectrpc.com/connect"
@@ -13,10 +14,37 @@ import (
 	"github.com/pj-hoakari/tolo-tenant-management/internal/infra"
 )
 
+type relationTransportSpy struct {
+	mu            sync.Mutex
+	authorization string
+	input         application.AddTenantMemberInput
+}
+
+func (s *relationTransportSpy) AddTenantMember(_ context.Context, authorization string, input application.AddTenantMemberInput) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.authorization = authorization
+	s.input = input
+
+	return nil
+}
+
+func (s *relationTransportSpy) call() (string, application.AddTenantMemberInput) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.authorization, s.input
+}
+
 func TestTenantServiceAuthorizationAndSkeleton(t *testing.T) {
 	t.Parallel()
 
-	registerTenant := application.NewTenantService(infra.NewInMemoryTenantRepository())
+	relationTransport := &relationTransportSpy{}
+	registerTenant := application.NewTenantService(
+		infra.NewInMemoryTenantRepository(),
+		infra.NewRelationServiceWithTransport(relationTransport),
+	)
 	httpServer := httptest.NewServer(NewHandler(registerTenant))
 	t.Cleanup(httpServer.Close)
 	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
@@ -55,6 +83,19 @@ func TestTenantServiceAuthorizationAndSkeleton(t *testing.T) {
 
 		if res.Msg.GetTenant().GetArchived() {
 			t.Error("Tenant.Archived = true, want false")
+		}
+
+		authorization, input := relationTransport.call()
+		if got, want := authorization, exampleTenantAuthorizationHeader(); got != want {
+			t.Errorf("Relation authorization = %q, want %q", got, want)
+		}
+
+		if got, want := input.TenantID, res.Msg.GetTenant().GetTenantId(); got != want {
+			t.Errorf("Relation tenant ID = %q, want %q", got, want)
+		}
+
+		if got, want := input.Role, application.TenantOwnerRole; got != want {
+			t.Errorf("Relation role = %q, want %q", got, want)
 		}
 	})
 

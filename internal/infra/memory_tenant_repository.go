@@ -40,3 +40,12 @@ func (r *InMemoryTenantRepository) CreateTenant(_ context.Context, params reposi
 
 	return tenant, nil
 }
+
+func (r *InMemoryTenantRepository) DeleteTenant(_ context.Context, tenantID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	delete(r.tenants, tenantID)
+
+	return nil
+}

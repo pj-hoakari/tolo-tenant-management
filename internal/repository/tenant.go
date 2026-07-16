@@ -20,4 +20,5 @@ type CreateTenantParams struct {
 // TenantRepository persists tenants.
 type TenantRepository interface {
 	CreateTenant(context.Context, CreateTenantParams) (Tenant, error)
+	DeleteTenant(context.Context, string) error
 }

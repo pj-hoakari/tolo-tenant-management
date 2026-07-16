@@ -32,7 +32,10 @@ func run() error {
 	defer stop()
 
 	addr := getenv("SERVER_ADDR", defaultAddr)
-	registerTenant := application.NewTenantService(infra.NewInMemoryTenantRepository())
+	registerTenant := application.NewTenantService(
+		infra.NewInMemoryTenantRepository(),
+		infra.NewRelationService(),
+	)
 	httpServer := &http.Server{
 		Addr:              addr,
 		Handler:           connectinfra.NewHandler(registerTenant),
