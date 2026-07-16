@@ -15,6 +15,7 @@ var (
 // Tenant is the persistence representation of a tenant.
 type Tenant struct {
 	ID           string
+	PublicID     string
 	Name         string
 	ContractPlan string
 	Archived     bool
@@ -28,18 +29,20 @@ type CreateTenantParams struct {
 
 // Event is the persistence representation of an event.
 type Event struct {
-	ID       string
-	TenantID string
-	Name     string
-	Type     string
-	Status   string
+	ID             string
+	PublicID       string
+	TenantID       string
+	TenantPublicID string
+	Name           string
+	Type           string
+	Status         string
 }
 
 // CreateEventParams contains the data needed to create an event.
 type CreateEventParams struct {
-	TenantID string
-	Name     string
-	Type     string
+	TenantPublicID string
+	Name           string
+	Type           string
 }
 
 // TenantRepository persists tenants.

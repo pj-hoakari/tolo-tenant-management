@@ -26,6 +26,7 @@ type RegisterTenantInput struct {
 // Tenant is the application representation of a tenant.
 type Tenant struct {
 	ID           string
+	PublicID     string
 	Name         string
 	ContractPlan string
 	Archived     bool
@@ -40,11 +41,13 @@ type CreateEventInput struct {
 
 // Event is the application representation of an event.
 type Event struct {
-	ID       string
-	TenantID string
-	Name     string
-	Type     string
-	Status   string
+	ID             string
+	PublicID       string
+	TenantID       string
+	TenantPublicID string
+	Name           string
+	Type           string
+	Status         string
 }
 
 // RegisterTenantUseCase registers a tenant.
@@ -107,6 +110,7 @@ func (s *TenantService) RegisterTenant(ctx context.Context, input RegisterTenant
 
 	return Tenant{
 		ID:           tenant.ID,
+		PublicID:     tenant.PublicID,
 		Name:         tenant.Name,
 		ContractPlan: tenant.ContractPlan,
 		Archived:     tenant.Archived,
@@ -123,19 +127,21 @@ func (s *TenantService) CreateEvent(ctx context.Context, input CreateEventInput)
 	}
 
 	event, err := s.tenantRepository.CreateEvent(ctx, repository.CreateEventParams{
-		TenantID: input.TenantID,
-		Name:     input.Name,
-		Type:     input.Type,
+		TenantPublicID: input.TenantID,
+		Name:           input.Name,
+		Type:           input.Type,
 	})
 	if err != nil {
 		return Event{}, err
 	}
 
 	return Event{
-		ID:       event.ID,
-		TenantID: event.TenantID,
-		Name:     event.Name,
-		Type:     event.Type,
-		Status:   event.Status,
+		ID:             event.ID,
+		PublicID:       event.PublicID,
+		TenantID:       event.TenantID,
+		TenantPublicID: event.TenantPublicID,
+		Name:           event.Name,
+		Type:           event.Type,
+		Status:         event.Status,
 	}, nil
 }

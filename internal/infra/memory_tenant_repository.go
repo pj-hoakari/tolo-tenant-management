@@ -3,7 +3,6 @@ package infra
 
 import (
 	"context"
-	"fmt"
 	"sync"
 
 	"github.com/pj-hoakari/tolo-tenant-management/internal/repository"
@@ -12,22 +11,22 @@ import (
 // InMemoryTenantRepository is a process-local tenant repository for
 // development. Its contents are lost when the process stops.
 type InMemoryTenantRepository struct {
-	mu              sync.Mutex
-	nextTenantID    uint64
-	nextEventID     uint64
-	tenants         map[string]repository.Tenant
-	tenantIDsByName map[string]string
-	events          map[string]repository.Event
+	mu                  sync.Mutex
+	tenants             map[string]repository.Tenant
+	tenantIDsByName     map[string]string
+	tenantIDsByPublicID map[string]string
+	events              map[string]repository.Event
+	eventIDsByPublicID  map[string]string
 }
 
 func NewInMemoryTenantRepository() *InMemoryTenantRepository {
 	return &InMemoryTenantRepository{
-		mu:              sync.Mutex{},
-		nextTenantID:    0,
-		nextEventID:     0,
-		tenants:         make(map[string]repository.Tenant),
-		tenantIDsByName: make(map[string]string),
-		events:          make(map[string]repository.Event),
+		mu:                  sync.Mutex{},
+		tenants:             make(map[string]repository.Tenant),
+		tenantIDsByName:     make(map[string]string),
+		tenantIDsByPublicID: make(map[string]string),
+		events:              make(map[string]repository.Event),
+		eventIDsByPublicID:  make(map[string]string),
 	}
 }
 
@@ -39,15 +38,26 @@ func (r *InMemoryTenantRepository) CreateTenant(_ context.Context, params reposi
 		return repository.Tenant{}, repository.ErrTenantNameAlreadyExists
 	}
 
-	r.nextTenantID++
+	tenantID, err := newUUIDv7()
+	if err != nil {
+		return repository.Tenant{}, err
+	}
+
+	publicID, err := r.newTenantPublicID()
+	if err != nil {
+		return repository.Tenant{}, err
+	}
+
 	tenant := repository.Tenant{
-		ID:           fmt.Sprintf("tenant-%d", r.nextTenantID),
+		ID:           tenantID,
+		PublicID:     publicID,
 		Name:         params.Name,
 		ContractPlan: params.ContractPlan,
 		Archived:     false,
 	}
 	r.tenants[tenant.ID] = tenant
 	r.tenantIDsByName[tenant.Name] = tenant.ID
+	r.tenantIDsByPublicID[tenant.PublicID] = tenant.ID
 
 	return tenant, nil
 }
@@ -63,6 +73,7 @@ func (r *InMemoryTenantRepository) DeleteTenant(_ context.Context, tenantID stri
 
 	delete(r.tenants, tenantID)
 	delete(r.tenantIDsByName, tenant.Name)
+	delete(r.tenantIDsByPublicID, tenant.PublicID)
 
 	return nil
 }
@@ -71,7 +82,12 @@ func (r *InMemoryTenantRepository) CreateEvent(_ context.Context, params reposit
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	tenant, ok := r.tenants[params.TenantID]
+	tenantID, ok := r.tenantIDsByPublicID[params.TenantPublicID]
+	if !ok {
+		return repository.Event{}, repository.ErrTenantNotFound
+	}
+
+	tenant, ok := r.tenants[tenantID]
 	if !ok {
 		return repository.Event{}, repository.ErrTenantNotFound
 	}
@@ -80,15 +96,53 @@ func (r *InMemoryTenantRepository) CreateEvent(_ context.Context, params reposit
 		return repository.Event{}, repository.ErrTenantArchived
 	}
 
-	r.nextEventID++
+	eventID, err := newUUIDv7()
+	if err != nil {
+		return repository.Event{}, err
+	}
+
+	publicID, err := r.newEventPublicID()
+	if err != nil {
+		return repository.Event{}, err
+	}
+
 	event := repository.Event{
-		ID:       fmt.Sprintf("event-%d", r.nextEventID),
-		TenantID: params.TenantID,
-		Name:     params.Name,
-		Type:     params.Type,
-		Status:   "draft",
+		ID:             eventID,
+		PublicID:       publicID,
+		TenantID:       tenant.ID,
+		TenantPublicID: tenant.PublicID,
+		Name:           params.Name,
+		Type:           params.Type,
+		Status:         "draft",
 	}
 	r.events[event.ID] = event
+	r.eventIDsByPublicID[event.PublicID] = event.ID
 
 	return event, nil
+}
+
+func (r *InMemoryTenantRepository) newTenantPublicID() (string, error) {
+	for {
+		publicID, err := newPublicID()
+		if err != nil {
+			return "", err
+		}
+
+		if _, exists := r.tenantIDsByPublicID[publicID]; !exists {
+			return publicID, nil
+		}
+	}
+}
+
+func (r *InMemoryTenantRepository) newEventPublicID() (string, error) {
+	for {
+		publicID, err := newPublicID()
+		if err != nil {
+			return "", err
+		}
+
+		if _, exists := r.eventIDsByPublicID[publicID]; !exists {
+			return publicID, nil
+		}
+	}
 }
