@@ -7,39 +7,35 @@ import (
 
 	"connectrpc.com/connect"
 
-	greetv1 "github.com/pj-hoakari/tolo-tenant-management/gen/greet/v1"
-	"github.com/pj-hoakari/tolo-tenant-management/gen/greet/v1/greetv1connect"
+	tenantv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1"
+	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1/tenantv1connect"
 )
 
-func TestGreetServiceAuthz(t *testing.T) {
+func TestTenantServiceAuthorizationAndSkeleton(t *testing.T) {
 	t.Parallel()
 
 	httpServer := httptest.NewServer(NewHandler())
 	t.Cleanup(httpServer.Close)
-	client := greetv1connect.NewGreetServiceClient(httpServer.Client(), httpServer.URL)
+	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
 
 	t.Run("rejects missing bearer token", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := client.Greet(context.Background(), connect.NewRequest(&greetv1.GreetRequest{Name: "Ada"}))
+		_, err := client.RegisterTenant(context.Background(), connect.NewRequest(&tenantv1.RegisterTenantRequest{Name: "Acme"}))
 		if connect.CodeOf(err) != connect.CodeUnauthenticated {
-			t.Fatalf("Greet() error code = %v, want %v", connect.CodeOf(err), connect.CodeUnauthenticated)
+			t.Fatalf("RegisterTenant() error code = %v, want %v", connect.CodeOf(err), connect.CodeUnauthenticated)
 		}
 	})
 
-	t.Run("accepts bearer token with required scope", func(t *testing.T) {
+	t.Run("authorizes request before skeleton returns unimplemented", func(t *testing.T) {
 		t.Parallel()
 
-		req := connect.NewRequest(&greetv1.GreetRequest{Name: "Ada"})
-		req.Header().Set("Authorization", exampleGreetAuthorizationHeader())
+		req := connect.NewRequest(&tenantv1.RegisterTenantRequest{Name: "Acme"})
+		req.Header().Set("Authorization", exampleTenantAuthorizationHeader())
 
-		res, err := client.Greet(context.Background(), req)
-		if err != nil {
-			t.Fatalf("Greet() error = %v", err)
-		}
-
-		if got, want := res.Msg.GetGreeting(), "Hello, Ada!"; got != want {
-			t.Errorf("Greeting = %q, want %q", got, want)
+		_, err := client.RegisterTenant(context.Background(), req)
+		if connect.CodeOf(err) != connect.CodeUnimplemented {
+			t.Fatalf("RegisterTenant() error code = %v, want %v", connect.CodeOf(err), connect.CodeUnimplemented)
 		}
 	})
 }

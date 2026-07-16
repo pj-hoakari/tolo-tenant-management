@@ -4,17 +4,17 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/pj-hoakari/tolo-tenant-management/gen/greet/v1/greetv1connect"
-	"github.com/pj-hoakari/tolo-tenant-management/internal/greet"
+	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1/tenantv1connect"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant"
 )
 
 func NewHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealthz)
 
-	path, handler := greetv1connect.NewGreetServiceHandlerWithAuthz(
-		greet.NewService(),
-		newExampleGreetAuthzVerifier(),
+	path, handler := tenantv1connect.NewTenantServiceHandlerWithAuthz(
+		tenant.NewService(),
+		newExampleTenantAuthzVerifier(),
 	)
 	mux.Handle(path, handler)
 

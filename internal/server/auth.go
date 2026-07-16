@@ -5,43 +5,45 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github.com/pj-hoakari/tolo-tenant-management/gen/greet/v1/greetv1connect"
+	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1/tenantv1connect"
 )
 
-const exampleGreetBearerToken = "example-greet-token"
+const exampleTenantBearerToken = "example-tenant-token"
 
-// newExampleGreetAuthzVerifier demonstrates how to adapt an application's
-// identity provider to the Verifier generated from authz policy annotations.
-// Replace the fixed token and scopes with validated identity claims in a real
-// service.
-func newExampleGreetAuthzVerifier() greetv1connect.Verifier {
-	return greetv1connect.VerifierFunc(func(ctx context.Context, policy greetv1connect.AuthPolicy) error {
-		if policy.Level == greetv1connect.AuthLevelPublic {
+// newExampleTenantAuthzVerifier demonstrates where an application would adapt
+// validated identity claims to the authorization policies generated from proto.
+func newExampleTenantAuthzVerifier() tenantv1connect.Verifier {
+	return tenantv1connect.VerifierFunc(func(ctx context.Context, policy tenantv1connect.AuthPolicy) error {
+		if policy.Level == tenantv1connect.AuthLevelPublic {
 			return nil
 		}
 
 		callInfo, ok := connect.CallInfoForHandlerContext(ctx)
-		if !ok || callInfo.RequestHeader().Get("Authorization") != "Bearer "+exampleGreetBearerToken {
+		if !ok || callInfo.RequestHeader().Get("Authorization") != "Bearer "+exampleTenantBearerToken {
 			return connect.NewError(connect.CodeUnauthenticated, nil)
 		}
 
-		// In this example, a successfully authenticated token has this single
-		// scope. A production verifier would read scopes from validated claims.
-		grantedScopes := map[string]bool{"greeting.read": true}
+		if policy.Level == tenantv1connect.AuthLevelInternal {
+			return connect.NewError(connect.CodePermissionDenied, nil)
+		}
+
+		grantedScopes := map[string]bool{
+			"tenant.register": true,
+			"tenant_access":   true,
+			"tenant.write":    true,
+			"events.read":     true,
+			"events.write":    true,
+		}
 		for _, requiredScope := range policy.RequiredScopes {
 			if !grantedScopes[requiredScope] {
 				return connect.NewError(connect.CodePermissionDenied, nil)
 			}
 		}
 
-		if policy.Level == greetv1connect.AuthLevelInternal {
-			return connect.NewError(connect.CodePermissionDenied, nil)
-		}
-
 		return nil
 	})
 }
 
-func exampleGreetAuthorizationHeader() string {
-	return "Bearer " + exampleGreetBearerToken
+func exampleTenantAuthorizationHeader() string {
+	return "Bearer " + exampleTenantBearerToken
 }
