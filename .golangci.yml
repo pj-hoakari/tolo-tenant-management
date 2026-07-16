@@ -1,0 +1,46 @@
+version: "2"
+
+linters:
+    default: standard
+    enable:
+        - wsl_v5
+        - bodyclose
+        - contextcheck
+        - fatcontext
+        - containedctx
+        - exhaustruct
+        - exhaustive
+        - gosec
+        - nilnil
+        - nilerr
+        - nlreturn
+    settings:
+        errcheck:
+            check-type-assertions: true
+            check-blank: true
+            disable-default-exclusions: true
+            exclude-functions:
+                - fmt.Print
+                - fmt.Printf
+                - fmt.Println
+        exhaustruct:
+            exclude:
+                - 'crypto/tls\.Config'
+                - 'log/slog\.HandlerOptions'
+                - 'net/http\.Server'
+                - 'net/http\.Client'
+                - 'net/http\.Transport'
+        wsl_v5:
+            allow-first-in-block: true
+            allow-whole-block: false
+            branch-max-lines: 2
+    exclusions:
+        rules:
+            - path: _test\.go
+              linters:
+                  - errcheck
+                  - exhaustruct
+                  - gosec
+                  - staticcheck
+                  - fatcontext
+                  - containedctx
