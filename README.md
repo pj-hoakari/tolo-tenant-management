@@ -74,7 +74,7 @@ cd clients/connect-es && npm install
 - [x] `clients/connect-es` で `npm install` を実行し `package-lock.json` を同期
 - [x] `publish-client-es.yml` の `scope` を `@<owner>` に変更
 
-- [ ] `main.go` のログ文字列
+- [x] `main.go` のログ文字列
 - [ ] README のテンプレート説明を書き換え
 
 ---

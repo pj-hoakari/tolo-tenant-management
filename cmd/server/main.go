@@ -39,7 +39,7 @@ func run() error {
 	serveErr := make(chan error, 1)
 
 	go func() {
-		log.Printf("go-service-template: server listening on %s", addr)
+		log.Printf("tenant-management: server listening on %s", addr)
 
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serveErr <- err
@@ -54,7 +54,7 @@ func run() error {
 	case err := <-serveErr:
 		return err
 	case <-ctx.Done():
-		log.Print("go-service-template: server shutting down")
+		log.Print("tenant-management: server shutting down")
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
