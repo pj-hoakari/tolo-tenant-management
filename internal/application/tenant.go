@@ -12,6 +12,8 @@ import (
 var (
 	ErrTenantNameRequired         = errors.New("tenant name is required")
 	ErrTenantContractPlanRequired = errors.New("tenant contract plan is required")
+	ErrEventTenantIDRequired      = errors.New("event tenant ID is required")
+	ErrEventNameRequired          = errors.New("event name is required")
 )
 
 // RegisterTenantInput contains the values accepted by the RegisterTenant use
@@ -29,9 +31,37 @@ type Tenant struct {
 	Archived     bool
 }
 
+// CreateEventInput contains the values accepted by the CreateEvent use case.
+type CreateEventInput struct {
+	TenantID string
+	Name     string
+	Type     string
+}
+
+// Event is the application representation of an event.
+type Event struct {
+	ID       string
+	TenantID string
+	Name     string
+	Type     string
+	Status   string
+}
+
 // RegisterTenantUseCase registers a tenant.
 type RegisterTenantUseCase interface {
 	RegisterTenant(context.Context, RegisterTenantInput) (Tenant, error)
+}
+
+// CreateEventUseCase creates an event for a tenant.
+type CreateEventUseCase interface {
+	CreateEvent(context.Context, CreateEventInput) (Event, error)
+}
+
+// TenantUseCases groups the tenant operations exposed by the Connect
+// transport.
+type TenantUseCases interface {
+	RegisterTenantUseCase
+	CreateEventUseCase
 }
 
 // TenantService implements tenant use cases.
@@ -80,5 +110,32 @@ func (s *TenantService) RegisterTenant(ctx context.Context, input RegisterTenant
 		Name:         tenant.Name,
 		ContractPlan: tenant.ContractPlan,
 		Archived:     tenant.Archived,
+	}, nil
+}
+
+func (s *TenantService) CreateEvent(ctx context.Context, input CreateEventInput) (Event, error) {
+	if input.TenantID == "" {
+		return Event{}, ErrEventTenantIDRequired
+	}
+
+	if input.Name == "" {
+		return Event{}, ErrEventNameRequired
+	}
+
+	event, err := s.tenantRepository.CreateEvent(ctx, repository.CreateEventParams{
+		TenantID: input.TenantID,
+		Name:     input.Name,
+		Type:     input.Type,
+	})
+	if err != nil {
+		return Event{}, err
+	}
+
+	return Event{
+		ID:       event.ID,
+		TenantID: event.TenantID,
+		Name:     event.Name,
+		Type:     event.Type,
+		Status:   event.Status,
 	}, nil
 }

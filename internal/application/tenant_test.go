@@ -32,6 +32,10 @@ func (s *tenantRepositoryStub) DeleteTenant(_ context.Context, tenantID string) 
 	return nil
 }
 
+func (s *tenantRepositoryStub) CreateEvent(context.Context, repository.CreateEventParams) (repository.Event, error) {
+	return repository.Event{}, nil
+}
+
 type failingMembershipService struct{}
 
 func (failingMembershipService) AddTenantMember(context.Context, application.AddTenantMemberInput) error {

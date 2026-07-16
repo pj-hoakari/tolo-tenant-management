@@ -14,16 +14,20 @@ import (
 type InMemoryTenantRepository struct {
 	mu              sync.Mutex
 	nextTenantID    uint64
+	nextEventID     uint64
 	tenants         map[string]repository.Tenant
 	tenantIDsByName map[string]string
+	events          map[string]repository.Event
 }
 
 func NewInMemoryTenantRepository() *InMemoryTenantRepository {
 	return &InMemoryTenantRepository{
 		mu:              sync.Mutex{},
 		nextTenantID:    0,
+		nextEventID:     0,
 		tenants:         make(map[string]repository.Tenant),
 		tenantIDsByName: make(map[string]string),
+		events:          make(map[string]repository.Event),
 	}
 }
 
@@ -61,4 +65,30 @@ func (r *InMemoryTenantRepository) DeleteTenant(_ context.Context, tenantID stri
 	delete(r.tenantIDsByName, tenant.Name)
 
 	return nil
+}
+
+func (r *InMemoryTenantRepository) CreateEvent(_ context.Context, params repository.CreateEventParams) (repository.Event, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	tenant, ok := r.tenants[params.TenantID]
+	if !ok {
+		return repository.Event{}, repository.ErrTenantNotFound
+	}
+
+	if tenant.Archived {
+		return repository.Event{}, repository.ErrTenantArchived
+	}
+
+	r.nextEventID++
+	event := repository.Event{
+		ID:       fmt.Sprintf("event-%d", r.nextEventID),
+		TenantID: params.TenantID,
+		Name:     params.Name,
+		Type:     params.Type,
+		Status:   "draft",
+	}
+	r.events[event.ID] = event
+
+	return event, nil
 }
