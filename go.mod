@@ -13,7 +13,4 @@ require (
 	google.golang.org/protobuf v1.36.11
 )
 
-require (
-	github.com/pj-hoakari/go-service-template v0.0.0-20260715142028-f4129742c821
-	github.com/pj-hoakari/protoc-gen-authz-go v0.2.0
-)
+require github.com/pj-hoakari/protoc-gen-authz-go v0.2.0
