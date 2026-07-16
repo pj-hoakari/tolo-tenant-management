@@ -4,8 +4,8 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/pj-hoakari/go-service-template/gen/greet/v1/greetv1connect"
-	"github.com/pj-hoakari/go-service-template/internal/greet"
+	"github.com/pj-hoakari/tolo-tenant-management/gen/greet/v1/greetv1connect"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/greet"
 )
 
 func NewHandler() http.Handler {

@@ -5,7 +5,7 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github.com/pj-hoakari/go-service-template/gen/greet/v1/greetv1connect"
+	"github.com/pj-hoakari/tolo-tenant-management/gen/greet/v1/greetv1connect"
 )
 
 const exampleGreetBearerToken = "example-greet-token"

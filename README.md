@@ -66,9 +66,9 @@ cd clients/connect-es && npm install
 
 ## 初期設定チェックリスト
 
-- [ ] Go モジュールパスを `github.com/<owner>/<repo>` に置換（`go.mod` / `cmd/server/main.go` / `buf.gen.go.yaml`）
-- [ ] `go mod tidy` を実行
-- [ ] `task proto:gen:go` で connect-go を再生成し、`gen/` をコミット
+- [x] Go モジュールパスを `github.com/<owner>/<repo>` に置換（`go.mod` / `cmd/server/main.go` / `buf.gen.go.yaml`）
+- [x] `go mod tidy` を実行
+- [x] `task proto:gen:go` で connect-go を再生成し、`gen/` をコミット
 
 - [ ] connect-es の `package.json`（`name` / `description` / `repository.url`）を更新
 - [ ] `clients/connect-es` で `npm install` を実行し `package-lock.json` を同期

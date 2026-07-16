@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/pj-hoakari/go-service-template/internal/server"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/server"
 )
 
 const (
