@@ -18,7 +18,7 @@ connect-es の生成（`task proto:gen:es`）はリリース時に CI で行う
 ### TenantService の authz interceptor
 
 `TenantService` は proto の policy annotation により、セルフサインアップには `tenant.register`、テナント操作には `tenant_access` と `tenant.write`、イベント操作には `events.read` / `events.write` を要求する。`GetEvent` は内部サービス向けの `AUTH_LEVEL_INTERNAL` である。
-`internal/server` では、生成された `NewTenantServiceHandlerWithAuthz` に開発用 verifier を渡す。
+`internal/infra/connect` では、生成された `NewTenantServiceHandlerWithAuthz` に開発用 verifier を渡す。
 
 ローカルでは次の Authorization ヘッダーで呼び出せる。
 

@@ -1,9 +1,9 @@
-package server
+package connect
 
 import (
 	"context"
 
-	"connectrpc.com/connect"
+	connectrpc "connectrpc.com/connect"
 
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1/tenantv1connect"
 )
@@ -18,13 +18,13 @@ func newExampleTenantAuthzVerifier() tenantv1connect.Verifier {
 			return nil
 		}
 
-		callInfo, ok := connect.CallInfoForHandlerContext(ctx)
+		callInfo, ok := connectrpc.CallInfoForHandlerContext(ctx)
 		if !ok || callInfo.RequestHeader().Get("Authorization") != "Bearer "+exampleTenantBearerToken {
-			return connect.NewError(connect.CodeUnauthenticated, nil)
+			return connectrpc.NewError(connectrpc.CodeUnauthenticated, nil)
 		}
 
 		if policy.Level == tenantv1connect.AuthLevelInternal {
-			return connect.NewError(connect.CodePermissionDenied, nil)
+			return connectrpc.NewError(connectrpc.CodePermissionDenied, nil)
 		}
 
 		grantedScopes := map[string]bool{
@@ -36,7 +36,7 @@ func newExampleTenantAuthzVerifier() tenantv1connect.Verifier {
 		}
 		for _, requiredScope := range policy.RequiredScopes {
 			if !grantedScopes[requiredScope] {
-				return connect.NewError(connect.CodePermissionDenied, nil)
+				return connectrpc.NewError(connectrpc.CodePermissionDenied, nil)
 			}
 		}
 
