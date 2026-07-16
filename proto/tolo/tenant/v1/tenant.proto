@@ -1,0 +1,138 @@
+syntax = "proto3";
+
+package tolo.tenant.v1;
+
+import "authz/v1/options.proto";
+
+service TenantService {
+  // Self-signup requires tenant.register but no tenant_access scope. The
+  // caller must not already belong to the tenant being created.
+  rpc RegisterTenant(RegisterTenantRequest) returns (RegisterTenantResponse) {
+    option (authz.v1.auth_policy) = {
+      level: AUTH_LEVEL_AUTHENTICATED
+      required_scopes: "tenant.register"
+    };
+  }
+  rpc ChangeTenantContract(ChangeTenantContractRequest) returns (ChangeTenantContractResponse) {
+    option (authz.v1.auth_policy) = {
+      level: AUTH_LEVEL_AUTHENTICATED
+      required_scopes: "tenant_access"
+      required_scopes: "tenant.write"
+    };
+  }
+  rpc ArchiveTenant(ArchiveTenantRequest) returns (ArchiveTenantResponse) {
+    option (authz.v1.auth_policy) = {
+      level: AUTH_LEVEL_AUTHENTICATED
+      required_scopes: "tenant_access"
+      required_scopes: "tenant.write"
+    };
+  }
+  rpc CreateEvent(CreateEventRequest) returns (CreateEventResponse) {
+    option (authz.v1.auth_policy) = {
+      level: AUTH_LEVEL_AUTHENTICATED
+      required_scopes: "tenant_access"
+      required_scopes: "events.write"
+    };
+  }
+  rpc AssignEventType(AssignEventTypeRequest) returns (AssignEventTypeResponse) {
+    option (authz.v1.auth_policy) = {
+      level: AUTH_LEVEL_AUTHENTICATED
+      required_scopes: "tenant_access"
+      required_scopes: "events.write"
+    };
+  }
+  rpc TransitionEventStatus(TransitionEventStatusRequest) returns (TransitionEventStatusResponse) {
+    option (authz.v1.auth_policy) = {
+      level: AUTH_LEVEL_AUTHENTICATED
+      required_scopes: "tenant_access"
+      required_scopes: "events.write"
+    };
+  }
+  rpc GetEvent(GetEventRequest) returns (GetEventResponse) {
+    option (authz.v1.auth_policy) = { level: AUTH_LEVEL_INTERNAL };
+  }
+  rpc ListEvents(ListEventsRequest) returns (ListEventsResponse) {
+    option (authz.v1.auth_policy) = {
+      level: AUTH_LEVEL_AUTHENTICATED
+      required_scopes: "tenant_access"
+      required_scopes: "events.read"
+    };
+  }
+}
+
+// Tenant is the customer-organization, billing, and onboarding boundary.
+message Tenant {
+  string tenant_id = 1;
+  string name = 2;
+  string contract_plan = 3;
+  bool archived = 4;
+}
+
+// Event is an installation or occasion owned by exactly one tenant.
+message Event {
+  string event_id = 1;
+  string tenant_id = 2;
+  string name = 3;
+  EventType type = 4;
+  EventStatus status = 5;
+  ObservationSettings observation_settings = 6;
+}
+
+enum EventType {
+  EVENT_TYPE_UNSPECIFIED = 0;
+  EVENT_TYPE_SHORT_TERM = 1;
+  EVENT_TYPE_LONG_TERM = 2;
+}
+
+enum EventStatus {
+  EVENT_STATUS_UNSPECIFIED = 0;
+  EVENT_STATUS_DRAFT = 1;
+  EVENT_STATUS_OPEN = 2;
+  EVENT_STATUS_LOCKED = 3;
+  EVENT_STATUS_CLOSED = 4;
+  EVENT_STATUS_ARCHIVED = 5;
+}
+
+message ObservationSettings {
+  int32 history_window_days = 1;
+}
+
+message RegisterTenantRequest {
+  string name = 1;
+  string contract_plan = 2;
+}
+message RegisterTenantResponse { Tenant tenant = 1; }
+
+message ChangeTenantContractRequest {
+  string tenant_id = 1;
+  string contract_plan = 2;
+}
+message ChangeTenantContractResponse { Tenant tenant = 1; }
+
+message ArchiveTenantRequest { string tenant_id = 1; }
+message ArchiveTenantResponse { Tenant tenant = 1; }
+
+message CreateEventRequest {
+  string tenant_id = 1;
+  string name = 2;
+  EventType type = 3;
+}
+message CreateEventResponse { Event event = 1; }
+
+message AssignEventTypeRequest {
+  string event_id = 1;
+  EventType type = 2;
+}
+message AssignEventTypeResponse { Event event = 1; }
+
+message TransitionEventStatusRequest {
+  string event_id = 1;
+  EventStatus to = 2;
+}
+message TransitionEventStatusResponse { Event event = 1; }
+
+message GetEventRequest { string event_id = 1; }
+message GetEventResponse { Event event = 1; }
+
+message ListEventsRequest { string tenant_id = 1; }
+message ListEventsResponse { repeated Event events = 1; }
