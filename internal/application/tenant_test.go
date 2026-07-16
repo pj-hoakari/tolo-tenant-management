@@ -6,24 +6,20 @@ import (
 	"testing"
 
 	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
-	"github.com/pj-hoakari/tolo-tenant-management/internal/repository"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
 )
 
 var errRelationUnavailable = errors.New("relation unavailable")
 
 type tenantRepositoryStub struct {
-	created repository.Tenant
+	created domain.Tenant
 	deleted string
 }
 
-func (s *tenantRepositoryStub) CreateTenant(_ context.Context, params repository.CreateTenantParams) (repository.Tenant, error) {
-	s.created = repository.Tenant{
-		ID:           "tenant-1",
-		Name:         params.Name,
-		ContractPlan: params.ContractPlan,
-	}
+func (s *tenantRepositoryStub) CreateTenant(_ context.Context, tenant domain.Tenant) error {
+	s.created = tenant
 
-	return s.created, nil
+	return nil
 }
 
 func (s *tenantRepositoryStub) DeleteTenant(_ context.Context, tenantID string) error {
@@ -32,8 +28,12 @@ func (s *tenantRepositoryStub) DeleteTenant(_ context.Context, tenantID string) 
 	return nil
 }
 
-func (s *tenantRepositoryStub) CreateEvent(context.Context, repository.CreateEventParams) (repository.Event, error) {
-	return repository.Event{}, nil
+func (s *tenantRepositoryStub) FindTenantByPublicID(context.Context, string) (domain.Tenant, error) {
+	return domain.Tenant{}, nil
+}
+
+func (s *tenantRepositoryStub) CreateEvent(context.Context, domain.Event) error {
+	return nil
 }
 
 type failingMembershipService struct{}
@@ -56,7 +56,7 @@ func TestRegisterTenantCompensatesWhenOwnerMembershipFails(t *testing.T) {
 		t.Fatalf("RegisterTenant() error = %v, want wrapping %v", err, errRelationUnavailable)
 	}
 
-	if got, want := repository.deleted, repository.created.ID; got != want {
+	if got, want := repository.deleted, repository.created.ID(); got != want {
 		t.Errorf("deleted tenant ID = %q, want %q", got, want)
 	}
 }

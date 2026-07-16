@@ -4,50 +4,22 @@ package repository
 import (
 	"context"
 	"errors"
+
+	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
 )
 
 var (
 	ErrTenantNameAlreadyExists = errors.New("tenant name already exists")
 	ErrTenantNotFound          = errors.New("tenant not found")
 	ErrTenantArchived          = errors.New("tenant is archived")
+	ErrTenantPublicIDExists    = errors.New("tenant public ID already exists")
+	ErrEventPublicIDExists     = errors.New("event public ID already exists")
 )
-
-// Tenant is the persistence representation of a tenant.
-type Tenant struct {
-	ID           string
-	PublicID     string
-	Name         string
-	ContractPlan string
-	Archived     bool
-}
-
-// CreateTenantParams contains the data needed to create a tenant.
-type CreateTenantParams struct {
-	Name         string
-	ContractPlan string
-}
-
-// Event is the persistence representation of an event.
-type Event struct {
-	ID             string
-	PublicID       string
-	TenantID       string
-	TenantPublicID string
-	Name           string
-	Type           string
-	Status         string
-}
-
-// CreateEventParams contains the data needed to create an event.
-type CreateEventParams struct {
-	TenantPublicID string
-	Name           string
-	Type           string
-}
 
 // TenantRepository persists tenants.
 type TenantRepository interface {
-	CreateTenant(context.Context, CreateTenantParams) (Tenant, error)
+	CreateTenant(context.Context, domain.Tenant) error
 	DeleteTenant(context.Context, string) error
-	CreateEvent(context.Context, CreateEventParams) (Event, error)
+	FindTenantByPublicID(context.Context, string) (domain.Tenant, error)
+	CreateEvent(context.Context, domain.Event) error
 }

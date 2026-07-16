@@ -1,4 +1,4 @@
-package infra
+package application
 
 import (
 	"crypto/rand"

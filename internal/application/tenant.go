@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/repository"
 )
 
@@ -23,15 +24,6 @@ type RegisterTenantInput struct {
 	ContractPlan string
 }
 
-// Tenant is the application representation of a tenant.
-type Tenant struct {
-	ID           string
-	PublicID     string
-	Name         string
-	ContractPlan string
-	Archived     bool
-}
-
 // CreateEventInput contains the values accepted by the CreateEvent use case.
 type CreateEventInput struct {
 	TenantID string
@@ -39,25 +31,14 @@ type CreateEventInput struct {
 	Type     string
 }
 
-// Event is the application representation of an event.
-type Event struct {
-	ID             string
-	PublicID       string
-	TenantID       string
-	TenantPublicID string
-	Name           string
-	Type           string
-	Status         string
-}
-
 // RegisterTenantUseCase registers a tenant.
 type RegisterTenantUseCase interface {
-	RegisterTenant(context.Context, RegisterTenantInput) (Tenant, error)
+	RegisterTenant(context.Context, RegisterTenantInput) (domain.Tenant, error)
 }
 
 // CreateEventUseCase creates an event for a tenant.
 type CreateEventUseCase interface {
-	CreateEvent(context.Context, CreateEventInput) (Event, error)
+	CreateEvent(context.Context, CreateEventInput) (domain.Event, error)
 }
 
 // TenantUseCases groups the tenant operations exposed by the Connect
@@ -80,68 +61,76 @@ func NewTenantService(tenantRepository repository.TenantRepository, tenantMember
 	}
 }
 
-func (s *TenantService) RegisterTenant(ctx context.Context, input RegisterTenantInput) (Tenant, error) {
+func (s *TenantService) RegisterTenant(ctx context.Context, input RegisterTenantInput) (domain.Tenant, error) {
 	if input.Name == "" {
-		return Tenant{}, ErrTenantNameRequired
+		return domain.Tenant{}, ErrTenantNameRequired
 	}
 
 	if input.ContractPlan == "" {
-		return Tenant{}, ErrTenantContractPlanRequired
+		return domain.Tenant{}, ErrTenantContractPlanRequired
 	}
 
-	tenant, err := s.tenantRepository.CreateTenant(ctx, repository.CreateTenantParams{
-		Name:         input.Name,
-		ContractPlan: input.ContractPlan,
-	})
+	tenantID, err := newUUIDv7()
 	if err != nil {
-		return Tenant{}, err
+		return domain.Tenant{}, err
+	}
+
+	publicID, err := newPublicID()
+	if err != nil {
+		return domain.Tenant{}, err
+	}
+
+	tenant := domain.NewTenant(tenantID, publicID, input.Name, input.ContractPlan)
+	if err := s.tenantRepository.CreateTenant(ctx, tenant); err != nil {
+		return domain.Tenant{}, err
 	}
 
 	if err := s.tenantMemberships.AddTenantMember(ctx, AddTenantMemberInput{
-		TenantID: tenant.ID,
+		TenantID: tenant.ID(),
 		Role:     TenantOwnerRole,
 	}); err != nil {
-		if deleteErr := s.tenantRepository.DeleteTenant(ctx, tenant.ID); deleteErr != nil {
-			return Tenant{}, fmt.Errorf("add tenant owner: %w (compensating delete tenant: %v)", err, deleteErr)
+		if deleteErr := s.tenantRepository.DeleteTenant(ctx, tenant.ID()); deleteErr != nil {
+			return domain.Tenant{}, fmt.Errorf("add tenant owner: %w (compensating delete tenant: %v)", err, deleteErr)
 		}
 
-		return Tenant{}, fmt.Errorf("add tenant owner: %w", err)
+		return domain.Tenant{}, fmt.Errorf("add tenant owner: %w", err)
 	}
 
-	return Tenant{
-		ID:           tenant.ID,
-		PublicID:     tenant.PublicID,
-		Name:         tenant.Name,
-		ContractPlan: tenant.ContractPlan,
-		Archived:     tenant.Archived,
-	}, nil
+	return tenant, nil
 }
 
-func (s *TenantService) CreateEvent(ctx context.Context, input CreateEventInput) (Event, error) {
+func (s *TenantService) CreateEvent(ctx context.Context, input CreateEventInput) (domain.Event, error) {
 	if input.TenantID == "" {
-		return Event{}, ErrEventTenantIDRequired
+		return domain.Event{}, ErrEventTenantIDRequired
 	}
 
 	if input.Name == "" {
-		return Event{}, ErrEventNameRequired
+		return domain.Event{}, ErrEventNameRequired
 	}
 
-	event, err := s.tenantRepository.CreateEvent(ctx, repository.CreateEventParams{
-		TenantPublicID: input.TenantID,
-		Name:           input.Name,
-		Type:           input.Type,
-	})
+	tenant, err := s.tenantRepository.FindTenantByPublicID(ctx, input.TenantID)
 	if err != nil {
-		return Event{}, err
+		return domain.Event{}, err
 	}
 
-	return Event{
-		ID:             event.ID,
-		PublicID:       event.PublicID,
-		TenantID:       event.TenantID,
-		TenantPublicID: event.TenantPublicID,
-		Name:           event.Name,
-		Type:           event.Type,
-		Status:         event.Status,
-	}, nil
+	if tenant.Archived() {
+		return domain.Event{}, repository.ErrTenantArchived
+	}
+
+	eventID, err := newUUIDv7()
+	if err != nil {
+		return domain.Event{}, err
+	}
+
+	publicID, err := newPublicID()
+	if err != nil {
+		return domain.Event{}, err
+	}
+
+	event := domain.NewEvent(eventID, publicID, tenant.ID(), tenant.PublicID(), input.Name, input.Type)
+	if err := s.tenantRepository.CreateEvent(ctx, event); err != nil {
+		return domain.Event{}, err
+	}
+
+	return event, nil
 }
