@@ -111,3 +111,29 @@ func TestTenantServiceAuthorizationAndSkeleton(t *testing.T) {
 		}
 	})
 }
+
+func TestRegisterTenantRejectsDuplicateName(t *testing.T) {
+	tenantRepository := infra.NewInMemoryTenantRepository()
+	registerTenant := application.NewTenantService(tenantRepository, infra.NewRelationService())
+	httpServer := httptest.NewServer(NewHandler(registerTenant))
+	t.Cleanup(httpServer.Close)
+	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
+
+	register := func(t *testing.T) error {
+		t.Helper()
+
+		req := connectrpc.NewRequest(&tenantv1.RegisterTenantRequest{Name: "Acme", ContractPlan: "standard"})
+		req.Header().Set("Authorization", exampleTenantAuthorizationHeader())
+		_, err := client.RegisterTenant(context.Background(), req)
+
+		return err
+	}
+
+	if err := register(t); err != nil {
+		t.Fatalf("first RegisterTenant() error = %v", err)
+	}
+
+	if err := register(t); connectrpc.CodeOf(err) != connectrpc.CodeAlreadyExists {
+		t.Fatalf("second RegisterTenant() error code = %v, want %v", connectrpc.CodeOf(err), connectrpc.CodeAlreadyExists)
+	}
+}

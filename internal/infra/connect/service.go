@@ -9,6 +9,7 @@ import (
 	tenantv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1"
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1/tenantv1connect"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/repository"
 )
 
 var errNotImplemented = errors.New("tenant service implementation is not configured")
@@ -34,6 +35,10 @@ func (s *Service) RegisterTenant(ctx context.Context, req *connectrpc.Request[te
 	if err != nil {
 		if errors.Is(err, application.ErrTenantNameRequired) || errors.Is(err, application.ErrTenantContractPlanRequired) {
 			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
+		}
+
+		if errors.Is(err, repository.ErrTenantNameAlreadyExists) {
+			return nil, connectrpc.NewError(connectrpc.CodeAlreadyExists, err)
 		}
 
 		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)

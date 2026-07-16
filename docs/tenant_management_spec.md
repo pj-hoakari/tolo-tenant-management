@@ -20,6 +20,7 @@ package: `tolo.tenant.v1`
 ## 補足
 
 - 許容外の状態遷移は `failed_precondition` を返す
+- テナント名は一意とし、同名のテナントを登録しようとした場合は `already_exists` を返す
 - アーカイブは論理削除であり `GetEvent` は archived でも返す（宙づり参照を生まない）
 - アーカイブ済みテナント／イベントの扱い: 書き込み系 RPC は `failed_precondition`、参照系は継続
   既存所属は保持し、archived イベントへの Token Exchange は拒否

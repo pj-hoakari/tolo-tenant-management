@@ -1,7 +1,12 @@
 // Package repository defines persistence contracts for the tenant context.
 package repository
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+var ErrTenantNameAlreadyExists = errors.New("tenant name already exists")
 
 // Tenant is the persistence representation of a tenant.
 type Tenant struct {
