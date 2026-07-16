@@ -21,6 +21,7 @@ package: `tolo.tenant.v1`
 
 - 許容外の状態遷移は `failed_precondition` を返す
 - テナント名は一意とし、同名のテナントを登録しようとした場合は `already_exists` を返す
+- テナント／イベントは内部主キーに UUIDv7 を使用し、RPC の `tenant_id`／`event_id` で返す。URL に公開する識別子は `tenant_public_id`／`event_public_id` とし、ランダムな 16 文字の hex を使用する
 - CreateEvent は存在するアーカイブされていないテナントにのみ作成し、初期状態は `draft` とする。存在しないテナントは `not_found`、アーカイブ済みテナントは `failed_precondition` を返す
 - アーカイブは論理削除であり `GetEvent` は archived でも返す（宙づり参照を生まない）
 - アーカイブ済みテナント／イベントの扱い: 書き込み系 RPC は `failed_precondition`、参照系は継続

@@ -62,20 +62,23 @@ service TenantService {
 
 // Tenant is the customer-organization, billing, and onboarding boundary.
 message Tenant {
-  string tenant_id = 1;
+  string tenant_id = 1;         // UUIDv7 internal ID
   string name = 2;
   string contract_plan = 3;
   bool archived = 4;
+  string tenant_public_id = 5;  // 16-character hex ID for URLs
 }
 
 // Event is an installation or occasion owned by exactly one tenant.
 message Event {
-  string event_id = 1;
-  string tenant_id = 2;
+  string event_id = 1;          // UUIDv7 internal ID
+  string tenant_id = 2;         // UUIDv7 internal tenant ID
   string name = 3;
   EventType type = 4;
   EventStatus status = 5;
   ObservationSettings observation_settings = 6;
+  string event_public_id = 7;   // 16-character hex ID for URLs
+  string tenant_public_id = 8;  // 16-character hex ID for URLs
 }
 
 enum EventType {
@@ -113,7 +116,7 @@ message ArchiveTenantRequest { string tenant_id = 1; }
 message ArchiveTenantResponse { Tenant tenant = 1; }
 
 message CreateEventRequest {
-  string tenant_id = 1;
+  string tenant_public_id = 1;
   string name = 2;
   EventType type = 3;
 }

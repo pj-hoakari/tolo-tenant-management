@@ -14,3 +14,5 @@ require (
 )
 
 require github.com/pj-hoakari/protoc-gen-authz-go v0.2.0
+
+require github.com/google/uuid v1.6.0

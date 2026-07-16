@@ -3,6 +3,7 @@ package connect
 import (
 	"context"
 	"net/http/httptest"
+	"regexp"
 	"sync"
 	"testing"
 
@@ -12,6 +13,11 @@ import (
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1/tenantv1connect"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/infra"
+)
+
+var (
+	publicIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
+	uuidV7Pattern   = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 )
 
 type relationTransportSpy struct {
@@ -77,8 +83,12 @@ func TestTenantServiceAuthorizationAndSkeleton(t *testing.T) {
 			t.Errorf("Tenant.ContractPlan = %q, want %q", got, want)
 		}
 
-		if got := res.Msg.GetTenant().GetTenantId(); got == "" {
-			t.Error("Tenant.TenantId is empty")
+		if got := res.Msg.GetTenant().GetTenantId(); !uuidV7Pattern.MatchString(got) {
+			t.Errorf("Tenant.TenantId = %q, want UUIDv7", got)
+		}
+
+		if got := res.Msg.GetTenant().GetTenantPublicId(); !publicIDPattern.MatchString(got) {
+			t.Errorf("Tenant.TenantPublicId = %q, want 16-character hex", got)
 		}
 
 		if res.Msg.GetTenant().GetArchived() {
@@ -90,8 +100,8 @@ func TestTenantServiceAuthorizationAndSkeleton(t *testing.T) {
 			t.Errorf("Relation authorization = %q, want %q", got, want)
 		}
 
-		if got, want := input.TenantID, res.Msg.GetTenant().GetTenantId(); got != want {
-			t.Errorf("Relation tenant ID = %q, want %q", got, want)
+		if got := input.TenantID; !uuidV7Pattern.MatchString(got) {
+			t.Errorf("Relation tenant ID = %q, want UUIDv7", got)
 		}
 
 		if got, want := input.Role, application.TenantOwnerRole; got != want {
@@ -157,9 +167,9 @@ func TestCreateEvent(t *testing.T) {
 	}
 
 	createRequest := connectrpc.NewRequest(&tenantv1.CreateEventRequest{
-		TenantId: registeredTenant.Msg.GetTenant().GetTenantId(),
-		Name:     "Summer Festival",
-		Type:     tenantv1.EventType_EVENT_TYPE_SHORT_TERM,
+		TenantPublicId: registeredTenant.Msg.GetTenant().GetTenantPublicId(),
+		Name:           "Summer Festival",
+		Type:           tenantv1.EventType_EVENT_TYPE_SHORT_TERM,
 	})
 	createRequest.Header().Set("Authorization", exampleTenantAuthorizationHeader())
 
@@ -171,6 +181,10 @@ func TestCreateEvent(t *testing.T) {
 	event := eventResponse.Msg.GetEvent()
 	if got, want := event.GetTenantId(), registeredTenant.Msg.GetTenant().GetTenantId(); got != want {
 		t.Errorf("Event.TenantId = %q, want %q", got, want)
+	}
+
+	if got, want := event.GetTenantPublicId(), registeredTenant.Msg.GetTenant().GetTenantPublicId(); got != want {
+		t.Errorf("Event.TenantPublicId = %q, want %q", got, want)
 	}
 
 	if got, want := event.GetName(), "Summer Festival"; got != want {
@@ -185,8 +199,12 @@ func TestCreateEvent(t *testing.T) {
 		t.Errorf("Event.Status = %v, want %v", got, want)
 	}
 
-	if got := event.GetEventId(); got == "" {
-		t.Error("Event.EventId is empty")
+	if got := event.GetEventId(); !uuidV7Pattern.MatchString(got) {
+		t.Errorf("Event.EventId = %q, want UUIDv7", got)
+	}
+
+	if got := event.GetEventPublicId(); !publicIDPattern.MatchString(got) {
+		t.Errorf("Event.EventPublicId = %q, want 16-character hex", got)
 	}
 }
 
@@ -197,8 +215,8 @@ func TestCreateEventRejectsUnknownTenant(t *testing.T) {
 	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
 
 	req := connectrpc.NewRequest(&tenantv1.CreateEventRequest{
-		TenantId: "tenant-missing",
-		Name:     "Summer Festival",
+		TenantPublicId: "0000000000000000",
+		Name:           "Summer Festival",
 	})
 	req.Header().Set("Authorization", exampleTenantAuthorizationHeader())
 
