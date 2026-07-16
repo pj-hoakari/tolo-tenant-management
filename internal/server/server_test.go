@@ -7,8 +7,8 @@ import (
 
 	"connectrpc.com/connect"
 
-	greetv1 "github.com/pj-hoakari/go-service-template/gen/greet/v1"
-	"github.com/pj-hoakari/go-service-template/gen/greet/v1/greetv1connect"
+	greetv1 "github.com/pj-hoakari/tolo-tenant-management/gen/greet/v1"
+	"github.com/pj-hoakari/tolo-tenant-management/gen/greet/v1/greetv1connect"
 )
 
 func TestGreetServiceAuthz(t *testing.T) {
