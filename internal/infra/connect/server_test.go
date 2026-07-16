@@ -104,6 +104,10 @@ func TestTenantServiceAuthorizationAndSkeleton(t *testing.T) {
 			t.Errorf("Relation tenant ID = %q, want UUIDv7", got)
 		}
 
+		if got, want := input.TenantID, res.Msg.GetTenant().GetTenantId(); got != want {
+			t.Errorf("Relation tenant ID = %q, want %q", got, want)
+		}
+
 		if got, want := input.Role, application.TenantOwnerRole; got != want {
 			t.Errorf("Relation role = %q, want %q", got, want)
 		}

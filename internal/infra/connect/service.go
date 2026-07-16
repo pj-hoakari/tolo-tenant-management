@@ -46,11 +46,11 @@ func (s *Service) RegisterTenant(ctx context.Context, req *connectrpc.Request[te
 
 	return connectrpc.NewResponse(&tenantv1.RegisterTenantResponse{
 		Tenant: &tenantv1.Tenant{
-			TenantId:       tenant.ID,
-			Name:           tenant.Name,
-			ContractPlan:   tenant.ContractPlan,
-			Archived:       tenant.Archived,
-			TenantPublicId: tenant.PublicID,
+			TenantId:       tenant.ID(),
+			Name:           tenant.Name(),
+			ContractPlan:   tenant.ContractPlan(),
+			Archived:       tenant.Archived(),
+			TenantPublicId: tenant.PublicID(),
 		},
 	}), nil
 }
@@ -87,14 +87,14 @@ func (s *Service) CreateEvent(ctx context.Context, req *connectrpc.Request[tenan
 
 	return connectrpc.NewResponse(&tenantv1.CreateEventResponse{
 		Event: &tenantv1.Event{
-			EventId:             event.ID,
-			TenantId:            event.TenantID,
-			Name:                event.Name,
-			Type:                eventTypeProto(event.Type),
-			Status:              eventStatusProto(event.Status),
+			EventId:             event.ID(),
+			TenantId:            event.TenantID(),
+			Name:                event.Name(),
+			Type:                eventTypeProto(event.Type()),
+			Status:              eventStatusProto(event.Status()),
 			ObservationSettings: nil,
-			EventPublicId:       event.PublicID,
-			TenantPublicId:      event.TenantPublicID,
+			EventPublicId:       event.PublicID(),
+			TenantPublicId:      event.TenantPublicID(),
 		},
 	}), nil
 }

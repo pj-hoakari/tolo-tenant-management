@@ -5,6 +5,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/repository"
 )
 
@@ -12,54 +13,41 @@ import (
 // development. Its contents are lost when the process stops.
 type InMemoryTenantRepository struct {
 	mu                  sync.Mutex
-	tenants             map[string]repository.Tenant
+	tenants             map[string]domain.Tenant
 	tenantIDsByName     map[string]string
 	tenantIDsByPublicID map[string]string
-	events              map[string]repository.Event
+	events              map[string]domain.Event
 	eventIDsByPublicID  map[string]string
 }
 
 func NewInMemoryTenantRepository() *InMemoryTenantRepository {
 	return &InMemoryTenantRepository{
 		mu:                  sync.Mutex{},
-		tenants:             make(map[string]repository.Tenant),
+		tenants:             make(map[string]domain.Tenant),
 		tenantIDsByName:     make(map[string]string),
 		tenantIDsByPublicID: make(map[string]string),
-		events:              make(map[string]repository.Event),
+		events:              make(map[string]domain.Event),
 		eventIDsByPublicID:  make(map[string]string),
 	}
 }
 
-func (r *InMemoryTenantRepository) CreateTenant(_ context.Context, params repository.CreateTenantParams) (repository.Tenant, error) {
+func (r *InMemoryTenantRepository) CreateTenant(_ context.Context, tenant domain.Tenant) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, ok := r.tenantIDsByName[params.Name]; ok {
-		return repository.Tenant{}, repository.ErrTenantNameAlreadyExists
+	if _, ok := r.tenantIDsByName[tenant.Name()]; ok {
+		return repository.ErrTenantNameAlreadyExists
 	}
 
-	tenantID, err := newUUIDv7()
-	if err != nil {
-		return repository.Tenant{}, err
+	if _, ok := r.tenantIDsByPublicID[tenant.PublicID()]; ok {
+		return repository.ErrTenantPublicIDExists
 	}
 
-	publicID, err := r.newTenantPublicID()
-	if err != nil {
-		return repository.Tenant{}, err
-	}
+	r.tenants[tenant.ID()] = tenant
+	r.tenantIDsByName[tenant.Name()] = tenant.ID()
+	r.tenantIDsByPublicID[tenant.PublicID()] = tenant.ID()
 
-	tenant := repository.Tenant{
-		ID:           tenantID,
-		PublicID:     publicID,
-		Name:         params.Name,
-		ContractPlan: params.ContractPlan,
-		Archived:     false,
-	}
-	r.tenants[tenant.ID] = tenant
-	r.tenantIDsByName[tenant.Name] = tenant.ID
-	r.tenantIDsByPublicID[tenant.PublicID] = tenant.ID
-
-	return tenant, nil
+	return nil
 }
 
 func (r *InMemoryTenantRepository) DeleteTenant(_ context.Context, tenantID string) error {
@@ -72,77 +60,48 @@ func (r *InMemoryTenantRepository) DeleteTenant(_ context.Context, tenantID stri
 	}
 
 	delete(r.tenants, tenantID)
-	delete(r.tenantIDsByName, tenant.Name)
-	delete(r.tenantIDsByPublicID, tenant.PublicID)
+	delete(r.tenantIDsByName, tenant.Name())
+	delete(r.tenantIDsByPublicID, tenant.PublicID())
 
 	return nil
 }
 
-func (r *InMemoryTenantRepository) CreateEvent(_ context.Context, params repository.CreateEventParams) (repository.Event, error) {
+func (r *InMemoryTenantRepository) FindTenantByPublicID(_ context.Context, publicID string) (domain.Tenant, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	tenantID, ok := r.tenantIDsByPublicID[params.TenantPublicID]
+	tenantID, ok := r.tenantIDsByPublicID[publicID]
 	if !ok {
-		return repository.Event{}, repository.ErrTenantNotFound
+		return domain.Tenant{}, repository.ErrTenantNotFound
 	}
 
 	tenant, ok := r.tenants[tenantID]
 	if !ok {
-		return repository.Event{}, repository.ErrTenantNotFound
+		return domain.Tenant{}, repository.ErrTenantNotFound
 	}
 
-	if tenant.Archived {
-		return repository.Event{}, repository.ErrTenantArchived
-	}
-
-	eventID, err := newUUIDv7()
-	if err != nil {
-		return repository.Event{}, err
-	}
-
-	publicID, err := r.newEventPublicID()
-	if err != nil {
-		return repository.Event{}, err
-	}
-
-	event := repository.Event{
-		ID:             eventID,
-		PublicID:       publicID,
-		TenantID:       tenant.ID,
-		TenantPublicID: tenant.PublicID,
-		Name:           params.Name,
-		Type:           params.Type,
-		Status:         "draft",
-	}
-	r.events[event.ID] = event
-	r.eventIDsByPublicID[event.PublicID] = event.ID
-
-	return event, nil
+	return tenant, nil
 }
 
-func (r *InMemoryTenantRepository) newTenantPublicID() (string, error) {
-	for {
-		publicID, err := newPublicID()
-		if err != nil {
-			return "", err
-		}
+func (r *InMemoryTenantRepository) CreateEvent(_ context.Context, event domain.Event) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
-		if _, exists := r.tenantIDsByPublicID[publicID]; !exists {
-			return publicID, nil
-		}
+	tenant, ok := r.tenants[event.TenantID()]
+	if !ok {
+		return repository.ErrTenantNotFound
 	}
-}
 
-func (r *InMemoryTenantRepository) newEventPublicID() (string, error) {
-	for {
-		publicID, err := newPublicID()
-		if err != nil {
-			return "", err
-		}
-
-		if _, exists := r.eventIDsByPublicID[publicID]; !exists {
-			return publicID, nil
-		}
+	if tenant.Archived() {
+		return repository.ErrTenantArchived
 	}
+
+	if _, ok := r.eventIDsByPublicID[event.PublicID()]; ok {
+		return repository.ErrEventPublicIDExists
+	}
+
+	r.events[event.ID()] = event
+	r.eventIDsByPublicID[event.PublicID()] = event.ID()
+
+	return nil
 }
