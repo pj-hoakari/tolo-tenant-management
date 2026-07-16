@@ -1,11 +1,11 @@
-package server
+// Package connect provides the Connect HTTP transport for this service.
+package connect
 
 import (
 	"log"
 	"net/http"
 
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1/tenantv1connect"
-	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant"
 )
 
 func NewHandler() http.Handler {
@@ -13,7 +13,7 @@ func NewHandler() http.Handler {
 	mux.HandleFunc("GET /healthz", handleHealthz)
 
 	path, handler := tenantv1connect.NewTenantServiceHandlerWithAuthz(
-		tenant.NewService(),
+		NewService(),
 		newExampleTenantAuthzVerifier(),
 	)
 	mux.Handle(path, handler)

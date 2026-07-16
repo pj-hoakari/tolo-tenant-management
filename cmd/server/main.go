@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/pj-hoakari/tolo-tenant-management/internal/server"
+	connectinfra "github.com/pj-hoakari/tolo-tenant-management/internal/infra/connect"
 )
 
 const (
@@ -32,7 +32,7 @@ func run() error {
 	addr := getenv("SERVER_ADDR", defaultAddr)
 	httpServer := &http.Server{
 		Addr:              addr,
-		Handler:           server.NewHandler(),
+		Handler:           connectinfra.NewHandler(),
 		ReadHeaderTimeout: readHeaderTimeout,
 	}
 

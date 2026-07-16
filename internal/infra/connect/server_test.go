@@ -1,11 +1,11 @@
-package server
+package connect
 
 import (
 	"context"
 	"net/http/httptest"
 	"testing"
 
-	"connectrpc.com/connect"
+	connectrpc "connectrpc.com/connect"
 
 	tenantv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1"
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1/tenantv1connect"
@@ -21,21 +21,21 @@ func TestTenantServiceAuthorizationAndSkeleton(t *testing.T) {
 	t.Run("rejects missing bearer token", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := client.RegisterTenant(context.Background(), connect.NewRequest(&tenantv1.RegisterTenantRequest{Name: "Acme"}))
-		if connect.CodeOf(err) != connect.CodeUnauthenticated {
-			t.Fatalf("RegisterTenant() error code = %v, want %v", connect.CodeOf(err), connect.CodeUnauthenticated)
+		_, err := client.RegisterTenant(context.Background(), connectrpc.NewRequest(&tenantv1.RegisterTenantRequest{Name: "Acme"}))
+		if connectrpc.CodeOf(err) != connectrpc.CodeUnauthenticated {
+			t.Fatalf("RegisterTenant() error code = %v, want %v", connectrpc.CodeOf(err), connectrpc.CodeUnauthenticated)
 		}
 	})
 
 	t.Run("authorizes request before skeleton returns unimplemented", func(t *testing.T) {
 		t.Parallel()
 
-		req := connect.NewRequest(&tenantv1.RegisterTenantRequest{Name: "Acme"})
+		req := connectrpc.NewRequest(&tenantv1.RegisterTenantRequest{Name: "Acme"})
 		req.Header().Set("Authorization", exampleTenantAuthorizationHeader())
 
 		_, err := client.RegisterTenant(context.Background(), req)
-		if connect.CodeOf(err) != connect.CodeUnimplemented {
-			t.Fatalf("RegisterTenant() error code = %v, want %v", connect.CodeOf(err), connect.CodeUnimplemented)
+		if connectrpc.CodeOf(err) != connectrpc.CodeUnimplemented {
+			t.Fatalf("RegisterTenant() error code = %v, want %v", connectrpc.CodeOf(err), connectrpc.CodeUnimplemented)
 		}
 	})
 }
