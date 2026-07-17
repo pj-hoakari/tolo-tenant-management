@@ -14,7 +14,7 @@ func TestNewEvent(t *testing.T) {
 		"tenant-id",
 		"tenant-public-id",
 		"Summer Festival",
-		"short_term",
+		EventTypeShortTerm,
 	)
 
 	if got, want := event.ID(), "event-id"; got != want {
@@ -37,12 +37,20 @@ func TestNewEvent(t *testing.T) {
 		t.Errorf("Name() = %q, want %q", got, want)
 	}
 
-	if got, want := event.Type(), "short_term"; got != want {
-		t.Errorf("Type() = %q, want %q", got, want)
+	if got, want := event.Type(), EventTypeShortTerm; got != want {
+		t.Errorf("Type() = %v, want %v", got, want)
+	}
+
+	if got, want := event.Type().String(), "short_term"; got != want {
+		t.Errorf("Type().String() = %q, want %q", got, want)
 	}
 
 	if got, want := event.Status(), EventStatusDraft; got != want {
 		t.Errorf("Status() = %q, want %q", got, want)
+	}
+
+	if got, want := event.Status().String(), "draft"; got != want {
+		t.Errorf("Status().String() = %q, want %q", got, want)
 	}
 }
 
@@ -51,8 +59,8 @@ func TestEventTransitionTo(t *testing.T) {
 
 	tests := []struct {
 		name string
-		from string
-		to   string
+		from EventStatus
+		to   EventStatus
 	}{
 		{name: "opens a draft event", from: EventStatusDraft, to: EventStatusOpen},
 		{name: "locks an open event", from: EventStatusOpen, to: EventStatusLocked},
@@ -88,14 +96,14 @@ func TestEventTransitionToRejectsInvalidTransitions(t *testing.T) {
 
 	tests := []struct {
 		name string
-		from string
-		to   string
+		from EventStatus
+		to   EventStatus
 	}{
 		{name: "cannot lock a draft event", from: EventStatusDraft, to: EventStatusLocked},
 		{name: "cannot close an open event", from: EventStatusOpen, to: EventStatusClosed},
 		{name: "cannot reopen an archived event directly", from: EventStatusArchived, to: EventStatusOpen},
-		{name: "cannot transition to an unspecified status", from: EventStatusDraft, to: ""},
-		{name: "cannot transition from an unknown status", from: "unknown", to: EventStatusOpen},
+		{name: "cannot transition to an unspecified status", from: EventStatusDraft, to: EventStatusUnspecified},
+		{name: "cannot transition from an unknown status", from: EventStatus(99), to: EventStatusOpen},
 	}
 
 	for _, tt := range tests {

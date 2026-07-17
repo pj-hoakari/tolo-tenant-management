@@ -13,9 +13,9 @@ func TestEventStatusConversions(t *testing.T) {
 	tests := []struct {
 		name   string
 		status tenantv1.EventStatus
-		want   string
+		want   domain.EventStatus
 	}{
-		{name: "unspecified", status: tenantv1.EventStatus_EVENT_STATUS_UNSPECIFIED, want: ""},
+		{name: "unspecified", status: tenantv1.EventStatus_EVENT_STATUS_UNSPECIFIED, want: domain.EventStatusUnspecified},
 		{name: "draft", status: tenantv1.EventStatus_EVENT_STATUS_DRAFT, want: domain.EventStatusDraft},
 		{name: "open", status: tenantv1.EventStatus_EVENT_STATUS_OPEN, want: domain.EventStatusOpen},
 		{name: "locked", status: tenantv1.EventStatus_EVENT_STATUS_LOCKED, want: domain.EventStatusLocked},
@@ -25,8 +25,8 @@ func TestEventStatusConversions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := eventStatusString(tt.status); got != tt.want {
-				t.Errorf("eventStatusString(%v) = %q, want %q", tt.status, got, tt.want)
+			if got := eventStatusDomain(tt.status); got != tt.want {
+				t.Errorf("eventStatusDomain(%v) = %v, want %v", tt.status, got, tt.want)
 			}
 
 			if got := eventStatusProto(tt.want); got != tt.status {
@@ -45,7 +45,7 @@ func TestEventProto(t *testing.T) {
 		"tenant-id",
 		"tenant-public-id",
 		"Festival",
-		"short_term",
+		domain.EventTypeShortTerm,
 	)
 
 	openEvent, err := event.TransitionTo(domain.EventStatusOpen)

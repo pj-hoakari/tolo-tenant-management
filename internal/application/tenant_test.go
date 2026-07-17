@@ -94,7 +94,7 @@ func TestCreateEvent(t *testing.T) {
 	event, err := service.CreateEvent(context.Background(), application.CreateEventInput{
 		TenantID: tenant.PublicID(),
 		Name:     "Festival",
-		Type:     "short_term",
+		Type:     domain.EventTypeShortTerm,
 	})
 	if err != nil {
 		t.Fatalf("CreateEvent() error = %v", err)
@@ -120,7 +120,7 @@ func TestCreateEvent(t *testing.T) {
 func TestTransitionEventStatus(t *testing.T) {
 	t.Parallel()
 
-	event := domain.NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", "short_term")
+	event := domain.NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", domain.EventTypeShortTerm)
 	ctrl := gomock.NewController(t)
 	repo := NewMockTenantRepository(ctrl)
 	repo.EXPECT().FindEventByID(gomock.Any(), event.ID()).Return(event, nil)

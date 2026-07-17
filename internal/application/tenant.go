@@ -30,13 +30,13 @@ type RegisterTenantInput struct {
 type CreateEventInput struct {
 	TenantID string
 	Name     string
-	Type     string
+	Type     domain.EventType
 }
 
 // TransitionEventStatusInput contains the requested event status change.
 type TransitionEventStatusInput struct {
 	EventID string
-	To      string
+	To      domain.EventStatus
 }
 
 // RegisterTenantUseCase registers a tenant.
@@ -154,7 +154,7 @@ func (s *TenantService) TransitionEventStatus(ctx context.Context, input Transit
 		return domain.Event{}, ErrEventIDRequired
 	}
 
-	if input.To == "" {
+	if input.To == domain.EventStatusUnspecified {
 		return domain.Event{}, ErrEventStatusRequired
 	}
 
