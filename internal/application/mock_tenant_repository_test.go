@@ -98,6 +98,21 @@ func (mr *MockTenantRepositoryMockRecorder) FindEventByID(arg0, arg1 any) *gomoc
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindEventByID", reflect.TypeOf((*MockTenantRepository)(nil).FindEventByID), arg0, arg1)
 }
 
+// FindTenantByID mocks base method.
+func (m *MockTenantRepository) FindTenantByID(arg0 context.Context, arg1 string) (domain.Tenant, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FindTenantByID", arg0, arg1)
+	ret0, _ := ret[0].(domain.Tenant)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// FindTenantByID indicates an expected call of FindTenantByID.
+func (mr *MockTenantRepositoryMockRecorder) FindTenantByID(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindTenantByID", reflect.TypeOf((*MockTenantRepository)(nil).FindTenantByID), arg0, arg1)
+}
+
 // FindTenantByPublicID mocks base method.
 func (m *MockTenantRepository) FindTenantByPublicID(arg0 context.Context, arg1 string) (domain.Tenant, error) {
 	m.ctrl.T.Helper()
@@ -111,6 +126,21 @@ func (m *MockTenantRepository) FindTenantByPublicID(arg0 context.Context, arg1 s
 func (mr *MockTenantRepositoryMockRecorder) FindTenantByPublicID(arg0, arg1 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindTenantByPublicID", reflect.TypeOf((*MockTenantRepository)(nil).FindTenantByPublicID), arg0, arg1)
+}
+
+// ListEventsByTenantID mocks base method.
+func (m *MockTenantRepository) ListEventsByTenantID(arg0 context.Context, arg1 string) ([]domain.Event, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListEventsByTenantID", arg0, arg1)
+	ret0, _ := ret[0].([]domain.Event)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListEventsByTenantID indicates an expected call of ListEventsByTenantID.
+func (mr *MockTenantRepositoryMockRecorder) ListEventsByTenantID(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListEventsByTenantID", reflect.TypeOf((*MockTenantRepository)(nil).ListEventsByTenantID), arg0, arg1)
 }
 
 // UpdateEvent mocks base method.

@@ -21,8 +21,10 @@ var (
 type TenantRepository interface {
 	CreateTenant(context.Context, domain.Tenant) error
 	DeleteTenant(context.Context, string) error
+	FindTenantByID(context.Context, string) (domain.Tenant, error)
 	FindTenantByPublicID(context.Context, string) (domain.Tenant, error)
 	CreateEvent(context.Context, domain.Event) error
 	FindEventByID(context.Context, string) (domain.Event, error)
+	ListEventsByTenantID(context.Context, string) ([]domain.Event, error)
 	UpdateEvent(context.Context, domain.Event) error
 }
