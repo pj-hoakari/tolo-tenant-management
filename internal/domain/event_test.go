@@ -91,6 +91,21 @@ func TestEventTransitionTo(t *testing.T) {
 	}
 }
 
+func TestEventAssignType(t *testing.T) {
+	t.Parallel()
+
+	event := NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", EventTypeShortTerm)
+	updatedEvent := event.AssignType(EventTypeLongTerm)
+
+	if got, want := updatedEvent.Type(), EventTypeLongTerm; got != want {
+		t.Errorf("updated event type = %v, want %v", got, want)
+	}
+
+	if got, want := event.Type(), EventTypeShortTerm; got != want {
+		t.Errorf("original event type = %v, want %v", got, want)
+	}
+}
+
 func TestEventTransitionToRejectsInvalidTransitions(t *testing.T) {
 	t.Parallel()
 

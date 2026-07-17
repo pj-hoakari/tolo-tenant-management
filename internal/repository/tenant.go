@@ -14,6 +14,7 @@ var (
 	ErrTenantArchived          = errors.New("tenant is archived")
 	ErrTenantPublicIDExists    = errors.New("tenant public ID already exists")
 	ErrEventNotFound           = errors.New("event not found")
+	ErrEventArchived           = errors.New("event is archived")
 	ErrEventPublicIDExists     = errors.New("event public ID already exists")
 )
 
