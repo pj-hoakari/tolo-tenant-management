@@ -44,11 +44,9 @@ func (s *relationTransportSpy) call() (string, application.AddTenantMemberInput)
 }
 
 func TestTenantServiceAuthorizationAndSkeleton(t *testing.T) {
-	t.Parallel()
-
 	relationTransport := &relationTransportSpy{}
 	registerTenant := application.NewTenantService(
-		infra.NewInMemoryTenantRepository(),
+		newIntegrationTenantRepository(t),
 		infra.NewRelationServiceWithTransport(relationTransport),
 	)
 	httpServer := httptest.NewServer(newTestHandler(t, registerTenant))
@@ -56,8 +54,6 @@ func TestTenantServiceAuthorizationAndSkeleton(t *testing.T) {
 	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
 
 	t.Run("rejects missing bearer token", func(t *testing.T) {
-		t.Parallel()
-
 		_, err := client.RegisterTenant(context.Background(), connectrpc.NewRequest(&tenantv1.RegisterTenantRequest{Name: "Acme"}))
 		if connectrpc.CodeOf(err) != connectrpc.CodeUnauthenticated {
 			t.Fatalf("RegisterTenant() error code = %v, want %v", connectrpc.CodeOf(err), connectrpc.CodeUnauthenticated)
@@ -65,8 +61,6 @@ func TestTenantServiceAuthorizationAndSkeleton(t *testing.T) {
 	})
 
 	t.Run("registers tenant in the repository", func(t *testing.T) {
-		t.Parallel()
-
 		req := connectrpc.NewRequest(&tenantv1.RegisterTenantRequest{Name: "Acme", ContractPlan: "standard"})
 		req.Header().Set("Authorization", internalJWTs(t).registration)
 
@@ -114,8 +108,6 @@ func TestTenantServiceAuthorizationAndSkeleton(t *testing.T) {
 	})
 
 	t.Run("rejects missing required fields", func(t *testing.T) {
-		t.Parallel()
-
 		req := connectrpc.NewRequest(&tenantv1.RegisterTenantRequest{ContractPlan: "standard"})
 		req.Header().Set("Authorization", internalJWTs(t).registration)
 
@@ -127,7 +119,7 @@ func TestTenantServiceAuthorizationAndSkeleton(t *testing.T) {
 }
 
 func TestRegisterTenantRejectsDuplicateName(t *testing.T) {
-	tenantRepository := infra.NewInMemoryTenantRepository()
+	tenantRepository := newIntegrationTenantRepository(t)
 	registerTenant := application.NewTenantService(tenantRepository, infra.NewRelationService())
 	httpServer := httptest.NewServer(newTestHandler(t, registerTenant))
 	t.Cleanup(httpServer.Close)
@@ -153,7 +145,7 @@ func TestRegisterTenantRejectsDuplicateName(t *testing.T) {
 }
 
 func TestCreateEvent(t *testing.T) {
-	tenantRepository := infra.NewInMemoryTenantRepository()
+	tenantRepository := newIntegrationTenantRepository(t)
 	tenantService := application.NewTenantService(tenantRepository, infra.NewRelationService())
 	httpServer := httptest.NewServer(newTestHandler(t, tenantService))
 	t.Cleanup(httpServer.Close)
@@ -213,7 +205,7 @@ func TestCreateEvent(t *testing.T) {
 }
 
 func TestCreateEventRejectsUnknownTenant(t *testing.T) {
-	tenantService := application.NewTenantService(infra.NewInMemoryTenantRepository(), infra.NewRelationService())
+	tenantService := application.NewTenantService(newIntegrationTenantRepository(t), infra.NewRelationService())
 	httpServer := httptest.NewServer(newTestHandler(t, tenantService))
 	t.Cleanup(httpServer.Close)
 	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
@@ -231,7 +223,7 @@ func TestCreateEventRejectsUnknownTenant(t *testing.T) {
 }
 
 func TestTransitionEventStatus(t *testing.T) {
-	tenantService := application.NewTenantService(infra.NewInMemoryTenantRepository(), infra.NewRelationService())
+	tenantService := application.NewTenantService(newIntegrationTenantRepository(t), infra.NewRelationService())
 	httpServer := httptest.NewServer(newTestHandler(t, tenantService))
 	t.Cleanup(httpServer.Close)
 	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
@@ -303,7 +295,7 @@ func TestTransitionEventStatus(t *testing.T) {
 }
 
 func TestTransitionEventStatusRejectsInvalidRequest(t *testing.T) {
-	tenantService := application.NewTenantService(infra.NewInMemoryTenantRepository(), infra.NewRelationService())
+	tenantService := application.NewTenantService(newIntegrationTenantRepository(t), infra.NewRelationService())
 	httpServer := httptest.NewServer(newTestHandler(t, tenantService))
 	t.Cleanup(httpServer.Close)
 	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
