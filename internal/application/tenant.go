@@ -15,6 +15,8 @@ var (
 	ErrTenantContractPlanRequired = errors.New("tenant contract plan is required")
 	ErrEventTenantIDRequired      = errors.New("event tenant ID is required")
 	ErrEventNameRequired          = errors.New("event name is required")
+	ErrEventIDRequired            = errors.New("event ID is required")
+	ErrEventStatusRequired        = errors.New("event status is required")
 )
 
 // RegisterTenantInput contains the values accepted by the RegisterTenant use
@@ -31,6 +33,12 @@ type CreateEventInput struct {
 	Type     string
 }
 
+// TransitionEventStatusInput contains the requested event status change.
+type TransitionEventStatusInput struct {
+	EventID string
+	To      string
+}
+
 // RegisterTenantUseCase registers a tenant.
 type RegisterTenantUseCase interface {
 	RegisterTenant(context.Context, RegisterTenantInput) (domain.Tenant, error)
@@ -41,11 +49,17 @@ type CreateEventUseCase interface {
 	CreateEvent(context.Context, CreateEventInput) (domain.Event, error)
 }
 
+// TransitionEventStatusUseCase changes an event's lifecycle status.
+type TransitionEventStatusUseCase interface {
+	TransitionEventStatus(context.Context, TransitionEventStatusInput) (domain.Event, error)
+}
+
 // TenantUseCases groups the tenant operations exposed by the Connect
 // transport.
 type TenantUseCases interface {
 	RegisterTenantUseCase
 	CreateEventUseCase
+	TransitionEventStatusUseCase
 }
 
 // TenantService implements tenant use cases.
@@ -133,4 +147,30 @@ func (s *TenantService) CreateEvent(ctx context.Context, input CreateEventInput)
 	}
 
 	return event, nil
+}
+
+func (s *TenantService) TransitionEventStatus(ctx context.Context, input TransitionEventStatusInput) (domain.Event, error) {
+	if input.EventID == "" {
+		return domain.Event{}, ErrEventIDRequired
+	}
+
+	if input.To == "" {
+		return domain.Event{}, ErrEventStatusRequired
+	}
+
+	event, err := s.tenantRepository.FindEventByID(ctx, input.EventID)
+	if err != nil {
+		return domain.Event{}, err
+	}
+
+	updatedEvent, err := event.TransitionTo(input.To)
+	if err != nil {
+		return domain.Event{}, err
+	}
+
+	if err := s.tenantRepository.UpdateEvent(ctx, updatedEvent); err != nil {
+		return domain.Event{}, err
+	}
+
+	return updatedEvent, nil
 }

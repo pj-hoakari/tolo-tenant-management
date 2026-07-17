@@ -9,6 +9,7 @@ import (
 	tenantv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1"
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1/tenantv1connect"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/repository"
 )
 
@@ -140,12 +141,66 @@ func eventStatusProto(eventStatus string) tenantv1.EventStatus {
 	}
 }
 
+func eventStatusString(eventStatus tenantv1.EventStatus) string {
+	switch eventStatus {
+	case tenantv1.EventStatus_EVENT_STATUS_UNSPECIFIED:
+		return ""
+	case tenantv1.EventStatus_EVENT_STATUS_DRAFT:
+		return "draft"
+	case tenantv1.EventStatus_EVENT_STATUS_OPEN:
+		return "open"
+	case tenantv1.EventStatus_EVENT_STATUS_LOCKED:
+		return "locked"
+	case tenantv1.EventStatus_EVENT_STATUS_CLOSED:
+		return "closed"
+	case tenantv1.EventStatus_EVENT_STATUS_ARCHIVED:
+		return "archived"
+	default:
+		return ""
+	}
+}
+
 func (s *Service) AssignEventType(context.Context, *connectrpc.Request[tenantv1.AssignEventTypeRequest]) (*connectrpc.Response[tenantv1.AssignEventTypeResponse], error) {
 	return nil, connectrpc.NewError(connectrpc.CodeUnimplemented, errNotImplemented)
 }
 
-func (s *Service) TransitionEventStatus(context.Context, *connectrpc.Request[tenantv1.TransitionEventStatusRequest]) (*connectrpc.Response[tenantv1.TransitionEventStatusResponse], error) {
-	return nil, connectrpc.NewError(connectrpc.CodeUnimplemented, errNotImplemented)
+func (s *Service) TransitionEventStatus(ctx context.Context, req *connectrpc.Request[tenantv1.TransitionEventStatusRequest]) (*connectrpc.Response[tenantv1.TransitionEventStatusResponse], error) {
+	event, err := s.tenantService.TransitionEventStatus(ctx, application.TransitionEventStatusInput{
+		EventID: req.Msg.GetEventId(),
+		To:      eventStatusString(req.Msg.GetTo()),
+	})
+	if err != nil {
+		if errors.Is(err, application.ErrEventIDRequired) || errors.Is(err, application.ErrEventStatusRequired) {
+			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
+		}
+
+		if errors.Is(err, repository.ErrEventNotFound) {
+			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
+		}
+
+		if errors.Is(err, domain.ErrInvalidEventStatusTransition) || errors.Is(err, repository.ErrTenantArchived) {
+			return nil, connectrpc.NewError(connectrpc.CodeFailedPrecondition, err)
+		}
+
+		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
+	}
+
+	return connectrpc.NewResponse(&tenantv1.TransitionEventStatusResponse{
+		Event: eventProto(event),
+	}), nil
+}
+
+func eventProto(event domain.Event) *tenantv1.Event {
+	return &tenantv1.Event{
+		EventId:             event.ID(),
+		TenantId:            event.TenantID(),
+		Name:                event.Name(),
+		Type:                eventTypeProto(event.Type()),
+		Status:              eventStatusProto(event.Status()),
+		ObservationSettings: nil,
+		EventPublicId:       event.PublicID(),
+		TenantPublicId:      event.TenantPublicID(),
+	}
 }
 
 func (s *Service) GetEvent(context.Context, *connectrpc.Request[tenantv1.GetEventRequest]) (*connectrpc.Response[tenantv1.GetEventResponse], error) {

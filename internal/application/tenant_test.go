@@ -36,6 +36,14 @@ func (s *tenantRepositoryStub) CreateEvent(context.Context, domain.Event) error 
 	return nil
 }
 
+func (s *tenantRepositoryStub) FindEventByID(context.Context, string) (domain.Event, error) {
+	return domain.Event{}, nil
+}
+
+func (s *tenantRepositoryStub) UpdateEvent(context.Context, domain.Event) error {
+	return nil
+}
+
 type failingMembershipService struct{}
 
 func (failingMembershipService) AddTenantMember(context.Context, application.AddTenantMemberInput) error {

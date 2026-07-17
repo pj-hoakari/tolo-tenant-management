@@ -105,3 +105,37 @@ func (r *InMemoryTenantRepository) CreateEvent(_ context.Context, event domain.E
 
 	return nil
 }
+
+func (r *InMemoryTenantRepository) FindEventByID(_ context.Context, eventID string) (domain.Event, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	event, ok := r.events[eventID]
+	if !ok {
+		return domain.Event{}, repository.ErrEventNotFound
+	}
+
+	return event, nil
+}
+
+func (r *InMemoryTenantRepository) UpdateEvent(_ context.Context, event domain.Event) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, ok := r.events[event.ID()]; !ok {
+		return repository.ErrEventNotFound
+	}
+
+	tenant, ok := r.tenants[event.TenantID()]
+	if !ok {
+		return repository.ErrTenantNotFound
+	}
+
+	if tenant.Archived() {
+		return repository.ErrTenantArchived
+	}
+
+	r.events[event.ID()] = event
+
+	return nil
+}
