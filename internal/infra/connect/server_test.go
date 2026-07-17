@@ -51,7 +51,7 @@ func TestTenantServiceAuthorizationAndSkeleton(t *testing.T) {
 		infra.NewInMemoryTenantRepository(),
 		infra.NewRelationServiceWithTransport(relationTransport),
 	)
-	httpServer := httptest.NewServer(NewHandler(registerTenant))
+	httpServer := httptest.NewServer(newTestHandler(t, registerTenant))
 	t.Cleanup(httpServer.Close)
 	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
 
@@ -68,7 +68,7 @@ func TestTenantServiceAuthorizationAndSkeleton(t *testing.T) {
 		t.Parallel()
 
 		req := connectrpc.NewRequest(&tenantv1.RegisterTenantRequest{Name: "Acme", ContractPlan: "standard"})
-		req.Header().Set("Authorization", exampleTenantAuthorizationHeader())
+		req.Header().Set("Authorization", internalJWTs(t).registration)
 
 		res, err := client.RegisterTenant(context.Background(), req)
 		if err != nil {
@@ -96,7 +96,7 @@ func TestTenantServiceAuthorizationAndSkeleton(t *testing.T) {
 		}
 
 		authorization, input := relationTransport.call()
-		if got, want := authorization, exampleTenantAuthorizationHeader(); got != want {
+		if got, want := authorization, internalJWTs(t).registration; got != want {
 			t.Errorf("Relation authorization = %q, want %q", got, want)
 		}
 
@@ -117,7 +117,7 @@ func TestTenantServiceAuthorizationAndSkeleton(t *testing.T) {
 		t.Parallel()
 
 		req := connectrpc.NewRequest(&tenantv1.RegisterTenantRequest{ContractPlan: "standard"})
-		req.Header().Set("Authorization", exampleTenantAuthorizationHeader())
+		req.Header().Set("Authorization", internalJWTs(t).registration)
 
 		_, err := client.RegisterTenant(context.Background(), req)
 		if connectrpc.CodeOf(err) != connectrpc.CodeInvalidArgument {
@@ -129,7 +129,7 @@ func TestTenantServiceAuthorizationAndSkeleton(t *testing.T) {
 func TestRegisterTenantRejectsDuplicateName(t *testing.T) {
 	tenantRepository := infra.NewInMemoryTenantRepository()
 	registerTenant := application.NewTenantService(tenantRepository, infra.NewRelationService())
-	httpServer := httptest.NewServer(NewHandler(registerTenant))
+	httpServer := httptest.NewServer(newTestHandler(t, registerTenant))
 	t.Cleanup(httpServer.Close)
 	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
 
@@ -137,7 +137,7 @@ func TestRegisterTenantRejectsDuplicateName(t *testing.T) {
 		t.Helper()
 
 		req := connectrpc.NewRequest(&tenantv1.RegisterTenantRequest{Name: "Acme", ContractPlan: "standard"})
-		req.Header().Set("Authorization", exampleTenantAuthorizationHeader())
+		req.Header().Set("Authorization", internalJWTs(t).registration)
 		_, err := client.RegisterTenant(context.Background(), req)
 
 		return err
@@ -155,7 +155,7 @@ func TestRegisterTenantRejectsDuplicateName(t *testing.T) {
 func TestCreateEvent(t *testing.T) {
 	tenantRepository := infra.NewInMemoryTenantRepository()
 	tenantService := application.NewTenantService(tenantRepository, infra.NewRelationService())
-	httpServer := httptest.NewServer(NewHandler(tenantService))
+	httpServer := httptest.NewServer(newTestHandler(t, tenantService))
 	t.Cleanup(httpServer.Close)
 	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
 
@@ -163,7 +163,7 @@ func TestCreateEvent(t *testing.T) {
 		Name:         "Event Host",
 		ContractPlan: "standard",
 	})
-	registerRequest.Header().Set("Authorization", exampleTenantAuthorizationHeader())
+	registerRequest.Header().Set("Authorization", internalJWTs(t).registration)
 
 	registeredTenant, err := client.RegisterTenant(context.Background(), registerRequest)
 	if err != nil {
@@ -175,7 +175,7 @@ func TestCreateEvent(t *testing.T) {
 		Name:           "Summer Festival",
 		Type:           tenantv1.EventType_EVENT_TYPE_SHORT_TERM,
 	})
-	createRequest.Header().Set("Authorization", exampleTenantAuthorizationHeader())
+	createRequest.Header().Set("Authorization", internalJWTs(t).tenantAccess)
 
 	eventResponse, err := client.CreateEvent(context.Background(), createRequest)
 	if err != nil {
@@ -214,7 +214,7 @@ func TestCreateEvent(t *testing.T) {
 
 func TestCreateEventRejectsUnknownTenant(t *testing.T) {
 	tenantService := application.NewTenantService(infra.NewInMemoryTenantRepository(), infra.NewRelationService())
-	httpServer := httptest.NewServer(NewHandler(tenantService))
+	httpServer := httptest.NewServer(newTestHandler(t, tenantService))
 	t.Cleanup(httpServer.Close)
 	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
 
@@ -222,7 +222,7 @@ func TestCreateEventRejectsUnknownTenant(t *testing.T) {
 		TenantPublicId: "0000000000000000",
 		Name:           "Summer Festival",
 	})
-	req.Header().Set("Authorization", exampleTenantAuthorizationHeader())
+	req.Header().Set("Authorization", internalJWTs(t).tenantAccess)
 
 	_, err := client.CreateEvent(context.Background(), req)
 	if connectrpc.CodeOf(err) != connectrpc.CodeNotFound {
@@ -232,7 +232,7 @@ func TestCreateEventRejectsUnknownTenant(t *testing.T) {
 
 func TestTransitionEventStatus(t *testing.T) {
 	tenantService := application.NewTenantService(infra.NewInMemoryTenantRepository(), infra.NewRelationService())
-	httpServer := httptest.NewServer(NewHandler(tenantService))
+	httpServer := httptest.NewServer(newTestHandler(t, tenantService))
 	t.Cleanup(httpServer.Close)
 	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
 
@@ -240,7 +240,7 @@ func TestTransitionEventStatus(t *testing.T) {
 		Name:         "Status Host",
 		ContractPlan: "standard",
 	})
-	registerRequest.Header().Set("Authorization", exampleTenantAuthorizationHeader())
+	registerRequest.Header().Set("Authorization", internalJWTs(t).registration)
 
 	tenantResponse, err := client.RegisterTenant(context.Background(), registerRequest)
 	if err != nil {
@@ -251,7 +251,7 @@ func TestTransitionEventStatus(t *testing.T) {
 		TenantPublicId: tenantResponse.Msg.GetTenant().GetTenantPublicId(),
 		Name:           "Status Event",
 	})
-	createRequest.Header().Set("Authorization", exampleTenantAuthorizationHeader())
+	createRequest.Header().Set("Authorization", internalJWTs(t).tenantAccess)
 
 	eventResponse, err := client.CreateEvent(context.Background(), createRequest)
 	if err != nil {
@@ -264,7 +264,7 @@ func TestTransitionEventStatus(t *testing.T) {
 		t.Helper()
 
 		req := connectrpc.NewRequest(&tenantv1.TransitionEventStatusRequest{EventId: eventID, To: to})
-		req.Header().Set("Authorization", exampleTenantAuthorizationHeader())
+		req.Header().Set("Authorization", internalJWTs(t).tenantAccess)
 
 		response, err := client.TransitionEventStatus(context.Background(), req)
 		if err != nil {
@@ -304,12 +304,12 @@ func TestTransitionEventStatus(t *testing.T) {
 
 func TestTransitionEventStatusRejectsInvalidRequest(t *testing.T) {
 	tenantService := application.NewTenantService(infra.NewInMemoryTenantRepository(), infra.NewRelationService())
-	httpServer := httptest.NewServer(NewHandler(tenantService))
+	httpServer := httptest.NewServer(newTestHandler(t, tenantService))
 	t.Cleanup(httpServer.Close)
 	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
 
 	req := connectrpc.NewRequest(&tenantv1.TransitionEventStatusRequest{})
-	req.Header().Set("Authorization", exampleTenantAuthorizationHeader())
+	req.Header().Set("Authorization", internalJWTs(t).tenantAccess)
 
 	_, err := client.TransitionEventStatus(context.Background(), req)
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodeInvalidArgument; got != want {
@@ -320,7 +320,7 @@ func TestTransitionEventStatusRejectsInvalidRequest(t *testing.T) {
 		EventId: "0197f1ce-cad0-7f00-8000-000000000000",
 		To:      tenantv1.EventStatus_EVENT_STATUS_OPEN,
 	})
-	req.Header().Set("Authorization", exampleTenantAuthorizationHeader())
+	req.Header().Set("Authorization", internalJWTs(t).tenantAccess)
 
 	_, err = client.TransitionEventStatus(context.Background(), req)
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodeNotFound; got != want {
