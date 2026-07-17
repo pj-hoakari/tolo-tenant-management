@@ -1,0 +1,47 @@
+services:
+    postgres:
+        image: postgres:17-alpine
+        environment:
+            POSTGRES_USER: tenant_management
+            POSTGRES_PASSWORD: tenant_management
+            POSTGRES_DB: tenant_management
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U tenant_management -d tenant_management"]
+            interval: 5s
+            timeout: 5s
+            retries: 10
+        ports:
+            - "5432:5432"
+        volumes:
+            - postgres-data:/var/lib/postgresql/data
+
+    migrate:
+        image: migrate/migrate:v4.19.1
+        command:
+            [
+                "-path",
+                "/migrations",
+                "-database",
+                "postgres://tenant_management:tenant_management@postgres:5432/tenant_management?sslmode=disable",
+                "up",
+            ]
+        depends_on:
+            postgres:
+                condition: service_healthy
+        volumes:
+            - ./migrations:/migrations:ro
+
+    server:
+        build:
+            context: .
+        environment:
+            DATABASE_URL: postgres://tenant_management:tenant_management@postgres:5432/tenant_management?sslmode=disable
+            SERVER_ADDR: :8080
+        depends_on:
+            migrate:
+                condition: service_completed_successfully
+        ports:
+            - "8080:8080"
+
+volumes:
+    postgres-data:

@@ -5,7 +5,7 @@ import "testing"
 func TestNewTenant(t *testing.T) {
 	t.Parallel()
 
-	tenant := NewTenant("tenant-id", "tenant-public-id", "Acme", "standard")
+	tenant := NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", false)
 
 	if got, want := tenant.ID(), "tenant-id"; got != want {
 		t.Errorf("ID() = %q, want %q", got, want)

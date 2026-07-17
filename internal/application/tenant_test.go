@@ -78,7 +78,7 @@ func TestRegisterTenantValidatesInput(t *testing.T) {
 func TestCreateEvent(t *testing.T) {
 	t.Parallel()
 
-	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard")
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", false)
 	ctrl := gomock.NewController(t)
 	repo := NewMockTenantRepository(ctrl)
 	repo.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(tenant, nil)
@@ -121,7 +121,7 @@ func TestCreateEvent(t *testing.T) {
 func TestTransitionEventStatus(t *testing.T) {
 	t.Parallel()
 
-	event := domain.NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", domain.EventTypeShortTerm)
+	event := domain.NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", domain.EventTypeShortTerm, domain.EventStatusDraft)
 	ctrl := gomock.NewController(t)
 	repo := NewMockTenantRepository(ctrl)
 	repo.EXPECT().FindEventByID(gomock.Any(), event.ID()).Return(event, nil)
@@ -155,7 +155,7 @@ func TestTransitionEventStatus(t *testing.T) {
 func TestAssignEventType(t *testing.T) {
 	t.Parallel()
 
-	event := domain.NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", domain.EventTypeShortTerm)
+	event := domain.NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", domain.EventTypeShortTerm, domain.EventStatusDraft)
 	ctrl := gomock.NewController(t)
 	repository := NewMockTenantRepository(ctrl)
 	repository.EXPECT().FindEventByID(gomock.Any(), event.ID()).Return(event, nil)
@@ -189,7 +189,7 @@ func TestAssignEventType(t *testing.T) {
 func TestGetEvent(t *testing.T) {
 	t.Parallel()
 
-	event := domain.NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", domain.EventTypeShortTerm)
+	event := domain.NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", domain.EventTypeShortTerm, domain.EventStatusDraft)
 	ctrl := gomock.NewController(t)
 	repository := NewMockTenantRepository(ctrl)
 	repository.EXPECT().FindEventByID(gomock.Any(), event.ID()).Return(event, nil)
@@ -208,10 +208,10 @@ func TestGetEvent(t *testing.T) {
 func TestListEvents(t *testing.T) {
 	t.Parallel()
 
-	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard")
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", false)
 	events := []domain.Event{
-		domain.NewEvent("event-1", "event-public-id-1", tenant.ID(), tenant.PublicID(), "Festival 1", domain.EventTypeShortTerm),
-		domain.NewEvent("event-2", "event-public-id-2", tenant.ID(), tenant.PublicID(), "Festival 2", domain.EventTypeLongTerm),
+		domain.NewEvent("event-1", "event-public-id-1", tenant.ID(), tenant.PublicID(), "Festival 1", domain.EventTypeShortTerm, domain.EventStatusDraft),
+		domain.NewEvent("event-2", "event-public-id-2", tenant.ID(), tenant.PublicID(), "Festival 2", domain.EventTypeLongTerm, domain.EventStatusDraft),
 	}
 	ctrl := gomock.NewController(t)
 	repository := NewMockTenantRepository(ctrl)

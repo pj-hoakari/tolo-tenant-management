@@ -1,6 +1,9 @@
 package domain
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 //go:generate go tool stringer -type=EventType,EventStatus -trimprefix=Event -linecomment -output=event_enum_string.go
 
@@ -24,8 +27,30 @@ var ErrInvalidEventStatusTransition = errors.New("invalid event status transitio
 // EventType distinguishes short-lived events from long-lived installations.
 type EventType uint8
 
+// ParseEventType maps a string representation (as produced by String) back to an EventType.
+func ParseEventType(s string) (EventType, error) {
+	for t := EventTypeUnspecified; t <= EventTypeLongTerm; t++ {
+		if t.String() == s {
+			return t, nil
+		}
+	}
+
+	return EventTypeUnspecified, fmt.Errorf("invalid event type %q", s)
+}
+
 // EventStatus is the lifecycle state of an event.
 type EventStatus uint8
+
+// ParseEventStatus maps a string representation (as produced by String) back to an EventStatus.
+func ParseEventStatus(s string) (EventStatus, error) {
+	for st := EventStatusUnspecified; st <= EventStatusArchived; st++ {
+		if st.String() == s {
+			return st, nil
+		}
+	}
+
+	return EventStatusUnspecified, fmt.Errorf("invalid event status %q", s)
+}
 
 // Event is an immutable event model.
 type Event struct {
@@ -38,7 +63,7 @@ type Event struct {
 	status         EventStatus
 }
 
-func NewEvent(id, publicID, tenantID, tenantPublicID, name string, eventType EventType) Event {
+func NewEvent(id, publicID, tenantID, tenantPublicID, name string, eventType EventType, status EventStatus) Event {
 	return Event{
 		id:             id,
 		publicID:       publicID,
@@ -46,7 +71,7 @@ func NewEvent(id, publicID, tenantID, tenantPublicID, name string, eventType Eve
 		tenantPublicID: tenantPublicID,
 		name:           name,
 		eventType:      eventType,
-		status:         EventStatusDraft,
+		status:         status,
 	}
 }
 

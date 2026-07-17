@@ -10,13 +10,13 @@ type Tenant struct {
 	archived     bool
 }
 
-func NewTenant(id, publicID, name, contractPlan string) Tenant {
+func NewTenant(id, publicID, name, contractPlan string, archived bool) Tenant {
 	return Tenant{
 		id:           id,
 		publicID:     publicID,
 		name:         name,
 		contractPlan: contractPlan,
-		archived:     false,
+		archived:     archived,
 	}
 }
 
