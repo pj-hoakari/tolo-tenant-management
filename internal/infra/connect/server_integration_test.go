@@ -128,7 +128,11 @@ func setupIntegrationDatabase() {
 		postgres.WithUsername("tenant_management"),
 		postgres.WithPassword("tenant_management"),
 		postgres.WithInitScripts(integrationMigrationPath()),
-		testcontainers.WithWaitStrategy(wait.ForListeningPort("5432/tcp")),
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("database system is ready to accept connections").
+				WithOccurrence(2).
+				WithStartupTimeout(2*time.Minute),
+		),
 	)
 	if integrationSetupErr != nil {
 		return
