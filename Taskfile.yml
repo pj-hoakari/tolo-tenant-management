@@ -2,6 +2,11 @@
 
 version: "3"
 
+vars:
+    # compose.yml の postgres サービスを指す既定接続先。
+    # 環境変数 DATABASE_URL を設定すると各 migrate タスクで上書きできる。
+    DEFAULT_DATABASE_URL: postgres://tenant_management:tenant_management@localhost:5432/tenant_management?sslmode=disable
+
 tasks:
     proto:
         desc: Lint proto and regenerate connect-go code for development.
@@ -47,3 +52,51 @@ tasks:
             - clients/connect-es/package.json
         generates:
             - "clients/connect-es/gen/**/*"
+
+    migrate:create:
+        desc: |
+            Create a new empty migration pair (up/down) with a sequential version.
+            Usage: task migrate:create -- <migration_name>
+        cmds:
+            - migrate create -ext sql -dir migrations -seq {{.CLI_ARGS}}
+
+    migrate:up:
+        desc: |
+            Apply all pending migrations. Override the target DB with DATABASE_URL.
+            Usage: [DATABASE_URL=...] task migrate:up -- [N]
+        vars:
+            DATABASE_URL:
+                sh: 'echo "${DATABASE_URL:-{{.DEFAULT_DATABASE_URL}}}"'
+        cmds:
+            - migrate -path migrations -database "{{.DATABASE_URL}}" up {{.CLI_ARGS}}
+
+    migrate:down:
+        desc: |
+            Roll back migrations (default 1 step). Override the target DB with DATABASE_URL.
+            Usage: [DATABASE_URL=...] task migrate:down -- [N]
+        vars:
+            DATABASE_URL:
+                sh: 'echo "${DATABASE_URL:-{{.DEFAULT_DATABASE_URL}}}"'
+            STEPS: '{{.CLI_ARGS | default "1"}}'
+        cmds:
+            - migrate -path migrations -database "{{.DATABASE_URL}}" down {{.STEPS}}
+
+    migrate:version:
+        desc: |
+            Show the current migration version and dirty state.
+            Usage: [DATABASE_URL=...] task migrate:version
+        vars:
+            DATABASE_URL:
+                sh: 'echo "${DATABASE_URL:-{{.DEFAULT_DATABASE_URL}}}"'
+        cmds:
+            - migrate -path migrations -database "{{.DATABASE_URL}}" version
+
+    migrate:force:
+        desc: |
+            Force set the migration version (recover from a dirty state; does not run SQL).
+            Usage: [DATABASE_URL=...] task migrate:force -- <version>
+        vars:
+            DATABASE_URL:
+                sh: 'echo "${DATABASE_URL:-{{.DEFAULT_DATABASE_URL}}}"'
+        cmds:
+            - migrate -path migrations -database "{{.DATABASE_URL}}" force {{.CLI_ARGS}}
