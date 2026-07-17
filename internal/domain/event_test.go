@@ -5,6 +5,47 @@ import (
 	"testing"
 )
 
+func TestNewEvent(t *testing.T) {
+	t.Parallel()
+
+	event := NewEvent(
+		"event-id",
+		"event-public-id",
+		"tenant-id",
+		"tenant-public-id",
+		"Summer Festival",
+		"short_term",
+	)
+
+	if got, want := event.ID(), "event-id"; got != want {
+		t.Errorf("ID() = %q, want %q", got, want)
+	}
+
+	if got, want := event.PublicID(), "event-public-id"; got != want {
+		t.Errorf("PublicID() = %q, want %q", got, want)
+	}
+
+	if got, want := event.TenantID(), "tenant-id"; got != want {
+		t.Errorf("TenantID() = %q, want %q", got, want)
+	}
+
+	if got, want := event.TenantPublicID(), "tenant-public-id"; got != want {
+		t.Errorf("TenantPublicID() = %q, want %q", got, want)
+	}
+
+	if got, want := event.Name(), "Summer Festival"; got != want {
+		t.Errorf("Name() = %q, want %q", got, want)
+	}
+
+	if got, want := event.Type(), "short_term"; got != want {
+		t.Errorf("Type() = %q, want %q", got, want)
+	}
+
+	if got, want := event.Status(), EventStatusDraft; got != want {
+		t.Errorf("Status() = %q, want %q", got, want)
+	}
+}
+
 func TestEventTransitionTo(t *testing.T) {
 	t.Parallel()
 
