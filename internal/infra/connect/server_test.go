@@ -229,3 +229,101 @@ func TestCreateEventRejectsUnknownTenant(t *testing.T) {
 		t.Fatalf("CreateEvent() error code = %v, want %v", connectrpc.CodeOf(err), connectrpc.CodeNotFound)
 	}
 }
+
+func TestTransitionEventStatus(t *testing.T) {
+	tenantService := application.NewTenantService(infra.NewInMemoryTenantRepository(), infra.NewRelationService())
+	httpServer := httptest.NewServer(NewHandler(tenantService))
+	t.Cleanup(httpServer.Close)
+	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
+
+	registerRequest := connectrpc.NewRequest(&tenantv1.RegisterTenantRequest{
+		Name:         "Status Host",
+		ContractPlan: "standard",
+	})
+	registerRequest.Header().Set("Authorization", exampleTenantAuthorizationHeader())
+
+	tenantResponse, err := client.RegisterTenant(context.Background(), registerRequest)
+	if err != nil {
+		t.Fatalf("RegisterTenant() error = %v", err)
+	}
+
+	createRequest := connectrpc.NewRequest(&tenantv1.CreateEventRequest{
+		TenantPublicId: tenantResponse.Msg.GetTenant().GetTenantPublicId(),
+		Name:           "Status Event",
+	})
+	createRequest.Header().Set("Authorization", exampleTenantAuthorizationHeader())
+
+	eventResponse, err := client.CreateEvent(context.Background(), createRequest)
+	if err != nil {
+		t.Fatalf("CreateEvent() error = %v", err)
+	}
+
+	eventID := eventResponse.Msg.GetEvent().GetEventId()
+
+	transition := func(to tenantv1.EventStatus) (*tenantv1.Event, error) {
+		t.Helper()
+
+		req := connectrpc.NewRequest(&tenantv1.TransitionEventStatusRequest{EventId: eventID, To: to})
+		req.Header().Set("Authorization", exampleTenantAuthorizationHeader())
+
+		response, err := client.TransitionEventStatus(context.Background(), req)
+		if err != nil {
+			return nil, err
+		}
+
+		return response.Msg.GetEvent(), nil
+	}
+
+	for _, want := range []tenantv1.EventStatus{
+		tenantv1.EventStatus_EVENT_STATUS_OPEN,
+		tenantv1.EventStatus_EVENT_STATUS_LOCKED,
+		tenantv1.EventStatus_EVENT_STATUS_OPEN,
+		tenantv1.EventStatus_EVENT_STATUS_LOCKED,
+		tenantv1.EventStatus_EVENT_STATUS_CLOSED,
+		tenantv1.EventStatus_EVENT_STATUS_OPEN,
+		tenantv1.EventStatus_EVENT_STATUS_LOCKED,
+		tenantv1.EventStatus_EVENT_STATUS_CLOSED,
+		tenantv1.EventStatus_EVENT_STATUS_ARCHIVED,
+		tenantv1.EventStatus_EVENT_STATUS_CLOSED,
+	} {
+		event, err := transition(want)
+		if err != nil {
+			t.Fatalf("TransitionEventStatus(%v) error = %v", want, err)
+		}
+
+		if got := event.GetStatus(); got != want {
+			t.Errorf("Event.Status = %v, want %v", got, want)
+		}
+	}
+
+	_, err = transition(tenantv1.EventStatus_EVENT_STATUS_LOCKED)
+	if got, want := connectrpc.CodeOf(err), connectrpc.CodeFailedPrecondition; got != want {
+		t.Errorf("invalid transition error code = %v, want %v", got, want)
+	}
+}
+
+func TestTransitionEventStatusRejectsInvalidRequest(t *testing.T) {
+	tenantService := application.NewTenantService(infra.NewInMemoryTenantRepository(), infra.NewRelationService())
+	httpServer := httptest.NewServer(NewHandler(tenantService))
+	t.Cleanup(httpServer.Close)
+	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
+
+	req := connectrpc.NewRequest(&tenantv1.TransitionEventStatusRequest{})
+	req.Header().Set("Authorization", exampleTenantAuthorizationHeader())
+
+	_, err := client.TransitionEventStatus(context.Background(), req)
+	if got, want := connectrpc.CodeOf(err), connectrpc.CodeInvalidArgument; got != want {
+		t.Fatalf("TransitionEventStatus() error code = %v, want %v", got, want)
+	}
+
+	req = connectrpc.NewRequest(&tenantv1.TransitionEventStatusRequest{
+		EventId: "0197f1ce-cad0-7f00-8000-000000000000",
+		To:      tenantv1.EventStatus_EVENT_STATUS_OPEN,
+	})
+	req.Header().Set("Authorization", exampleTenantAuthorizationHeader())
+
+	_, err = client.TransitionEventStatus(context.Background(), req)
+	if got, want := connectrpc.CodeOf(err), connectrpc.CodeNotFound; got != want {
+		t.Fatalf("TransitionEventStatus() error code = %v, want %v", got, want)
+	}
+}
