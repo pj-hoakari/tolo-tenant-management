@@ -11,6 +11,27 @@ mise install
 task proto
 ```
 
+### PostgreSQL を使った開発サーバー
+
+Docker Compose で PostgreSQL、golang-migrate によるマイグレーション、および開発サーバーを起動できる。
+
+```bash
+docker compose up --build
+```
+
+サーバーは `http://localhost:8080`、PostgreSQL は `localhost:5432` で待ち受ける。  
+アプリケーションは `DATABASE_URL` で接続先を設定する。  
+ローカルでマイグレーションを実行する場合は、Compose で PostgreSQL を起動してから次を実行する（接続先は `DATABASE_URL` で上書きできる）。
+
+```bash
+# マイグレーションを適用
+task migrate:up
+# 新しいマイグレーションを作成（up/down のペアを生成）
+task migrate:create -- <migration_name>
+# 1 つ前にロールバック
+task migrate:down
+```
+
 ### connect-es の生成
 connect-es の生成（`task proto:gen:es`）はリリース時に CI で行う  
 ローカルで実行する場合は `clients/connect-es` の依存（`npm i`）を導入する必要がある
