@@ -1,3 +1,5 @@
+//go:generate go tool mockgen -source=../../repository/tenant.go -destination=mock_tenant_repository_test.go -package=connect
+
 package connect
 
 import (
@@ -8,7 +10,7 @@ import (
 	tenantv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
-	"github.com/pj-hoakari/tolo-tenant-management/internal/infra"
+	"go.uber.org/mock/gomock"
 )
 
 func TestEventStatusConversions(t *testing.T) {
@@ -133,22 +135,18 @@ func TestListEvents(t *testing.T) {
 func newReadService(t *testing.T) (*Service, domain.Tenant, []domain.Event) {
 	t.Helper()
 
-	repository := infra.NewInMemoryTenantRepository()
-
 	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", false)
-	if err := repository.CreateTenant(context.Background(), tenant); err != nil {
-		t.Fatalf("CreateTenant() error = %v", err)
-	}
-
 	events := []domain.Event{
 		domain.NewEvent("event-1", "event-public-id-1", tenant.ID(), tenant.PublicID(), "Festival 1", domain.EventTypeShortTerm, domain.EventStatusDraft),
 		domain.NewEvent("event-2", "event-public-id-2", tenant.ID(), tenant.PublicID(), "Festival 2", domain.EventTypeLongTerm, domain.EventStatusDraft),
 	}
-	for _, event := range events {
-		if err := repository.CreateEvent(context.Background(), event); err != nil {
-			t.Fatalf("CreateEvent() error = %v", err)
-		}
-	}
 
-	return NewService(application.NewTenantService(repository, infra.NewRelationService())), tenant, events
+	ctrl := gomock.NewController(t)
+	repository := NewMockTenantRepository(ctrl)
+	repository.EXPECT().FindEventByID(gomock.Any(), events[0].ID()).Return(events[0], nil).AnyTimes()
+	repository.EXPECT().FindTenantByID(gomock.Any(), tenant.ID()).Return(tenant, nil).AnyTimes()
+	repository.EXPECT().ListEventsByTenantID(gomock.Any(), tenant.ID()).Return(events, nil).AnyTimes()
+	repository.EXPECT().UpdateEvent(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+
+	return NewService(application.NewTenantService(repository, nil)), tenant, events
 }
