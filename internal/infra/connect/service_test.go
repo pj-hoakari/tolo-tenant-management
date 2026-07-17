@@ -50,6 +50,7 @@ func TestEventProto(t *testing.T) {
 		"tenant-public-id",
 		"Festival",
 		domain.EventTypeShortTerm,
+		domain.EventStatusDraft,
 	)
 
 	openEvent, err := event.TransitionTo(domain.EventStatusOpen)
@@ -134,14 +135,14 @@ func newReadService(t *testing.T) (*Service, domain.Tenant, []domain.Event) {
 
 	repository := infra.NewInMemoryTenantRepository()
 
-	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard")
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", false)
 	if err := repository.CreateTenant(context.Background(), tenant); err != nil {
 		t.Fatalf("CreateTenant() error = %v", err)
 	}
 
 	events := []domain.Event{
-		domain.NewEvent("event-1", "event-public-id-1", tenant.ID(), tenant.PublicID(), "Festival 1", domain.EventTypeShortTerm),
-		domain.NewEvent("event-2", "event-public-id-2", tenant.ID(), tenant.PublicID(), "Festival 2", domain.EventTypeLongTerm),
+		domain.NewEvent("event-1", "event-public-id-1", tenant.ID(), tenant.PublicID(), "Festival 1", domain.EventTypeShortTerm, domain.EventStatusDraft),
+		domain.NewEvent("event-2", "event-public-id-2", tenant.ID(), tenant.PublicID(), "Festival 2", domain.EventTypeLongTerm, domain.EventStatusDraft),
 	}
 	for _, event := range events {
 		if err := repository.CreateEvent(context.Background(), event); err != nil {

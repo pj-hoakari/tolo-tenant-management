@@ -120,7 +120,7 @@ func (s *TenantService) RegisterTenant(ctx context.Context, input RegisterTenant
 		return domain.Tenant{}, err
 	}
 
-	tenant := domain.NewTenant(tenantID, publicID, input.Name, input.ContractPlan)
+	tenant := domain.NewTenant(tenantID, publicID, input.Name, input.ContractPlan, false)
 	if err := s.tenantRepository.CreateTenant(ctx, tenant); err != nil {
 		return domain.Tenant{}, err
 	}
@@ -167,7 +167,7 @@ func (s *TenantService) CreateEvent(ctx context.Context, input CreateEventInput)
 		return domain.Event{}, err
 	}
 
-	event := domain.NewEvent(eventID, publicID, tenant.ID(), tenant.PublicID(), input.Name, input.Type)
+	event := domain.NewEvent(eventID, publicID, tenant.ID(), tenant.PublicID(), input.Name, input.Type, domain.EventStatusDraft)
 	if err := s.tenantRepository.CreateEvent(ctx, event); err != nil {
 		return domain.Event{}, err
 	}

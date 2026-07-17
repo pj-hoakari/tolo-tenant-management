@@ -15,6 +15,7 @@ func TestNewEvent(t *testing.T) {
 		"tenant-public-id",
 		"Summer Festival",
 		EventTypeShortTerm,
+		EventStatusDraft,
 	)
 
 	if got, want := event.ID(), "event-id"; got != want {
@@ -94,7 +95,7 @@ func TestEventTransitionTo(t *testing.T) {
 func TestEventAssignType(t *testing.T) {
 	t.Parallel()
 
-	event := NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", EventTypeShortTerm)
+	event := NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", EventTypeShortTerm, EventStatusDraft)
 	updatedEvent := event.AssignType(EventTypeLongTerm)
 
 	if got, want := updatedEvent.Type(), EventTypeLongTerm; got != want {

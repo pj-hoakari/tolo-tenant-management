@@ -38,7 +38,7 @@ type Event struct {
 	status         EventStatus
 }
 
-func NewEvent(id, publicID, tenantID, tenantPublicID, name string, eventType EventType) Event {
+func NewEvent(id, publicID, tenantID, tenantPublicID, name string, eventType EventType, status EventStatus) Event {
 	return Event{
 		id:             id,
 		publicID:       publicID,
@@ -46,7 +46,7 @@ func NewEvent(id, publicID, tenantID, tenantPublicID, name string, eventType Eve
 		tenantPublicID: tenantPublicID,
 		name:           name,
 		eventType:      eventType,
-		status:         EventStatusDraft,
+		status:         status,
 	}
 }
 
