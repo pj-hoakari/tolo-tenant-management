@@ -43,13 +43,13 @@ func (s *relationTransportSpy) call() (string, application.AddTenantMemberInput)
 	return s.authorization, s.input
 }
 
-func TestTenantServiceAuthorizationAndSkeleton(t *testing.T) {
+func TestRegisterTenantOverTransport(t *testing.T) {
 	relationTransport := &relationTransportSpy{}
-	registerTenant := application.NewTenantService(
+	tenantService := application.NewTenantService(
 		newIntegrationTenantRepository(t),
 		infra.NewRelationServiceWithTransport(relationTransport),
 	)
-	httpServer := httptest.NewServer(newTestHandler(t, registerTenant))
+	httpServer := httptest.NewServer(newTestHandler(t, tenantService))
 	t.Cleanup(httpServer.Close)
 	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
 
@@ -118,10 +118,10 @@ func TestTenantServiceAuthorizationAndSkeleton(t *testing.T) {
 	})
 }
 
-func TestRegisterTenantRejectsDuplicateName(t *testing.T) {
+func TestRegisterTenantOverTransportRejectsDuplicateName(t *testing.T) {
 	tenantRepository := newIntegrationTenantRepository(t)
-	registerTenant := application.NewTenantService(tenantRepository, infra.NewRelationService())
-	httpServer := httptest.NewServer(newTestHandler(t, registerTenant))
+	tenantService := application.NewTenantService(tenantRepository, infra.NewRelationService())
+	httpServer := httptest.NewServer(newTestHandler(t, tenantService))
 	t.Cleanup(httpServer.Close)
 	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
 
@@ -144,7 +144,7 @@ func TestRegisterTenantRejectsDuplicateName(t *testing.T) {
 	}
 }
 
-func TestCreateEvent(t *testing.T) {
+func TestCreateEventOverTransport(t *testing.T) {
 	tenantRepository := newIntegrationTenantRepository(t)
 	tenantService := application.NewTenantService(tenantRepository, infra.NewRelationService())
 	httpServer := httptest.NewServer(newTestHandler(t, tenantService))
@@ -204,7 +204,7 @@ func TestCreateEvent(t *testing.T) {
 	}
 }
 
-func TestCreateEventRejectsUnknownTenant(t *testing.T) {
+func TestCreateEventOverTransportRejectsUnknownTenant(t *testing.T) {
 	tenantService := application.NewTenantService(newIntegrationTenantRepository(t), infra.NewRelationService())
 	httpServer := httptest.NewServer(newTestHandler(t, tenantService))
 	t.Cleanup(httpServer.Close)
@@ -222,7 +222,7 @@ func TestCreateEventRejectsUnknownTenant(t *testing.T) {
 	}
 }
 
-func TestTransitionEventStatus(t *testing.T) {
+func TestTransitionEventStatusOverTransport(t *testing.T) {
 	tenantService := application.NewTenantService(newIntegrationTenantRepository(t), infra.NewRelationService())
 	httpServer := httptest.NewServer(newTestHandler(t, tenantService))
 	t.Cleanup(httpServer.Close)
@@ -294,7 +294,7 @@ func TestTransitionEventStatus(t *testing.T) {
 	}
 }
 
-func TestTransitionEventStatusRejectsInvalidRequest(t *testing.T) {
+func TestTransitionEventStatusOverTransportRejectsInvalidRequest(t *testing.T) {
 	tenantService := application.NewTenantService(newIntegrationTenantRepository(t), infra.NewRelationService())
 	httpServer := httptest.NewServer(newTestHandler(t, tenantService))
 	t.Cleanup(httpServer.Close)

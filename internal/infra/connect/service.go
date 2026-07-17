@@ -13,9 +13,9 @@ import (
 	"github.com/pj-hoakari/tolo-tenant-management/internal/repository"
 )
 
-var errNotImplemented = errors.New("tenant service implementation is not configured")
+var errNotImplemented = errors.New("tenant service method is not implemented")
 
-// Service is the skeleton Connect transport implementation of TenantService.
+// Service is the Connect transport implementation of TenantService.
 type Service struct {
 	tenantv1connect.UnimplementedTenantServiceHandler
 	tenantService application.TenantUseCases
