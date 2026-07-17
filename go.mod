@@ -17,10 +17,13 @@ require (
 
 require github.com/pj-hoakari/protoc-gen-authz-go v0.2.0
 
-require github.com/google/uuid v1.6.0
+require (
+	github.com/golang-jwt/jwt/v5 v5.3.0
+	github.com/google/uuid v1.6.0
+	go.uber.org/mock v0.6.0
+)
 
 require (
-	go.uber.org/mock v0.6.0 // indirect
 	golang.org/x/mod v0.38.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/tools v0.48.0 // indirect

@@ -18,15 +18,32 @@ connect-es の生成（`task proto:gen:es`）はリリース時に CI で行う
 ### TenantService の authz interceptor
 
 `TenantService` は proto の policy annotation により、セルフサインアップには `tenant.register`、テナント操作には `tenant_access` と `tenant.write`、イベント操作には `events.read` / `events.write` を要求する。`GetEvent` は内部サービス向けの `AUTH_LEVEL_INTERNAL` である。
-`internal/infra/connect` では、生成された `NewTenantServiceHandlerWithAuthz` に開発用 verifier を渡す。
+`internal/jwks` の JWKS validator を、`internal/infra/connect` の認可 verifier とテナント ID interceptor で共有する。
 
-ローカルでは次の Authorization ヘッダーで呼び出せる。
+API Gateway が発行した内部 JWT を Authorization ヘッダーで受け付ける。サービス側では ES256 の署名、`kid`、`iss`、`aud`、`exp`／`nbf`、`token_use`、scope を検証する。
 
 ```text
-Authorization: Bearer example-tenant-token
+Authorization: Bearer <API Gateway 発行の内部 JWT>
 ```
 
-この固定トークンと固定スコープはあくまで interceptor の利用例であり、実運用では OIDC/JWT などで検証した identity claims を verifier から参照するよう置き換える
+`RegisterTenant` は `token_use=registration`、`GetEvent` は `token_use=service`、その他の TenantService RPC は `token_use=tenant_access` を要求する。後者には `tenant_id` クレームが必須である。
+
+```text
+{"tenant_id":"<tenant UUIDv7>"}
+```
+
+JWKS は `INTERNAL_JWKS_URL` から取得する。未設定時は API Gateway コンテナのエンドポイント `http://gateway:8080/.well-known/jwks.json` を使う。取得した鍵は 5 分間キャッシュし、未知の `kid` を受信した場合は直ちに再取得する。
+
+### テスト用内部 JWT の生成
+
+`cmd/jwtgen` は ES256 の鍵ペアを生成し、内部 JWT と対応する公開 JWKS を JSON で出力する。
+
+```bash
+go run ./cmd/jwtgen -tenant-id test-tenant -scope events.read
+```
+
+`tenant_access` では `-tenant-id` が必須。`-token-use service` または `-token-use registration` も指定できる。
+出力された `jwks` を API Gateway の JWKS スタブとして公開すると、出力された `token` を結合テストに利用できる。サービスのテストもこの CLI と同じ生成ロジックを使用する。
 
 ---
 

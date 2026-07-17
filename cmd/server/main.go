@@ -13,6 +13,7 @@ import (
 	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/infra"
 	connectinfra "github.com/pj-hoakari/tolo-tenant-management/internal/infra/connect"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/jwks"
 )
 
 const (
@@ -32,13 +33,14 @@ func run() error {
 	defer stop()
 
 	addr := getenv("SERVER_ADDR", defaultAddr)
+	jwksURL := getenv("INTERNAL_JWKS_URL", jwks.DefaultInternalJWKSURL)
 	registerTenant := application.NewTenantService(
 		infra.NewInMemoryTenantRepository(),
 		infra.NewRelationService(),
 	)
 	httpServer := &http.Server{
 		Addr:              addr,
-		Handler:           connectinfra.NewHandler(registerTenant),
+		Handler:           connectinfra.NewHandlerWithJWKSURL(registerTenant, jwksURL),
 		ReadHeaderTimeout: readHeaderTimeout,
 	}
 
