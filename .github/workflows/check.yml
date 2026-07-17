@@ -1,0 +1,59 @@
+name: Test
+
+on:
+    pull_request:
+        paths:
+            - "**/*.go"
+            - "go.mod"
+            - "go.sum"
+            - ".github/workflows/check.yml"
+    push:
+        branches: [main]
+        paths:
+            - "**/*.go"
+            - "go.mod"
+            - "go.sum"
+            - ".github/workflows/check.yml"
+
+permissions:
+    contents: read
+
+jobs:
+    test:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+            - name: Set up Go
+              uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+              with:
+                  go-version-file: go.mod
+                  cache: true
+
+            - name: Run tests
+              run: go test ./...
+
+    go-generate-check:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+            - name: Set up Go
+              uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+              with:
+                  go-version-file: go.mod
+                  cache: true
+
+            - name: Run generators
+              run: go generate ./...
+
+            - name: Verify generated code is up to date
+              run: |
+                  if [ -n "$(git status --porcelain)" ]; then
+                    echo "::error::go generate の実行後に未コミットの差分があります"
+                    git status --short
+                    git diff
+                    exit 1
+                  fi
