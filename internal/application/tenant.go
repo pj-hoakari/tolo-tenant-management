@@ -17,6 +17,7 @@ var (
 	ErrEventTenantIDRequired      = errors.New("event tenant ID is required")
 	ErrEventNameRequired          = errors.New("event name is required")
 	ErrEventIDRequired            = errors.New("event ID is required")
+	ErrEventTypeRequired          = errors.New("event type is required")
 	ErrEventStatusRequired        = errors.New("event status is required")
 )
 
@@ -40,6 +41,12 @@ type TransitionEventStatusInput struct {
 	To      domain.EventStatus
 }
 
+// AssignEventTypeInput contains the requested event type assignment.
+type AssignEventTypeInput struct {
+	EventID string
+	Type    domain.EventType
+}
+
 // RegisterTenantUseCase registers a tenant.
 type RegisterTenantUseCase interface {
 	RegisterTenant(context.Context, RegisterTenantInput) (domain.Tenant, error)
@@ -53,6 +60,11 @@ type CreateEventUseCase interface {
 // TransitionEventStatusUseCase changes an event's lifecycle status.
 type TransitionEventStatusUseCase interface {
 	TransitionEventStatus(context.Context, TransitionEventStatusInput) (domain.Event, error)
+}
+
+// AssignEventTypeUseCase changes an event's type.
+type AssignEventTypeUseCase interface {
+	AssignEventType(context.Context, AssignEventTypeInput) (domain.Event, error)
 }
 
 // GetEventUseCase retrieves one event by its internal ID.
@@ -70,6 +82,7 @@ type ListEventsUseCase interface {
 type TenantUseCases interface {
 	RegisterTenantUseCase
 	CreateEventUseCase
+	AssignEventTypeUseCase
 	TransitionEventStatusUseCase
 	GetEventUseCase
 	ListEventsUseCase
@@ -181,6 +194,32 @@ func (s *TenantService) TransitionEventStatus(ctx context.Context, input Transit
 		return domain.Event{}, err
 	}
 
+	if err := s.tenantRepository.UpdateEvent(ctx, updatedEvent); err != nil {
+		return domain.Event{}, err
+	}
+
+	return updatedEvent, nil
+}
+
+func (s *TenantService) AssignEventType(ctx context.Context, input AssignEventTypeInput) (domain.Event, error) {
+	if input.EventID == "" {
+		return domain.Event{}, ErrEventIDRequired
+	}
+
+	if input.Type == domain.EventTypeUnspecified {
+		return domain.Event{}, ErrEventTypeRequired
+	}
+
+	event, err := s.tenantRepository.FindEventByID(ctx, input.EventID)
+	if err != nil {
+		return domain.Event{}, err
+	}
+
+	if event.Status() == domain.EventStatusArchived {
+		return domain.Event{}, repository.ErrEventArchived
+	}
+
+	updatedEvent := event.AssignType(input.Type)
 	if err := s.tenantRepository.UpdateEvent(ctx, updatedEvent); err != nil {
 		return domain.Event{}, err
 	}

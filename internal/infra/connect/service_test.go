@@ -90,6 +90,24 @@ func TestGetEvent(t *testing.T) {
 	}
 }
 
+func TestAssignEventType(t *testing.T) {
+	t.Parallel()
+
+	service, _, events := newReadService(t)
+
+	response, err := service.AssignEventType(context.Background(), connectrpc.NewRequest(&tenantv1.AssignEventTypeRequest{
+		EventId: events[0].ID(),
+		Type:    tenantv1.EventType_EVENT_TYPE_LONG_TERM,
+	}))
+	if err != nil {
+		t.Fatalf("AssignEventType() error = %v", err)
+	}
+
+	if got, want := response.Msg.GetEvent().GetType(), tenantv1.EventType_EVENT_TYPE_LONG_TERM; got != want {
+		t.Errorf("Event.Type = %v, want %v", got, want)
+	}
+}
+
 func TestListEvents(t *testing.T) {
 	t.Parallel()
 

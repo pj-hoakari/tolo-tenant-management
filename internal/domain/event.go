@@ -58,6 +58,13 @@ func (e Event) Name() string           { return e.name }
 func (e Event) Type() EventType        { return e.eventType }
 func (e Event) Status() EventStatus    { return e.status }
 
+// AssignType returns a copy of the event with its type updated.
+func (e Event) AssignType(eventType EventType) Event {
+	e.eventType = eventType
+
+	return e
+}
+
 // TransitionTo returns a copy of the event in the requested status. The
 // lifecycle permits its normal progression and the documented recovery paths.
 func (e Event) TransitionTo(status EventStatus) (Event, error) {

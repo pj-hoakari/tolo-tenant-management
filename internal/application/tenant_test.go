@@ -152,6 +152,40 @@ func TestTransitionEventStatus(t *testing.T) {
 	}
 }
 
+func TestAssignEventType(t *testing.T) {
+	t.Parallel()
+
+	event := domain.NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", domain.EventTypeShortTerm)
+	ctrl := gomock.NewController(t)
+	repository := NewMockTenantRepository(ctrl)
+	repository.EXPECT().FindEventByID(gomock.Any(), event.ID()).Return(event, nil)
+
+	var updatedEventFromRepository domain.Event
+
+	repository.EXPECT().UpdateEvent(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, updatedEvent domain.Event) error {
+		updatedEventFromRepository = updatedEvent
+
+		return nil
+	})
+	service := application.NewTenantService(repository, successfulMembershipService{})
+
+	updatedEvent, err := service.AssignEventType(context.Background(), application.AssignEventTypeInput{
+		EventID: event.ID(),
+		Type:    domain.EventTypeLongTerm,
+	})
+	if err != nil {
+		t.Fatalf("AssignEventType() error = %v", err)
+	}
+
+	if got, want := updatedEvent.Type(), domain.EventTypeLongTerm; got != want {
+		t.Errorf("updated type = %v, want %v", got, want)
+	}
+
+	if got, want := updatedEventFromRepository, updatedEvent; got != want {
+		t.Errorf("updated event = %#v, want %#v", got, want)
+	}
+}
+
 func TestGetEvent(t *testing.T) {
 	t.Parallel()
 

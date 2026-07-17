@@ -164,8 +164,28 @@ func eventStatusDomain(eventStatus tenantv1.EventStatus) domain.EventStatus {
 	}
 }
 
-func (s *Service) AssignEventType(context.Context, *connectrpc.Request[tenantv1.AssignEventTypeRequest]) (*connectrpc.Response[tenantv1.AssignEventTypeResponse], error) {
-	return nil, connectrpc.NewError(connectrpc.CodeUnimplemented, errNotImplemented)
+func (s *Service) AssignEventType(ctx context.Context, req *connectrpc.Request[tenantv1.AssignEventTypeRequest]) (*connectrpc.Response[tenantv1.AssignEventTypeResponse], error) {
+	event, err := s.tenantService.AssignEventType(ctx, application.AssignEventTypeInput{
+		EventID: req.Msg.GetEventId(),
+		Type:    eventTypeDomain(req.Msg.GetType()),
+	})
+	if err != nil {
+		if errors.Is(err, application.ErrEventIDRequired) || errors.Is(err, application.ErrEventTypeRequired) {
+			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
+		}
+
+		if errors.Is(err, repository.ErrEventNotFound) {
+			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
+		}
+
+		if errors.Is(err, repository.ErrEventArchived) || errors.Is(err, repository.ErrTenantArchived) {
+			return nil, connectrpc.NewError(connectrpc.CodeFailedPrecondition, err)
+		}
+
+		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
+	}
+
+	return connectrpc.NewResponse(&tenantv1.AssignEventTypeResponse{Event: eventProto(event)}), nil
 }
 
 func (s *Service) TransitionEventStatus(ctx context.Context, req *connectrpc.Request[tenantv1.TransitionEventStatusRequest]) (*connectrpc.Response[tenantv1.TransitionEventStatusResponse], error) {
