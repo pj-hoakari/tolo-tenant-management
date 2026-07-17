@@ -13,6 +13,7 @@ import (
 var (
 	ErrTenantNameRequired         = errors.New("tenant name is required")
 	ErrTenantContractPlanRequired = errors.New("tenant contract plan is required")
+	ErrTenantIDRequired           = errors.New("tenant ID is required")
 	ErrEventTenantIDRequired      = errors.New("event tenant ID is required")
 	ErrEventNameRequired          = errors.New("event name is required")
 	ErrEventIDRequired            = errors.New("event ID is required")
@@ -54,12 +55,24 @@ type TransitionEventStatusUseCase interface {
 	TransitionEventStatus(context.Context, TransitionEventStatusInput) (domain.Event, error)
 }
 
+// GetEventUseCase retrieves one event by its internal ID.
+type GetEventUseCase interface {
+	GetEvent(context.Context, string) (domain.Event, error)
+}
+
+// ListEventsUseCase lists events belonging to a tenant's internal ID.
+type ListEventsUseCase interface {
+	ListEvents(context.Context, string) ([]domain.Event, error)
+}
+
 // TenantUseCases groups the tenant operations exposed by the Connect
 // transport.
 type TenantUseCases interface {
 	RegisterTenantUseCase
 	CreateEventUseCase
 	TransitionEventStatusUseCase
+	GetEventUseCase
+	ListEventsUseCase
 }
 
 // TenantService implements tenant use cases.
@@ -173,4 +186,24 @@ func (s *TenantService) TransitionEventStatus(ctx context.Context, input Transit
 	}
 
 	return updatedEvent, nil
+}
+
+func (s *TenantService) GetEvent(ctx context.Context, eventID string) (domain.Event, error) {
+	if eventID == "" {
+		return domain.Event{}, ErrEventIDRequired
+	}
+
+	return s.tenantRepository.FindEventByID(ctx, eventID)
+}
+
+func (s *TenantService) ListEvents(ctx context.Context, tenantID string) ([]domain.Event, error) {
+	if tenantID == "" {
+		return nil, ErrTenantIDRequired
+	}
+
+	if _, err := s.tenantRepository.FindTenantByID(ctx, tenantID); err != nil {
+		return nil, err
+	}
+
+	return s.tenantRepository.ListEventsByTenantID(ctx, tenantID)
 }

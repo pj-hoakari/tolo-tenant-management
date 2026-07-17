@@ -207,10 +207,41 @@ func eventProto(event domain.Event) *tenantv1.Event {
 	}
 }
 
-func (s *Service) GetEvent(context.Context, *connectrpc.Request[tenantv1.GetEventRequest]) (*connectrpc.Response[tenantv1.GetEventResponse], error) {
-	return nil, connectrpc.NewError(connectrpc.CodeUnimplemented, errNotImplemented)
+func (s *Service) GetEvent(ctx context.Context, req *connectrpc.Request[tenantv1.GetEventRequest]) (*connectrpc.Response[tenantv1.GetEventResponse], error) {
+	event, err := s.tenantService.GetEvent(ctx, req.Msg.GetEventId())
+	if err != nil {
+		if errors.Is(err, application.ErrEventIDRequired) {
+			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
+		}
+
+		if errors.Is(err, repository.ErrEventNotFound) {
+			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
+		}
+
+		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
+	}
+
+	return connectrpc.NewResponse(&tenantv1.GetEventResponse{Event: eventProto(event)}), nil
 }
 
-func (s *Service) ListEvents(context.Context, *connectrpc.Request[tenantv1.ListEventsRequest]) (*connectrpc.Response[tenantv1.ListEventsResponse], error) {
-	return nil, connectrpc.NewError(connectrpc.CodeUnimplemented, errNotImplemented)
+func (s *Service) ListEvents(ctx context.Context, req *connectrpc.Request[tenantv1.ListEventsRequest]) (*connectrpc.Response[tenantv1.ListEventsResponse], error) {
+	events, err := s.tenantService.ListEvents(ctx, req.Msg.GetTenantId())
+	if err != nil {
+		if errors.Is(err, application.ErrTenantIDRequired) {
+			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
+		}
+
+		if errors.Is(err, repository.ErrTenantNotFound) {
+			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
+		}
+
+		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
+	}
+
+	responseEvents := make([]*tenantv1.Event, 0, len(events))
+	for _, event := range events {
+		responseEvents = append(responseEvents, eventProto(event))
+	}
+
+	return connectrpc.NewResponse(&tenantv1.ListEventsResponse{Events: responseEvents}), nil
 }

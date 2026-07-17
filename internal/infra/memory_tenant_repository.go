@@ -3,6 +3,7 @@ package infra
 
 import (
 	"context"
+	"sort"
 	"sync"
 
 	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
@@ -83,6 +84,18 @@ func (r *InMemoryTenantRepository) FindTenantByPublicID(_ context.Context, publi
 	return tenant, nil
 }
 
+func (r *InMemoryTenantRepository) FindTenantByID(_ context.Context, tenantID string) (domain.Tenant, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	tenant, ok := r.tenants[tenantID]
+	if !ok {
+		return domain.Tenant{}, repository.ErrTenantNotFound
+	}
+
+	return tenant, nil
+}
+
 func (r *InMemoryTenantRepository) CreateEvent(_ context.Context, event domain.Event) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -116,6 +129,28 @@ func (r *InMemoryTenantRepository) FindEventByID(_ context.Context, eventID stri
 	}
 
 	return event, nil
+}
+
+func (r *InMemoryTenantRepository) ListEventsByTenantID(_ context.Context, tenantID string) ([]domain.Event, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, ok := r.tenants[tenantID]; !ok {
+		return nil, repository.ErrTenantNotFound
+	}
+
+	events := make([]domain.Event, 0)
+	for _, event := range r.events {
+		if event.TenantID() == tenantID {
+			events = append(events, event)
+		}
+	}
+
+	sort.Slice(events, func(i, j int) bool {
+		return events[i].ID() < events[j].ID()
+	})
+
+	return events, nil
 }
 
 func (r *InMemoryTenantRepository) UpdateEvent(_ context.Context, event domain.Event) error {
