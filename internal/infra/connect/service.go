@@ -68,7 +68,7 @@ func (s *Service) CreateEvent(ctx context.Context, req *connectrpc.Request[tenan
 	event, err := s.tenantService.CreateEvent(ctx, application.CreateEventInput{
 		TenantID: req.Msg.GetTenantPublicId(),
 		Name:     req.Msg.GetName(),
-		Type:     eventTypeString(req.Msg.GetType()),
+		Type:     eventTypeDomain(req.Msg.GetType()),
 	})
 	if err != nil {
 		if errors.Is(err, application.ErrEventTenantIDRequired) || errors.Is(err, application.ErrEventNameRequired) {
@@ -100,63 +100,67 @@ func (s *Service) CreateEvent(ctx context.Context, req *connectrpc.Request[tenan
 	}), nil
 }
 
-func eventTypeString(eventType tenantv1.EventType) string {
+func eventTypeDomain(eventType tenantv1.EventType) domain.EventType {
 	switch eventType {
-	case tenantv1.EventType_EVENT_TYPE_SHORT_TERM:
-		return "short_term"
-	case tenantv1.EventType_EVENT_TYPE_LONG_TERM:
-		return "long_term"
 	case tenantv1.EventType_EVENT_TYPE_UNSPECIFIED:
-		return ""
+		return domain.EventTypeUnspecified
+	case tenantv1.EventType_EVENT_TYPE_SHORT_TERM:
+		return domain.EventTypeShortTerm
+	case tenantv1.EventType_EVENT_TYPE_LONG_TERM:
+		return domain.EventTypeLongTerm
 	default:
-		return ""
+		return domain.EventTypeUnspecified
 	}
 }
 
-func eventTypeProto(eventType string) tenantv1.EventType {
+func eventTypeProto(eventType domain.EventType) tenantv1.EventType {
 	switch eventType {
-	case "short_term":
+	case domain.EventTypeUnspecified:
+		return tenantv1.EventType_EVENT_TYPE_UNSPECIFIED
+	case domain.EventTypeShortTerm:
 		return tenantv1.EventType_EVENT_TYPE_SHORT_TERM
-	case "long_term":
+	case domain.EventTypeLongTerm:
 		return tenantv1.EventType_EVENT_TYPE_LONG_TERM
 	default:
 		return tenantv1.EventType_EVENT_TYPE_UNSPECIFIED
 	}
 }
 
-func eventStatusProto(eventStatus string) tenantv1.EventStatus {
+func eventStatusProto(eventStatus domain.EventStatus) tenantv1.EventStatus {
 	switch eventStatus {
-	case "draft":
+	case domain.EventStatusUnspecified:
+		return tenantv1.EventStatus_EVENT_STATUS_UNSPECIFIED
+	case domain.EventStatusDraft:
 		return tenantv1.EventStatus_EVENT_STATUS_DRAFT
-	case "open":
+	case domain.EventStatusOpen:
 		return tenantv1.EventStatus_EVENT_STATUS_OPEN
-	case "locked":
+	case domain.EventStatusLocked:
 		return tenantv1.EventStatus_EVENT_STATUS_LOCKED
-	case "closed":
+	case domain.EventStatusClosed:
 		return tenantv1.EventStatus_EVENT_STATUS_CLOSED
-	case "archived":
+	case domain.EventStatusArchived:
 		return tenantv1.EventStatus_EVENT_STATUS_ARCHIVED
 	default:
 		return tenantv1.EventStatus_EVENT_STATUS_UNSPECIFIED
 	}
 }
 
-func eventStatusString(eventStatus tenantv1.EventStatus) string {
+func eventStatusDomain(eventStatus tenantv1.EventStatus) domain.EventStatus {
 	switch eventStatus {
 	case tenantv1.EventStatus_EVENT_STATUS_UNSPECIFIED:
-		return ""
+		return domain.EventStatusUnspecified
 	case tenantv1.EventStatus_EVENT_STATUS_DRAFT:
-		return "draft"
+		return domain.EventStatusDraft
 	case tenantv1.EventStatus_EVENT_STATUS_OPEN:
-		return "open"
+		return domain.EventStatusOpen
 	case tenantv1.EventStatus_EVENT_STATUS_LOCKED:
-		return "locked"
+		return domain.EventStatusLocked
 	case tenantv1.EventStatus_EVENT_STATUS_CLOSED:
-		return "closed"
+		return domain.EventStatusClosed
 	case tenantv1.EventStatus_EVENT_STATUS_ARCHIVED:
-		return "archived"
+		return domain.EventStatusArchived
 	default:
-		return ""
+		return domain.EventStatusUnspecified
 	}
 }
 
@@ -167,7 +171,7 @@ func (s *Service) AssignEventType(context.Context, *connectrpc.Request[tenantv1.
 func (s *Service) TransitionEventStatus(ctx context.Context, req *connectrpc.Request[tenantv1.TransitionEventStatusRequest]) (*connectrpc.Response[tenantv1.TransitionEventStatusResponse], error) {
 	event, err := s.tenantService.TransitionEventStatus(ctx, application.TransitionEventStatusInput{
 		EventID: req.Msg.GetEventId(),
-		To:      eventStatusString(req.Msg.GetTo()),
+		To:      eventStatusDomain(req.Msg.GetTo()),
 	})
 	if err != nil {
 		if errors.Is(err, application.ErrEventIDRequired) || errors.Is(err, application.ErrEventStatusRequired) {

@@ -2,15 +2,30 @@ package domain
 
 import "errors"
 
+//go:generate go tool stringer -type=EventType,EventStatus -trimprefix=Event -linecomment -output=event_enum_string.go
+
 const (
-	EventStatusDraft    = "draft"
-	EventStatusOpen     = "open"
-	EventStatusLocked   = "locked"
-	EventStatusClosed   = "closed"
-	EventStatusArchived = "archived"
+	EventTypeUnspecified EventType = iota // unspecified
+	EventTypeShortTerm                    // short_term
+	EventTypeLongTerm                     // long_term
+)
+
+const (
+	EventStatusUnspecified EventStatus = iota // unspecified
+	EventStatusDraft                          // draft
+	EventStatusOpen                           // open
+	EventStatusLocked                         // locked
+	EventStatusClosed                         // closed
+	EventStatusArchived                       // archived
 )
 
 var ErrInvalidEventStatusTransition = errors.New("invalid event status transition")
+
+// EventType distinguishes short-lived events from long-lived installations.
+type EventType uint8
+
+// EventStatus is the lifecycle state of an event.
+type EventStatus uint8
 
 // Event is an immutable event model.
 type Event struct {
@@ -19,11 +34,11 @@ type Event struct {
 	tenantID       string
 	tenantPublicID string
 	name           string
-	eventType      string
-	status         string
+	eventType      EventType
+	status         EventStatus
 }
 
-func NewEvent(id, publicID, tenantID, tenantPublicID, name, eventType string) Event {
+func NewEvent(id, publicID, tenantID, tenantPublicID, name string, eventType EventType) Event {
 	return Event{
 		id:             id,
 		publicID:       publicID,
@@ -40,12 +55,12 @@ func (e Event) PublicID() string       { return e.publicID }
 func (e Event) TenantID() string       { return e.tenantID }
 func (e Event) TenantPublicID() string { return e.tenantPublicID }
 func (e Event) Name() string           { return e.name }
-func (e Event) Type() string           { return e.eventType }
-func (e Event) Status() string         { return e.status }
+func (e Event) Type() EventType        { return e.eventType }
+func (e Event) Status() EventStatus    { return e.status }
 
 // TransitionTo returns a copy of the event in the requested status. The
 // lifecycle permits its normal progression and the documented recovery paths.
-func (e Event) TransitionTo(status string) (Event, error) {
+func (e Event) TransitionTo(status EventStatus) (Event, error) {
 	if !canTransitionEventStatus(e.status, status) {
 		return Event{}, ErrInvalidEventStatusTransition
 	}
@@ -55,8 +70,10 @@ func (e Event) TransitionTo(status string) (Event, error) {
 	return e, nil
 }
 
-func canTransitionEventStatus(from, to string) bool {
+func canTransitionEventStatus(from, to EventStatus) bool {
 	switch from {
+	case EventStatusUnspecified:
+		return false
 	case EventStatusDraft:
 		return to == EventStatusOpen
 	case EventStatusOpen:
