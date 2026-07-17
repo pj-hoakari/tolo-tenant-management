@@ -5,6 +5,7 @@ package application_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
@@ -148,5 +149,48 @@ func TestTransitionEventStatus(t *testing.T) {
 
 	if got, want := updatedEventFromRepository, updatedEvent; got != want {
 		t.Errorf("updated event = %#v, want %#v", got, want)
+	}
+}
+
+func TestGetEvent(t *testing.T) {
+	t.Parallel()
+
+	event := domain.NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", domain.EventTypeShortTerm)
+	ctrl := gomock.NewController(t)
+	repository := NewMockTenantRepository(ctrl)
+	repository.EXPECT().FindEventByID(gomock.Any(), event.ID()).Return(event, nil)
+	service := application.NewTenantService(repository, successfulMembershipService{})
+
+	found, err := service.GetEvent(context.Background(), event.ID())
+	if err != nil {
+		t.Fatalf("GetEvent() error = %v", err)
+	}
+
+	if got, want := found, event; got != want {
+		t.Errorf("GetEvent() = %#v, want %#v", got, want)
+	}
+}
+
+func TestListEvents(t *testing.T) {
+	t.Parallel()
+
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard")
+	events := []domain.Event{
+		domain.NewEvent("event-1", "event-public-id-1", tenant.ID(), tenant.PublicID(), "Festival 1", domain.EventTypeShortTerm),
+		domain.NewEvent("event-2", "event-public-id-2", tenant.ID(), tenant.PublicID(), "Festival 2", domain.EventTypeLongTerm),
+	}
+	ctrl := gomock.NewController(t)
+	repository := NewMockTenantRepository(ctrl)
+	repository.EXPECT().FindTenantByID(gomock.Any(), tenant.ID()).Return(tenant, nil)
+	repository.EXPECT().ListEventsByTenantID(gomock.Any(), tenant.ID()).Return(events, nil)
+	service := application.NewTenantService(repository, successfulMembershipService{})
+
+	got, err := service.ListEvents(context.Background(), tenant.ID())
+	if err != nil {
+		t.Fatalf("ListEvents() error = %v", err)
+	}
+
+	if got, want := got, events; !slices.Equal(got, want) {
+		t.Errorf("ListEvents() = %#v, want %#v", got, want)
 	}
 }

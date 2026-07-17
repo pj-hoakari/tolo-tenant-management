@@ -1,10 +1,14 @@
 package connect
 
 import (
+	"context"
 	"testing"
 
+	connectrpc "connectrpc.com/connect"
 	tenantv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/infra"
 )
 
 func TestEventStatusConversions(t *testing.T) {
@@ -69,4 +73,63 @@ func TestEventProto(t *testing.T) {
 	if got, want := got.GetStatus(), tenantv1.EventStatus_EVENT_STATUS_OPEN; got != want {
 		t.Errorf("Status = %v, want %v", got, want)
 	}
+}
+
+func TestGetEvent(t *testing.T) {
+	t.Parallel()
+
+	service, _, events := newReadService(t)
+
+	response, err := service.GetEvent(context.Background(), connectrpc.NewRequest(&tenantv1.GetEventRequest{EventId: events[0].ID()}))
+	if err != nil {
+		t.Fatalf("GetEvent() error = %v", err)
+	}
+
+	if got, want := response.Msg.GetEvent().GetEventId(), events[0].ID(); got != want {
+		t.Errorf("EventId = %q, want %q", got, want)
+	}
+}
+
+func TestListEvents(t *testing.T) {
+	t.Parallel()
+
+	service, tenant, events := newReadService(t)
+
+	response, err := service.ListEvents(context.Background(), connectrpc.NewRequest(&tenantv1.ListEventsRequest{TenantId: tenant.ID()}))
+	if err != nil {
+		t.Fatalf("ListEvents() error = %v", err)
+	}
+
+	if got, want := len(response.Msg.GetEvents()), len(events); got != want {
+		t.Fatalf("event count = %d, want %d", got, want)
+	}
+
+	for i, event := range events {
+		if got, want := response.Msg.GetEvents()[i].GetEventId(), event.ID(); got != want {
+			t.Errorf("Events[%d].EventId = %q, want %q", i, got, want)
+		}
+	}
+}
+
+func newReadService(t *testing.T) (*Service, domain.Tenant, []domain.Event) {
+	t.Helper()
+
+	repository := infra.NewInMemoryTenantRepository()
+
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard")
+	if err := repository.CreateTenant(context.Background(), tenant); err != nil {
+		t.Fatalf("CreateTenant() error = %v", err)
+	}
+
+	events := []domain.Event{
+		domain.NewEvent("event-1", "event-public-id-1", tenant.ID(), tenant.PublicID(), "Festival 1", domain.EventTypeShortTerm),
+		domain.NewEvent("event-2", "event-public-id-2", tenant.ID(), tenant.PublicID(), "Festival 2", domain.EventTypeLongTerm),
+	}
+	for _, event := range events {
+		if err := repository.CreateEvent(context.Background(), event); err != nil {
+			t.Fatalf("CreateEvent() error = %v", err)
+		}
+	}
+
+	return NewService(application.NewTenantService(repository, infra.NewRelationService())), tenant, events
 }
