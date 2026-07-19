@@ -56,7 +56,7 @@ func internalJWTs(t *testing.T) testInternalJWTs {
 	t.Helper()
 	testTokensOnce.Do(func() {
 		configs := []jwtgen.Config{
-			{Issuer: internalJWTIssuer, Audience: internalJWTAudience, TokenUse: "tenant_access", TenantID: "test-tenant-id", Scope: "tenant_access tenant.write events.read events.write", KeyID: "tenant-key", TTL: time.Hour},
+			{Issuer: internalJWTIssuer, Audience: internalJWTAudience, TokenUse: "tenant_access", TenantPublicID: "0123456789abcdef", Scope: "tenant_access tenant.write events.read events.write", KeyID: "tenant-key", TTL: time.Hour},
 			{Issuer: internalJWTIssuer, Audience: internalJWTAudience, TokenUse: "registration", Scope: "tenant.register", KeyID: "registration-key", TTL: time.Hour},
 			{Issuer: internalJWTIssuer, Audience: internalJWTAudience, TokenUse: "service", KeyID: "service-key", TTL: time.Hour},
 		}

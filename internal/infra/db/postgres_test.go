@@ -249,7 +249,7 @@ func TestPostgresTenantRepositoryRejectsForeignTenantOnReconstitution(t *testing
 	// The caller is authenticated as tenant A, so loading any of tenant B's
 	// records must be rejected even though the queries themselves succeed. This
 	// is the safety net for a repository query that fails to scope by tenant.
-	foreignCtx := tenantctx.WithTenantID(ctx, tenantA.PublicID())
+	foreignCtx := tenantctx.WithTenantPublicID(ctx, tenantA.PublicID())
 
 	if _, err := repository.FindTenantByID(foreignCtx, tenantB.ID()); !errors.Is(err, tenantctx.ErrMismatch) {
 		t.Errorf("FindTenantByID(foreign) error = %v, want %v", err, tenantctx.ErrMismatch)
@@ -268,7 +268,7 @@ func TestPostgresTenantRepositoryRejectsForeignTenantOnReconstitution(t *testing
 	}
 
 	// The caller may still load its own tenant's records.
-	ownCtx := tenantctx.WithTenantID(ctx, tenantB.PublicID())
+	ownCtx := tenantctx.WithTenantPublicID(ctx, tenantB.PublicID())
 	if _, err := repository.FindEventByID(ownCtx, eventB.ID()); err != nil {
 		t.Errorf("FindEventByID(own) error = %v, want nil", err)
 	}

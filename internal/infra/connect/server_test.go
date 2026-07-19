@@ -166,9 +166,8 @@ func TestCreateEventOverTransport(t *testing.T) {
 	tenantPublicID := registeredTenant.Msg.GetTenant().GetTenantPublicId()
 
 	createRequest := connectrpc.NewRequest(&tenantv1.CreateEventRequest{
-		TenantPublicId: tenantPublicID,
-		Name:           "Summer Festival",
-		Type:           tenantv1.EventType_EVENT_TYPE_SHORT_TERM,
+		Name: "Summer Festival",
+		Type: tenantv1.EventType_EVENT_TYPE_SHORT_TERM,
 	})
 	createRequest.Header().Set("Authorization", mintTenantAccessToken(t, jwks, tenantPublicID))
 
@@ -214,12 +213,9 @@ func TestCreateEventOverTransportRejectsUnknownTenant(t *testing.T) {
 	t.Cleanup(httpServer.Close)
 	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
 
-	// The caller is authenticated as the tenant it asks for, so the tenant
-	// context guard passes; the tenant simply does not exist, so the repository
-	// lookup rejects it as not found.
+	// The JWT tenant does not exist, so the repository lookup rejects it.
 	req := connectrpc.NewRequest(&tenantv1.CreateEventRequest{
-		TenantPublicId: "0000000000000000",
-		Name:           "Summer Festival",
+		Name: "Summer Festival",
 	})
 	req.Header().Set("Authorization", mintTenantAccessToken(t, jwks, "0000000000000000"))
 
@@ -236,30 +232,18 @@ func TestCreateEventOverTransportRejectsForeignTenant(t *testing.T) {
 	t.Cleanup(httpServer.Close)
 	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
 
-	registerRequest := connectrpc.NewRequest(&tenantv1.RegisterTenantRequest{
-		Name:         "Tenant Owner",
-		ContractPlan: "standard",
-	})
-	registerRequest.Header().Set("Authorization", internalJWTs(t).registration)
-
-	registeredTenant, err := client.RegisterTenant(context.Background(), registerRequest)
-	if err != nil {
-		t.Fatalf("RegisterTenant() error = %v", err)
-	}
-
-	// A token authenticated as a different tenant must not be able to create an
-	// event under the registered tenant, even though the tenant exists.
+	// The request has no tenant selector, so this token can only act as its own
+	// tenant. Because that tenant does not exist, it cannot create an event.
 	foreignToken := mintTenantAccessToken(t, jwks, "ffffffffffffffff")
 
 	createRequest := connectrpc.NewRequest(&tenantv1.CreateEventRequest{
-		TenantPublicId: registeredTenant.Msg.GetTenant().GetTenantPublicId(),
-		Name:           "Intruder Event",
-		Type:           tenantv1.EventType_EVENT_TYPE_SHORT_TERM,
+		Name: "Intruder Event",
+		Type: tenantv1.EventType_EVENT_TYPE_SHORT_TERM,
 	})
 	createRequest.Header().Set("Authorization", foreignToken)
 
-	_, err = client.CreateEvent(context.Background(), createRequest)
-	if got, want := connectrpc.CodeOf(err), connectrpc.CodePermissionDenied; got != want {
+	_, err := client.CreateEvent(context.Background(), createRequest)
+	if got, want := connectrpc.CodeOf(err), connectrpc.CodeNotFound; got != want {
 		t.Fatalf("CreateEvent() error code = %v, want %v", got, want)
 	}
 }
@@ -285,8 +269,7 @@ func TestTransitionEventStatusOverTransport(t *testing.T) {
 	tenantAccess := mintTenantAccessToken(t, jwks, tenantResponse.Msg.GetTenant().GetTenantPublicId())
 
 	createRequest := connectrpc.NewRequest(&tenantv1.CreateEventRequest{
-		TenantPublicId: tenantResponse.Msg.GetTenant().GetTenantPublicId(),
-		Name:           "Status Event",
+		Name: "Status Event",
 	})
 	createRequest.Header().Set("Authorization", tenantAccess)
 

@@ -70,13 +70,13 @@ func mintTenantAccessToken(t *testing.T, registry *jwksRegistry, tenantPublicID 
 	t.Helper()
 
 	output, err := jwtgen.Generate(jwtgen.Config{
-		Issuer:   internalJWTIssuer,
-		Audience: internalJWTAudience,
-		TokenUse: "tenant_access",
-		TenantID: tenantPublicID,
-		Scope:    "tenant_access tenant.write events.read events.write",
-		KeyID:    "tenant-key-" + tenantPublicID,
-		TTL:      time.Hour,
+		Issuer:         internalJWTIssuer,
+		Audience:       internalJWTAudience,
+		TokenUse:       "tenant_access",
+		TenantPublicID: tenantPublicID,
+		Scope:          "tenant_access tenant.write events.read events.write",
+		KeyID:          "tenant-key-" + tenantPublicID,
+		TTL:            time.Hour,
 	})
 	if err != nil {
 		t.Fatalf("generate tenant access token: %v", err)

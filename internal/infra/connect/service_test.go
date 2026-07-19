@@ -99,7 +99,7 @@ func TestAssignEventType(t *testing.T) {
 
 	service, _, events := newReadService(t)
 
-	ctx := tenantctx.WithTenantID(context.Background(), events[0].TenantPublicID())
+	ctx := tenantctx.WithTenantPublicID(context.Background(), events[0].TenantPublicID())
 
 	response, err := service.AssignEventType(ctx, connectrpc.NewRequest(&tenantv1.AssignEventTypeRequest{
 		EventId: events[0].ID(),
@@ -119,9 +119,9 @@ func TestListEvents(t *testing.T) {
 
 	service, tenant, events := newReadService(t)
 
-	ctx := tenantctx.WithTenantID(context.Background(), tenant.PublicID())
+	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
 
-	response, err := service.ListEvents(ctx, connectrpc.NewRequest(&tenantv1.ListEventsRequest{TenantId: tenant.ID()}))
+	response, err := service.ListEvents(ctx, connectrpc.NewRequest(&tenantv1.ListEventsRequest{}))
 	if err != nil {
 		t.Fatalf("ListEvents() error = %v", err)
 	}
@@ -149,7 +149,7 @@ func newReadService(t *testing.T) (*Service, domain.Tenant, []domain.Event) {
 	ctrl := gomock.NewController(t)
 	repository := NewMockTenantRepository(ctrl)
 	repository.EXPECT().FindEventByID(gomock.Any(), events[0].ID()).Return(events[0], nil).AnyTimes()
-	repository.EXPECT().FindTenantByID(gomock.Any(), tenant.ID()).Return(tenant, nil).AnyTimes()
+	repository.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(tenant, nil).AnyTimes()
 	repository.EXPECT().ListEventsByTenantID(gomock.Any(), tenant.ID()).Return(events, nil).AnyTimes()
 	repository.EXPECT().UpdateEvent(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
