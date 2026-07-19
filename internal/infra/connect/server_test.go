@@ -21,26 +21,24 @@ var (
 )
 
 type relationTransportSpy struct {
-	mu            sync.Mutex
-	authorization string
-	input         application.AddTenantMemberInput
+	mu    sync.Mutex
+	input application.AddTenantMemberInput
 }
 
-func (s *relationTransportSpy) AddTenantMember(_ context.Context, authorization string, input application.AddTenantMemberInput) error {
+func (s *relationTransportSpy) AddTenantMember(_ context.Context, input application.AddTenantMemberInput) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.authorization = authorization
 	s.input = input
 
 	return nil
 }
 
-func (s *relationTransportSpy) call() (string, application.AddTenantMemberInput) {
+func (s *relationTransportSpy) call() application.AddTenantMemberInput {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return s.authorization, s.input
+	return s.input
 }
 
 func TestRegisterTenantOverTransport(t *testing.T) {
@@ -89,10 +87,7 @@ func TestRegisterTenantOverTransport(t *testing.T) {
 			t.Error("Tenant.Archived = true, want false")
 		}
 
-		authorization, input := relationTransport.call()
-		if got, want := authorization, internalJWTs(t).registration; got != want {
-			t.Errorf("Relation authorization = %q, want %q", got, want)
-		}
+		input := relationTransport.call()
 
 		if got := input.TenantID; !uuidV7Pattern.MatchString(got) {
 			t.Errorf("Relation tenant ID = %q, want UUIDv7", got)
