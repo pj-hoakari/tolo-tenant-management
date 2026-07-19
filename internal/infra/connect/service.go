@@ -82,12 +82,11 @@ func (s *Service) ArchiveTenant(context.Context, *connectrpc.Request[tenantv1.Ar
 
 func (s *Service) CreateEvent(ctx context.Context, req *connectrpc.Request[tenantv1.CreateEventRequest]) (*connectrpc.Response[tenantv1.CreateEventResponse], error) {
 	event, err := s.tenantService.CreateEvent(ctx, application.CreateEventInput{
-		TenantID: req.Msg.GetTenantPublicId(),
-		Name:     req.Msg.GetName(),
-		Type:     eventTypeDomain(req.Msg.GetType()),
+		Name: req.Msg.GetName(),
+		Type: eventTypeDomain(req.Msg.GetType()),
 	})
 	if err != nil {
-		if errors.Is(err, application.ErrEventTenantIDRequired) || errors.Is(err, application.ErrEventNameRequired) {
+		if errors.Is(err, application.ErrEventNameRequired) {
 			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
 		}
 
@@ -272,13 +271,9 @@ func (s *Service) GetEvent(ctx context.Context, req *connectrpc.Request[tenantv1
 	return connectrpc.NewResponse(&tenantv1.GetEventResponse{Event: eventProto(event)}), nil
 }
 
-func (s *Service) ListEvents(ctx context.Context, req *connectrpc.Request[tenantv1.ListEventsRequest]) (*connectrpc.Response[tenantv1.ListEventsResponse], error) {
-	events, err := s.tenantService.ListEvents(ctx, req.Msg.GetTenantId())
+func (s *Service) ListEvents(ctx context.Context, _ *connectrpc.Request[tenantv1.ListEventsRequest]) (*connectrpc.Response[tenantv1.ListEventsResponse], error) {
+	events, err := s.tenantService.ListEvents(ctx)
 	if err != nil {
-		if errors.Is(err, application.ErrTenantIDRequired) {
-			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
-		}
-
 		if errors.Is(err, repository.ErrTenantNotFound) {
 			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
 		}

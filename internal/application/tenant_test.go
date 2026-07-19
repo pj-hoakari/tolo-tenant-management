@@ -96,9 +96,8 @@ func TestCreateEvent(t *testing.T) {
 	ctx := tenantctx.WithTenantID(context.Background(), tenant.PublicID())
 
 	event, err := service.CreateEvent(ctx, application.CreateEventInput{
-		TenantID: tenant.PublicID(),
-		Name:     "Festival",
-		Type:     domain.EventTypeShortTerm,
+		Name: "Festival",
+		Type: domain.EventTypeShortTerm,
 	})
 	if err != nil {
 		t.Fatalf("CreateEvent() error = %v", err)
@@ -121,25 +120,20 @@ func TestCreateEvent(t *testing.T) {
 	}
 }
 
-func TestCreateEventRejectsMismatchedContextTenant(t *testing.T) {
+func TestCreateEventRejectsMissingContextTenant(t *testing.T) {
 	t.Parallel()
 
-	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", false)
 	ctrl := gomock.NewController(t)
 	repo := NewMockTenantRepository(ctrl)
-	// The mismatch is rejected before any repository lookup, so no call is
-	// expected on the repository.
+	// A tenant-scoped operation cannot proceed without a verified JWT tenant.
 	service := application.NewTenantService(repo, successfulMembershipService{})
 
-	ctx := tenantctx.WithTenantID(context.Background(), "other-tenant-public-id")
-
-	_, err := service.CreateEvent(ctx, application.CreateEventInput{
-		TenantID: tenant.PublicID(),
-		Name:     "Festival",
-		Type:     domain.EventTypeShortTerm,
+	_, err := service.CreateEvent(context.Background(), application.CreateEventInput{
+		Name: "Festival",
+		Type: domain.EventTypeShortTerm,
 	})
-	if !errors.Is(err, tenantctx.ErrMismatch) {
-		t.Fatalf("CreateEvent() error = %v, want %v", err, tenantctx.ErrMismatch)
+	if !errors.Is(err, tenantctx.ErrMissing) {
+		t.Fatalf("CreateEvent() error = %v, want %v", err, tenantctx.ErrMissing)
 	}
 }
 
@@ -264,13 +258,13 @@ func TestListEvents(t *testing.T) {
 	}
 	ctrl := gomock.NewController(t)
 	repository := NewMockTenantRepository(ctrl)
-	repository.EXPECT().FindTenantByID(gomock.Any(), tenant.ID()).Return(tenant, nil)
+	repository.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(tenant, nil)
 	repository.EXPECT().ListEventsByTenantID(gomock.Any(), tenant.ID()).Return(events, nil)
 	service := application.NewTenantService(repository, successfulMembershipService{})
 
 	ctx := tenantctx.WithTenantID(context.Background(), tenant.PublicID())
 
-	got, err := service.ListEvents(ctx, tenant.ID())
+	got, err := service.ListEvents(ctx)
 	if err != nil {
 		t.Fatalf("ListEvents() error = %v", err)
 	}

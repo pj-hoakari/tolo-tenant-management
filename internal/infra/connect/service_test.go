@@ -121,7 +121,7 @@ func TestListEvents(t *testing.T) {
 
 	ctx := tenantctx.WithTenantID(context.Background(), tenant.PublicID())
 
-	response, err := service.ListEvents(ctx, connectrpc.NewRequest(&tenantv1.ListEventsRequest{TenantId: tenant.ID()}))
+	response, err := service.ListEvents(ctx, connectrpc.NewRequest(&tenantv1.ListEventsRequest{}))
 	if err != nil {
 		t.Fatalf("ListEvents() error = %v", err)
 	}
@@ -149,7 +149,7 @@ func newReadService(t *testing.T) (*Service, domain.Tenant, []domain.Event) {
 	ctrl := gomock.NewController(t)
 	repository := NewMockTenantRepository(ctrl)
 	repository.EXPECT().FindEventByID(gomock.Any(), events[0].ID()).Return(events[0], nil).AnyTimes()
-	repository.EXPECT().FindTenantByID(gomock.Any(), tenant.ID()).Return(tenant, nil).AnyTimes()
+	repository.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(tenant, nil).AnyTimes()
 	repository.EXPECT().ListEventsByTenantID(gomock.Any(), tenant.ID()).Return(events, nil).AnyTimes()
 	repository.EXPECT().UpdateEvent(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
