@@ -10,6 +10,7 @@ import (
 	tenantv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 	"go.uber.org/mock/gomock"
 )
 
@@ -98,7 +99,9 @@ func TestAssignEventType(t *testing.T) {
 
 	service, _, events := newReadService(t)
 
-	response, err := service.AssignEventType(context.Background(), connectrpc.NewRequest(&tenantv1.AssignEventTypeRequest{
+	ctx := tenantctx.WithTenantID(context.Background(), events[0].TenantPublicID())
+
+	response, err := service.AssignEventType(ctx, connectrpc.NewRequest(&tenantv1.AssignEventTypeRequest{
 		EventId: events[0].ID(),
 		Type:    tenantv1.EventType_EVENT_TYPE_LONG_TERM,
 	}))
@@ -116,7 +119,9 @@ func TestListEvents(t *testing.T) {
 
 	service, tenant, events := newReadService(t)
 
-	response, err := service.ListEvents(context.Background(), connectrpc.NewRequest(&tenantv1.ListEventsRequest{TenantId: tenant.ID()}))
+	ctx := tenantctx.WithTenantID(context.Background(), tenant.PublicID())
+
+	response, err := service.ListEvents(ctx, connectrpc.NewRequest(&tenantv1.ListEventsRequest{TenantId: tenant.ID()}))
 	if err != nil {
 		t.Fatalf("ListEvents() error = %v", err)
 	}

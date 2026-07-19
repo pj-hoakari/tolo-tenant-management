@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/repository"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
 
 func (r *PostgresTenantRepository) CreateEvent(ctx context.Context, event domain.Event) error {
@@ -55,7 +56,7 @@ func (r *PostgresTenantRepository) FindEventByID(ctx context.Context, eventID st
 		return domain.Event{}, err
 	}
 
-	return row.domain()
+	return row.domain(ctx)
 }
 
 func (r *PostgresTenantRepository) ListEventsByTenantID(ctx context.Context, tenantID string) ([]domain.Event, error) {
@@ -68,7 +69,7 @@ func (r *PostgresTenantRepository) ListEventsByTenantID(ctx context.Context, ten
 
 	events := make([]domain.Event, len(rows))
 	for i, row := range rows {
-		event, err := row.domain()
+		event, err := row.domain(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -126,7 +127,7 @@ type eventRow struct {
 	Status         string `db:"status"`
 }
 
-func (r eventRow) domain() (domain.Event, error) {
+func (r eventRow) domain(ctx context.Context) (domain.Event, error) {
 	eventType, err := domain.ParseEventType(r.EventType)
 	if err != nil {
 		return domain.Event{}, fmt.Errorf("parse event %q type: %w", r.ID, err)
@@ -135,6 +136,12 @@ func (r eventRow) domain() (domain.Event, error) {
 	status, err := domain.ParseEventStatus(r.Status)
 	if err != nil {
 		return domain.Event{}, fmt.Errorf("parse event %q status: %w", r.ID, err)
+	}
+
+	// Defense in depth: never return an event that belongs to a tenant other
+	// than the authenticated tenant carried in the context.
+	if err := tenantctx.VerifyOwnership(ctx, r.TenantPublicID); err != nil {
+		return domain.Event{}, err
 	}
 
 	return domain.NewEvent(r.ID, r.PublicID, r.TenantID, r.TenantPublicID, r.Name, eventType, status), nil

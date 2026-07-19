@@ -10,6 +10,7 @@ import (
 
 	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 	"go.uber.org/mock/gomock"
 )
 
@@ -92,7 +93,9 @@ func TestCreateEvent(t *testing.T) {
 	})
 	service := application.NewTenantService(repo, successfulMembershipService{})
 
-	event, err := service.CreateEvent(context.Background(), application.CreateEventInput{
+	ctx := tenantctx.WithTenantID(context.Background(), tenant.PublicID())
+
+	event, err := service.CreateEvent(ctx, application.CreateEventInput{
 		TenantID: tenant.PublicID(),
 		Name:     "Festival",
 		Type:     domain.EventTypeShortTerm,
@@ -118,6 +121,48 @@ func TestCreateEvent(t *testing.T) {
 	}
 }
 
+func TestCreateEventRejectsMismatchedContextTenant(t *testing.T) {
+	t.Parallel()
+
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", false)
+	ctrl := gomock.NewController(t)
+	repo := NewMockTenantRepository(ctrl)
+	// The mismatch is rejected before any repository lookup, so no call is
+	// expected on the repository.
+	service := application.NewTenantService(repo, successfulMembershipService{})
+
+	ctx := tenantctx.WithTenantID(context.Background(), "other-tenant-public-id")
+
+	_, err := service.CreateEvent(ctx, application.CreateEventInput{
+		TenantID: tenant.PublicID(),
+		Name:     "Festival",
+		Type:     domain.EventTypeShortTerm,
+	})
+	if !errors.Is(err, tenantctx.ErrMismatch) {
+		t.Fatalf("CreateEvent() error = %v, want %v", err, tenantctx.ErrMismatch)
+	}
+}
+
+func TestTransitionEventStatusRejectsMismatchedContextTenant(t *testing.T) {
+	t.Parallel()
+
+	event := domain.NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", domain.EventTypeShortTerm, domain.EventStatusDraft)
+	ctrl := gomock.NewController(t)
+	repo := NewMockTenantRepository(ctrl)
+	repo.EXPECT().FindEventByID(gomock.Any(), event.ID()).Return(event, nil)
+	service := application.NewTenantService(repo, successfulMembershipService{})
+
+	ctx := tenantctx.WithTenantID(context.Background(), "other-tenant-public-id")
+
+	_, err := service.TransitionEventStatus(ctx, application.TransitionEventStatusInput{
+		EventID: event.ID(),
+		To:      domain.EventStatusOpen,
+	})
+	if !errors.Is(err, tenantctx.ErrMismatch) {
+		t.Fatalf("TransitionEventStatus() error = %v, want %v", err, tenantctx.ErrMismatch)
+	}
+}
+
 func TestTransitionEventStatus(t *testing.T) {
 	t.Parallel()
 
@@ -135,7 +180,9 @@ func TestTransitionEventStatus(t *testing.T) {
 	})
 	service := application.NewTenantService(repo, successfulMembershipService{})
 
-	updatedEvent, err := service.TransitionEventStatus(context.Background(), application.TransitionEventStatusInput{
+	ctx := tenantctx.WithTenantID(context.Background(), event.TenantPublicID())
+
+	updatedEvent, err := service.TransitionEventStatus(ctx, application.TransitionEventStatusInput{
 		EventID: event.ID(),
 		To:      domain.EventStatusOpen,
 	})
@@ -169,7 +216,9 @@ func TestAssignEventType(t *testing.T) {
 	})
 	service := application.NewTenantService(repository, successfulMembershipService{})
 
-	updatedEvent, err := service.AssignEventType(context.Background(), application.AssignEventTypeInput{
+	ctx := tenantctx.WithTenantID(context.Background(), event.TenantPublicID())
+
+	updatedEvent, err := service.AssignEventType(ctx, application.AssignEventTypeInput{
 		EventID: event.ID(),
 		Type:    domain.EventTypeLongTerm,
 	})
@@ -219,7 +268,9 @@ func TestListEvents(t *testing.T) {
 	repository.EXPECT().ListEventsByTenantID(gomock.Any(), tenant.ID()).Return(events, nil)
 	service := application.NewTenantService(repository, successfulMembershipService{})
 
-	got, err := service.ListEvents(context.Background(), tenant.ID())
+	ctx := tenantctx.WithTenantID(context.Background(), tenant.PublicID())
+
+	got, err := service.ListEvents(ctx, tenant.ID())
 	if err != nil {
 		t.Fatalf("ListEvents() error = %v", err)
 	}

@@ -6,9 +6,8 @@ import (
 
 	connectrpc "connectrpc.com/connect"
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1/tenantv1connect"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
-
-type tenantIDContextKey struct{}
 
 const (
 	internalJWTIssuer   = "api-gateway"
@@ -26,9 +25,7 @@ const (
 // TenantIDFromContext returns the tenant ID verified by the transport
 // interceptor.
 func TenantIDFromContext(ctx context.Context) (string, bool) {
-	tenantID, ok := ctx.Value(tenantIDContextKey{}).(string)
-
-	return tenantID, ok
+	return tenantctx.FromContext(ctx)
 }
 
 func newTenantIDInterceptor(validator JWTValidator) connectrpc.Interceptor {
@@ -45,7 +42,7 @@ func newTenantIDInterceptor(validator JWTValidator) connectrpc.Interceptor {
 				return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, nil)
 			}
 
-			return next(context.WithValue(ctx, tenantIDContextKey{}, tenantID), req)
+			return next(tenantctx.WithTenantID(ctx, tenantID), req)
 		}
 	})
 }
