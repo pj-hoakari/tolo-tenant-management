@@ -74,7 +74,7 @@ func mintTenantAccessToken(t *testing.T, registry *jwksRegistry, tenantPublicID 
 		Audience:       internalJWTAudience,
 		TokenUse:       "tenant_access",
 		TenantPublicID: tenantPublicID,
-		Scope:          "tenant_access tenant.write events.read events.write",
+		Scope:          "tenant.write events.read events.write",
 		KeyID:          "tenant-key-" + tenantPublicID,
 		TTL:            time.Hour,
 	})
