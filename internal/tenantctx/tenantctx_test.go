@@ -8,22 +8,22 @@ import (
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
 
-func TestFromContext(t *testing.T) {
+func TestTenantPublicIDFromContext(t *testing.T) {
 	t.Parallel()
 
-	ctx := tenantctx.WithTenantID(context.Background(), "tenant-public-id")
+	ctx := tenantctx.WithTenantPublicID(context.Background(), "tenant-public-id")
 
-	got, ok := tenantctx.FromContext(ctx)
+	got, ok := tenantctx.TenantPublicIDFromContext(ctx)
 	if !ok {
-		t.Fatal("FromContext() ok = false, want true")
+		t.Fatal("TenantPublicIDFromContext() ok = false, want true")
 	}
 
 	if want := "tenant-public-id"; got != want {
-		t.Errorf("FromContext() = %q, want %q", got, want)
+		t.Errorf("TenantPublicIDFromContext() = %q, want %q", got, want)
 	}
 
-	if _, ok := tenantctx.FromContext(context.Background()); ok {
-		t.Error("FromContext() ok = true for empty context, want false")
+	if _, ok := tenantctx.TenantPublicIDFromContext(context.Background()); ok {
+		t.Error("TenantPublicIDFromContext() ok = true for empty context, want false")
 	}
 }
 
@@ -38,13 +38,13 @@ func TestEnsure(t *testing.T) {
 	}{
 		{
 			name:           "matches context tenant",
-			ctx:            tenantctx.WithTenantID(context.Background(), "tenant-public-id"),
+			ctx:            tenantctx.WithTenantPublicID(context.Background(), "tenant-public-id"),
 			tenantPublicID: "tenant-public-id",
 			wantErr:        nil,
 		},
 		{
 			name:           "differs from context tenant",
-			ctx:            tenantctx.WithTenantID(context.Background(), "tenant-public-id"),
+			ctx:            tenantctx.WithTenantPublicID(context.Background(), "tenant-public-id"),
 			tenantPublicID: "other-tenant-public-id",
 			wantErr:        tenantctx.ErrMismatch,
 		},
@@ -56,7 +56,7 @@ func TestEnsure(t *testing.T) {
 		},
 		{
 			name:           "empty context tenant",
-			ctx:            tenantctx.WithTenantID(context.Background(), ""),
+			ctx:            tenantctx.WithTenantPublicID(context.Background(), ""),
 			tenantPublicID: "tenant-public-id",
 			wantErr:        tenantctx.ErrMissing,
 		},
@@ -85,13 +85,13 @@ func TestVerifyOwnership(t *testing.T) {
 	}{
 		{
 			name:           "matches context tenant",
-			ctx:            tenantctx.WithTenantID(context.Background(), "tenant-public-id"),
+			ctx:            tenantctx.WithTenantPublicID(context.Background(), "tenant-public-id"),
 			tenantPublicID: "tenant-public-id",
 			wantErr:        nil,
 		},
 		{
 			name:           "differs from context tenant",
-			ctx:            tenantctx.WithTenantID(context.Background(), "tenant-public-id"),
+			ctx:            tenantctx.WithTenantPublicID(context.Background(), "tenant-public-id"),
 			tenantPublicID: "other-tenant-public-id",
 			wantErr:        tenantctx.ErrMismatch,
 		},
@@ -103,7 +103,7 @@ func TestVerifyOwnership(t *testing.T) {
 		},
 		{
 			name:           "empty context tenant is unrestricted",
-			ctx:            tenantctx.WithTenantID(context.Background(), ""),
+			ctx:            tenantctx.WithTenantPublicID(context.Background(), ""),
 			tenantPublicID: "tenant-public-id",
 			wantErr:        nil,
 		},

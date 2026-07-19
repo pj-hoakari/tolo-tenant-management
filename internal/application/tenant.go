@@ -142,7 +142,7 @@ func (s *TenantService) CreateEvent(ctx context.Context, input CreateEventInput)
 		return domain.Event{}, ErrEventNameRequired
 	}
 
-	tenantPublicID, ok := tenantctx.FromContext(ctx)
+	tenantPublicID, ok := tenantctx.TenantPublicIDFromContext(ctx)
 	if !ok || tenantPublicID == "" {
 		return domain.Event{}, tenantctx.ErrMissing
 	}
@@ -245,7 +245,7 @@ func (s *TenantService) GetEvent(ctx context.Context, eventID string) (domain.Ev
 }
 
 func (s *TenantService) ListEvents(ctx context.Context) ([]domain.Event, error) {
-	tenantPublicID, ok := tenantctx.FromContext(ctx)
+	tenantPublicID, ok := tenantctx.TenantPublicIDFromContext(ctx)
 	if !ok || tenantPublicID == "" {
 		return nil, tenantctx.ErrMissing
 	}

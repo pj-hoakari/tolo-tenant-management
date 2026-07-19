@@ -27,7 +27,7 @@ func NewHandlerWithValidator(tenantService application.TenantUseCases, validator
 	path, handler := tenantv1connect.NewTenantServiceHandlerWithAuthz(
 		NewService(tenantService),
 		newTenantAuthzVerifier(validator),
-		connectrpc.WithInterceptors(newTenantIDInterceptor(validator)),
+		connectrpc.WithInterceptors(newTenantPublicIDInterceptor(validator)),
 	)
 	mux.Handle(path, handler)
 

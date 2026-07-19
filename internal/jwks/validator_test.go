@@ -21,7 +21,7 @@ func (f roundTripperFunc) RoundTrip(request *http.Request) (*http.Response, erro
 func TestJWKSValidatorCachesFetchedKey(t *testing.T) {
 	generated, err := jwtgen.Generate(jwtgen.Config{
 		Issuer: "api-gateway", Audience: "tenant-management", TokenUse: "tenant_access",
-		TenantID: "tenant-id", Scope: "events.read", KeyID: "key-1", TTL: time.Hour,
+		TenantPublicID: "0123456789abcdef", Scope: "events.read", KeyID: "key-1", TTL: time.Hour,
 	})
 	if err != nil {
 		t.Fatalf("Generate() error = %v", err)

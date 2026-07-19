@@ -24,14 +24,14 @@ var (
 
 type contextKey struct{}
 
-// WithTenantID stores the authenticated tenant's public ID on the context.
-func WithTenantID(ctx context.Context, tenantPublicID string) context.Context {
+// WithTenantPublicID stores the authenticated tenant's public ID on the context.
+func WithTenantPublicID(ctx context.Context, tenantPublicID string) context.Context {
 	return context.WithValue(ctx, contextKey{}, tenantPublicID)
 }
 
-// FromContext returns the authenticated tenant's public ID stored by
-// WithTenantID.
-func FromContext(ctx context.Context) (string, bool) {
+// TenantPublicIDFromContext returns the authenticated tenant's public ID
+// stored by WithTenantPublicID.
+func TenantPublicIDFromContext(ctx context.Context) (string, bool) {
 	tenantPublicID, ok := ctx.Value(contextKey{}).(string)
 
 	return tenantPublicID, ok
@@ -43,12 +43,12 @@ func FromContext(ctx context.Context) (string, bool) {
 // public ID of the tenant they are about to act on to guard against tenant
 // mix-ups. Use this at the use-case boundary to authorize an operation.
 func Ensure(ctx context.Context, tenantPublicID string) error {
-	contextTenantID, ok := FromContext(ctx)
-	if !ok || contextTenantID == "" {
+	contextTenantPublicID, ok := TenantPublicIDFromContext(ctx)
+	if !ok || contextTenantPublicID == "" {
 		return ErrMissing
 	}
 
-	if contextTenantID != tenantPublicID {
+	if contextTenantPublicID != tenantPublicID {
 		return ErrMismatch
 	}
 
@@ -62,12 +62,12 @@ func Ensure(ctx context.Context, tenantPublicID string) error {
 // depth, so that a repository query which forgets to scope by tenant cannot
 // hand back — and thereby leak — another tenant's data.
 func VerifyOwnership(ctx context.Context, tenantPublicID string) error {
-	contextTenantID, ok := FromContext(ctx)
-	if !ok || contextTenantID == "" {
+	contextTenantPublicID, ok := TenantPublicIDFromContext(ctx)
+	if !ok || contextTenantPublicID == "" {
 		return nil
 	}
 
-	if contextTenantID != tenantPublicID {
+	if contextTenantPublicID != tenantPublicID {
 		return ErrMismatch
 	}
 

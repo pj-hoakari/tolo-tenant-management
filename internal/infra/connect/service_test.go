@@ -99,7 +99,7 @@ func TestAssignEventType(t *testing.T) {
 
 	service, _, events := newReadService(t)
 
-	ctx := tenantctx.WithTenantID(context.Background(), events[0].TenantPublicID())
+	ctx := tenantctx.WithTenantPublicID(context.Background(), events[0].TenantPublicID())
 
 	response, err := service.AssignEventType(ctx, connectrpc.NewRequest(&tenantv1.AssignEventTypeRequest{
 		EventId: events[0].ID(),
@@ -119,7 +119,7 @@ func TestListEvents(t *testing.T) {
 
 	service, tenant, events := newReadService(t)
 
-	ctx := tenantctx.WithTenantID(context.Background(), tenant.PublicID())
+	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
 
 	response, err := service.ListEvents(ctx, connectrpc.NewRequest(&tenantv1.ListEventsRequest{}))
 	if err != nil {

@@ -93,7 +93,7 @@ func TestCreateEvent(t *testing.T) {
 	})
 	service := application.NewTenantService(repo, successfulMembershipService{})
 
-	ctx := tenantctx.WithTenantID(context.Background(), tenant.PublicID())
+	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
 
 	event, err := service.CreateEvent(ctx, application.CreateEventInput{
 		Name: "Festival",
@@ -146,7 +146,7 @@ func TestTransitionEventStatusRejectsMismatchedContextTenant(t *testing.T) {
 	repo.EXPECT().FindEventByID(gomock.Any(), event.ID()).Return(event, nil)
 	service := application.NewTenantService(repo, successfulMembershipService{})
 
-	ctx := tenantctx.WithTenantID(context.Background(), "other-tenant-public-id")
+	ctx := tenantctx.WithTenantPublicID(context.Background(), "other-tenant-public-id")
 
 	_, err := service.TransitionEventStatus(ctx, application.TransitionEventStatusInput{
 		EventID: event.ID(),
@@ -174,7 +174,7 @@ func TestTransitionEventStatus(t *testing.T) {
 	})
 	service := application.NewTenantService(repo, successfulMembershipService{})
 
-	ctx := tenantctx.WithTenantID(context.Background(), event.TenantPublicID())
+	ctx := tenantctx.WithTenantPublicID(context.Background(), event.TenantPublicID())
 
 	updatedEvent, err := service.TransitionEventStatus(ctx, application.TransitionEventStatusInput{
 		EventID: event.ID(),
@@ -210,7 +210,7 @@ func TestAssignEventType(t *testing.T) {
 	})
 	service := application.NewTenantService(repository, successfulMembershipService{})
 
-	ctx := tenantctx.WithTenantID(context.Background(), event.TenantPublicID())
+	ctx := tenantctx.WithTenantPublicID(context.Background(), event.TenantPublicID())
 
 	updatedEvent, err := service.AssignEventType(ctx, application.AssignEventTypeInput{
 		EventID: event.ID(),
@@ -262,7 +262,7 @@ func TestListEvents(t *testing.T) {
 	repository.EXPECT().ListEventsByTenantID(gomock.Any(), tenant.ID()).Return(events, nil)
 	service := application.NewTenantService(repository, successfulMembershipService{})
 
-	ctx := tenantctx.WithTenantID(context.Background(), tenant.PublicID())
+	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
 
 	got, err := service.ListEvents(ctx)
 	if err != nil {

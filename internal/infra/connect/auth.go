@@ -40,8 +40,10 @@ func authorizeInternalJWT(ctx context.Context, validator JWTValidator, authoriza
 	return nil
 }
 
-func tenantIDFromClaims(claims jwks.InternalJWTClaims) (string, bool) {
-	tenantID := strings.TrimSpace(claims.TenantID)
+// tenantPublicIDFromClaims extracts the tenant's 16-character hexadecimal
+// public ID from the tenant_id JWT claim.
+func tenantPublicIDFromClaims(claims jwks.InternalJWTClaims) (string, bool) {
+	tenantPublicID := strings.TrimSpace(claims.TenantPublicID)
 
-	return tenantID, claims.TokenUse == internalTokenUseTenantAccess && tenantID != ""
+	return tenantPublicID, claims.TokenUse == internalTokenUseTenantAccess && tenantPublicID != ""
 }

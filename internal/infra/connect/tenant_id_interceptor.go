@@ -22,13 +22,13 @@ const (
 	internalTokenUseRegistration internalTokenUse = "registration"
 )
 
-// TenantIDFromContext returns the tenant ID verified by the transport
-// interceptor.
-func TenantIDFromContext(ctx context.Context) (string, bool) {
-	return tenantctx.FromContext(ctx)
+// TenantPublicIDFromContext returns the tenant's 16-character hexadecimal
+// public ID verified by the transport interceptor.
+func TenantPublicIDFromContext(ctx context.Context) (string, bool) {
+	return tenantctx.TenantPublicIDFromContext(ctx)
 }
 
-func newTenantIDInterceptor(validator JWTValidator) connectrpc.Interceptor {
+func newTenantPublicIDInterceptor(validator JWTValidator) connectrpc.Interceptor {
 	return connectrpc.UnaryInterceptorFunc(func(next connectrpc.UnaryFunc) connectrpc.UnaryFunc {
 		return func(ctx context.Context, req connectrpc.AnyRequest) (connectrpc.AnyResponse, error) {
 			if tenantIDNotRequired(req.Spec().Procedure) {
@@ -37,12 +37,12 @@ func newTenantIDInterceptor(validator JWTValidator) connectrpc.Interceptor {
 
 			claims, err := validator.Claims(ctx, req.Header().Get("Authorization"))
 
-			tenantID, ok := tenantIDFromClaims(claims)
+			tenantPublicID, ok := tenantPublicIDFromClaims(claims)
 			if err != nil || !ok {
 				return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, nil)
 			}
 
-			return next(tenantctx.WithTenantID(ctx, tenantID), req)
+			return next(tenantctx.WithTenantPublicID(ctx, tenantPublicID), req)
 		}
 	})
 }

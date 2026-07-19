@@ -47,10 +47,10 @@ API Gateway が発行した内部 JWT を Authorization ヘッダーで受け付
 Authorization: Bearer <API Gateway 発行の内部 JWT>
 ```
 
-`RegisterTenant` は `token_use=registration`、`GetEvent` は `token_use=service`、その他の TenantService RPC は `token_use=tenant_access` を要求する。後者には `tenant_id` クレームが必須である。
+`RegisterTenant` は `token_use=registration`、`GetEvent` は `token_use=service`、その他の TenantService RPC は `token_use=tenant_access` を要求する。後者には `tenant_id` クレームが必須であり、その値は UUIDv7 ではなくテナントの `tenant_public_id`（ランダムな16文字hex）である。
 
 ```text
-{"tenant_id":"<tenant UUIDv7>"}
+{"tenant_id":"<tenant_public_id: 16-character hex>"}
 ```
 
 JWKS は `INTERNAL_JWKS_URL` から取得する。未設定時は API Gateway コンテナのエンドポイント `http://gateway:8080/.well-known/jwks.json` を使う。取得した鍵は 5 分間キャッシュし、未知の `kid` を受信した場合は直ちに再取得する。
@@ -60,10 +60,10 @@ JWKS は `INTERNAL_JWKS_URL` から取得する。未設定時は API Gateway �
 `cmd/jwtgen` は ES256 の鍵ペアを生成し、内部 JWT と対応する公開 JWKS を JSON で出力する。
 
 ```bash
-go run ./cmd/jwtgen -tenant-id test-tenant -scope events.read
+go run ./cmd/jwtgen -tenant-public-id 0123456789abcdef -scope events.read
 ```
 
-`tenant_access` では `-tenant-id` が必須。`-token-use service` または `-token-use registration` も指定できる。
+`tenant_access` では `-tenant-public-id`（ランダムな16文字hex）が必須。`-token-use service` または `-token-use registration` も指定できる。
 出力された `jwks` を API Gateway の JWKS スタブとして公開すると、出力された `token` を結合テストに利用できる。サービスのテストもこの CLI と同じ生成ロジックを使用する。
 
 ---
