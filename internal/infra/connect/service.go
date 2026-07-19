@@ -11,9 +11,25 @@ import (
 	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/repository"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
 
 var errNotImplemented = errors.New("tenant service method is not implemented")
+
+// tenantContextErrorCode maps the tenant-context guard errors to Connect codes.
+// A mismatch is a cross-tenant access attempt (permission denied); a missing
+// context tenant on a tenant-scoped call means the caller is not authenticated
+// as any tenant.
+func tenantContextErrorCode(err error) (connectrpc.Code, bool) {
+	switch {
+	case errors.Is(err, tenantctx.ErrMismatch):
+		return connectrpc.CodePermissionDenied, true
+	case errors.Is(err, tenantctx.ErrMissing):
+		return connectrpc.CodeUnauthenticated, true
+	default:
+		return 0, false
+	}
+}
 
 // Service is the Connect transport implementation of TenantService.
 type Service struct {
@@ -81,6 +97,10 @@ func (s *Service) CreateEvent(ctx context.Context, req *connectrpc.Request[tenan
 
 		if errors.Is(err, repository.ErrTenantArchived) {
 			return nil, connectrpc.NewError(connectrpc.CodeFailedPrecondition, err)
+		}
+
+		if code, ok := tenantContextErrorCode(err); ok {
+			return nil, connectrpc.NewError(code, err)
 		}
 
 		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
@@ -182,6 +202,10 @@ func (s *Service) AssignEventType(ctx context.Context, req *connectrpc.Request[t
 			return nil, connectrpc.NewError(connectrpc.CodeFailedPrecondition, err)
 		}
 
+		if code, ok := tenantContextErrorCode(err); ok {
+			return nil, connectrpc.NewError(code, err)
+		}
+
 		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
 	}
 
@@ -204,6 +228,10 @@ func (s *Service) TransitionEventStatus(ctx context.Context, req *connectrpc.Req
 
 		if errors.Is(err, domain.ErrInvalidEventStatusTransition) || errors.Is(err, repository.ErrTenantArchived) {
 			return nil, connectrpc.NewError(connectrpc.CodeFailedPrecondition, err)
+		}
+
+		if code, ok := tenantContextErrorCode(err); ok {
+			return nil, connectrpc.NewError(code, err)
 		}
 
 		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
@@ -253,6 +281,10 @@ func (s *Service) ListEvents(ctx context.Context, req *connectrpc.Request[tenant
 
 		if errors.Is(err, repository.ErrTenantNotFound) {
 			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
+		}
+
+		if code, ok := tenantContextErrorCode(err); ok {
+			return nil, connectrpc.NewError(code, err)
 		}
 
 		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)

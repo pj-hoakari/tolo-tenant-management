@@ -8,6 +8,7 @@ import (
 
 	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/repository"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
 
 var (
@@ -148,6 +149,13 @@ func (s *TenantService) CreateEvent(ctx context.Context, input CreateEventInput)
 		return domain.Event{}, ErrEventNameRequired
 	}
 
+	// The request carries the target tenant's public ID, so authorize against
+	// the authenticated tenant before touching the repository: fail fast and
+	// avoid probing other tenants' existence.
+	if err := tenantctx.Ensure(ctx, input.TenantID); err != nil {
+		return domain.Event{}, err
+	}
+
 	tenant, err := s.tenantRepository.FindTenantByPublicID(ctx, input.TenantID)
 	if err != nil {
 		return domain.Event{}, err
@@ -189,6 +197,11 @@ func (s *TenantService) TransitionEventStatus(ctx context.Context, input Transit
 		return domain.Event{}, err
 	}
 
+	// The tenant is only known once the event is loaded, so authorize here.
+	if err := tenantctx.Ensure(ctx, event.TenantPublicID()); err != nil {
+		return domain.Event{}, err
+	}
+
 	updatedEvent, err := event.TransitionTo(input.To)
 	if err != nil {
 		return domain.Event{}, err
@@ -212,6 +225,11 @@ func (s *TenantService) AssignEventType(ctx context.Context, input AssignEventTy
 
 	event, err := s.tenantRepository.FindEventByID(ctx, input.EventID)
 	if err != nil {
+		return domain.Event{}, err
+	}
+
+	// The tenant is only known once the event is loaded, so authorize here.
+	if err := tenantctx.Ensure(ctx, event.TenantPublicID()); err != nil {
 		return domain.Event{}, err
 	}
 
@@ -240,7 +258,14 @@ func (s *TenantService) ListEvents(ctx context.Context, tenantID string) ([]doma
 		return nil, ErrTenantIDRequired
 	}
 
-	if _, err := s.tenantRepository.FindTenantByID(ctx, tenantID); err != nil {
+	// The request carries the tenant's internal ID, not its public ID, so the
+	// tenant must be loaded before it can be authorized against the context.
+	tenant, err := s.tenantRepository.FindTenantByID(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tenantctx.Ensure(ctx, tenant.PublicID()); err != nil {
 		return nil, err
 	}
 
