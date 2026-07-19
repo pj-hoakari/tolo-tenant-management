@@ -5,8 +5,9 @@ package tolo.tenant.v1;
 import "authz/v1/options.proto";
 
 service TenantService {
-  // Self-signup requires tenant.register but no tenant_access scope. The
-  // caller must not already belong to the tenant being created.
+  // Self-signup requires the tenant.register permission. token_use=registration
+  // (the credential class) is enforced separately. The caller must not already
+  // belong to the tenant being created.
   rpc RegisterTenant(RegisterTenantRequest) returns (RegisterTenantResponse) {
     option (authz.v1.auth_policy) = {
       level: AUTH_LEVEL_AUTHENTICATED
@@ -16,35 +17,30 @@ service TenantService {
   rpc ChangeTenantContract(ChangeTenantContractRequest) returns (ChangeTenantContractResponse) {
     option (authz.v1.auth_policy) = {
       level: AUTH_LEVEL_AUTHENTICATED
-      required_scopes: "tenant_access"
       required_scopes: "tenant.write"
     };
   }
   rpc ArchiveTenant(ArchiveTenantRequest) returns (ArchiveTenantResponse) {
     option (authz.v1.auth_policy) = {
       level: AUTH_LEVEL_AUTHENTICATED
-      required_scopes: "tenant_access"
       required_scopes: "tenant.write"
     };
   }
   rpc CreateEvent(CreateEventRequest) returns (CreateEventResponse) {
     option (authz.v1.auth_policy) = {
       level: AUTH_LEVEL_AUTHENTICATED
-      required_scopes: "tenant_access"
       required_scopes: "events.write"
     };
   }
   rpc AssignEventType(AssignEventTypeRequest) returns (AssignEventTypeResponse) {
     option (authz.v1.auth_policy) = {
       level: AUTH_LEVEL_AUTHENTICATED
-      required_scopes: "tenant_access"
       required_scopes: "events.write"
     };
   }
   rpc TransitionEventStatus(TransitionEventStatusRequest) returns (TransitionEventStatusResponse) {
     option (authz.v1.auth_policy) = {
       level: AUTH_LEVEL_AUTHENTICATED
-      required_scopes: "tenant_access"
       required_scopes: "events.write"
     };
   }
@@ -54,7 +50,6 @@ service TenantService {
   rpc ListEvents(ListEventsRequest) returns (ListEventsResponse) {
     option (authz.v1.auth_policy) = {
       level: AUTH_LEVEL_AUTHENTICATED
-      required_scopes: "tenant_access"
       required_scopes: "events.read"
     };
   }

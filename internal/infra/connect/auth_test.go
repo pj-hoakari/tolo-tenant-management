@@ -17,7 +17,7 @@ func TestAuthorizeInternalJWT(t *testing.T) {
 	validator := NewMockJWTValidator(controller)
 	validator.EXPECT().Claims(gomock.Any(), "Bearer test-token").Return(jwks.InternalJWTClaims{
 		TokenUse: internalTokenUseTenantAccess,
-		Scope:    "tenant_access events.write",
+		Scope:    "events.write",
 	}, nil)
 
 	err := authorizeInternalJWT(context.Background(), validator, "Bearer test-token", tenantv1connect.TenantServiceCreateEventProcedure, []string{"events.write"})

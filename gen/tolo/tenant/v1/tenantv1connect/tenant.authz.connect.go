@@ -58,7 +58,7 @@ func (i *tenantServiceAuthzInterceptor) verify(ctx context.Context, procedure st
 		}
 		return nil
 	case "/tolo.tenant.v1.TenantService/ChangeTenantContract":
-		if err := i.verifier.Verify(ctx, AuthPolicy{Level: AuthLevelAuthenticated, RequiredScopes: []string{"tenant_access", "tenant.write"}}); err != nil {
+		if err := i.verifier.Verify(ctx, AuthPolicy{Level: AuthLevelAuthenticated, RequiredScopes: []string{"tenant.write"}}); err != nil {
 			var connectErr *connect.Error
 			if errors.As(err, &connectErr) {
 				return err
@@ -67,7 +67,7 @@ func (i *tenantServiceAuthzInterceptor) verify(ctx context.Context, procedure st
 		}
 		return nil
 	case "/tolo.tenant.v1.TenantService/ArchiveTenant":
-		if err := i.verifier.Verify(ctx, AuthPolicy{Level: AuthLevelAuthenticated, RequiredScopes: []string{"tenant_access", "tenant.write"}}); err != nil {
+		if err := i.verifier.Verify(ctx, AuthPolicy{Level: AuthLevelAuthenticated, RequiredScopes: []string{"tenant.write"}}); err != nil {
 			var connectErr *connect.Error
 			if errors.As(err, &connectErr) {
 				return err
@@ -76,7 +76,7 @@ func (i *tenantServiceAuthzInterceptor) verify(ctx context.Context, procedure st
 		}
 		return nil
 	case "/tolo.tenant.v1.TenantService/CreateEvent":
-		if err := i.verifier.Verify(ctx, AuthPolicy{Level: AuthLevelAuthenticated, RequiredScopes: []string{"tenant_access", "events.write"}}); err != nil {
+		if err := i.verifier.Verify(ctx, AuthPolicy{Level: AuthLevelAuthenticated, RequiredScopes: []string{"events.write"}}); err != nil {
 			var connectErr *connect.Error
 			if errors.As(err, &connectErr) {
 				return err
@@ -85,7 +85,7 @@ func (i *tenantServiceAuthzInterceptor) verify(ctx context.Context, procedure st
 		}
 		return nil
 	case "/tolo.tenant.v1.TenantService/AssignEventType":
-		if err := i.verifier.Verify(ctx, AuthPolicy{Level: AuthLevelAuthenticated, RequiredScopes: []string{"tenant_access", "events.write"}}); err != nil {
+		if err := i.verifier.Verify(ctx, AuthPolicy{Level: AuthLevelAuthenticated, RequiredScopes: []string{"events.write"}}); err != nil {
 			var connectErr *connect.Error
 			if errors.As(err, &connectErr) {
 				return err
@@ -94,7 +94,7 @@ func (i *tenantServiceAuthzInterceptor) verify(ctx context.Context, procedure st
 		}
 		return nil
 	case "/tolo.tenant.v1.TenantService/TransitionEventStatus":
-		if err := i.verifier.Verify(ctx, AuthPolicy{Level: AuthLevelAuthenticated, RequiredScopes: []string{"tenant_access", "events.write"}}); err != nil {
+		if err := i.verifier.Verify(ctx, AuthPolicy{Level: AuthLevelAuthenticated, RequiredScopes: []string{"events.write"}}); err != nil {
 			var connectErr *connect.Error
 			if errors.As(err, &connectErr) {
 				return err
@@ -112,7 +112,7 @@ func (i *tenantServiceAuthzInterceptor) verify(ctx context.Context, procedure st
 		}
 		return nil
 	case "/tolo.tenant.v1.TenantService/ListEvents":
-		if err := i.verifier.Verify(ctx, AuthPolicy{Level: AuthLevelAuthenticated, RequiredScopes: []string{"tenant_access", "events.read"}}); err != nil {
+		if err := i.verifier.Verify(ctx, AuthPolicy{Level: AuthLevelAuthenticated, RequiredScopes: []string{"events.read"}}); err != nil {
 			var connectErr *connect.Error
 			if errors.As(err, &connectErr) {
 				return err

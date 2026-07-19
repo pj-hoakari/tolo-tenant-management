@@ -60,8 +60,9 @@ const (
 
 // TenantServiceClient is a client for the tolo.tenant.v1.TenantService service.
 type TenantServiceClient interface {
-	// Self-signup requires tenant.register but no tenant_access scope. The
-	// caller must not already belong to the tenant being created.
+	// Self-signup requires the tenant.register permission. token_use=registration
+	// (the credential class) is enforced separately. The caller must not already
+	// belong to the tenant being created.
 	RegisterTenant(context.Context, *connect.Request[v1.RegisterTenantRequest]) (*connect.Response[v1.RegisterTenantResponse], error)
 	ChangeTenantContract(context.Context, *connect.Request[v1.ChangeTenantContractRequest]) (*connect.Response[v1.ChangeTenantContractResponse], error)
 	ArchiveTenant(context.Context, *connect.Request[v1.ArchiveTenantRequest]) (*connect.Response[v1.ArchiveTenantResponse], error)
@@ -188,8 +189,9 @@ func (c *tenantServiceClient) ListEvents(ctx context.Context, req *connect.Reque
 
 // TenantServiceHandler is an implementation of the tolo.tenant.v1.TenantService service.
 type TenantServiceHandler interface {
-	// Self-signup requires tenant.register but no tenant_access scope. The
-	// caller must not already belong to the tenant being created.
+	// Self-signup requires the tenant.register permission. token_use=registration
+	// (the credential class) is enforced separately. The caller must not already
+	// belong to the tenant being created.
 	RegisterTenant(context.Context, *connect.Request[v1.RegisterTenantRequest]) (*connect.Response[v1.RegisterTenantResponse], error)
 	ChangeTenantContract(context.Context, *connect.Request[v1.ChangeTenantContractRequest]) (*connect.Response[v1.ChangeTenantContractResponse], error)
 	ArchiveTenant(context.Context, *connect.Request[v1.ArchiveTenantRequest]) (*connect.Response[v1.ArchiveTenantResponse], error)
