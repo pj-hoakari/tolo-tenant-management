@@ -15,6 +15,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
 	repositorypkg "github.com/pj-hoakari/tolo-tenant-management/internal/repository"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -224,6 +225,58 @@ func TestPostgresTenantRepositoryEventErrors(t *testing.T) {
 
 	if err := repository.UpdateEvent(ctx, archivedEvent.AssignType(domain.EventTypeLongTerm)); !errors.Is(err, repositorypkg.ErrTenantArchived) {
 		t.Errorf("archived tenant update error = %v, want %v", err, repositorypkg.ErrTenantArchived)
+	}
+}
+
+func TestPostgresTenantRepositoryRejectsForeignTenantOnReconstitution(t *testing.T) {
+	repository := newTestRepository(t)
+	ctx := context.Background()
+
+	tenantA := newTenant("00000000-0000-0000-0000-0000000000a1", "tenant-aaa", "Acme", false)
+	tenantB := newTenant("00000000-0000-0000-0000-0000000000b1", "tenant-bbb", "Beta", false)
+
+	for _, tenant := range []domain.Tenant{tenantA, tenantB} {
+		if err := repository.CreateTenant(ctx, tenant); err != nil {
+			t.Fatalf("CreateTenant(%q) error = %v", tenant.ID(), err)
+		}
+	}
+
+	eventB := newEvent("00000000-0000-0000-0000-0000000000b2", "event-bbb", tenantB, "Beta Festival", domain.EventTypeShortTerm, domain.EventStatusDraft)
+	if err := repository.CreateEvent(ctx, eventB); err != nil {
+		t.Fatalf("CreateEvent() error = %v", err)
+	}
+
+	// The caller is authenticated as tenant A, so loading any of tenant B's
+	// records must be rejected even though the queries themselves succeed. This
+	// is the safety net for a repository query that fails to scope by tenant.
+	foreignCtx := tenantctx.WithTenantID(ctx, tenantA.PublicID())
+
+	if _, err := repository.FindTenantByID(foreignCtx, tenantB.ID()); !errors.Is(err, tenantctx.ErrMismatch) {
+		t.Errorf("FindTenantByID(foreign) error = %v, want %v", err, tenantctx.ErrMismatch)
+	}
+
+	if _, err := repository.FindTenantByPublicID(foreignCtx, tenantB.PublicID()); !errors.Is(err, tenantctx.ErrMismatch) {
+		t.Errorf("FindTenantByPublicID(foreign) error = %v, want %v", err, tenantctx.ErrMismatch)
+	}
+
+	if _, err := repository.FindEventByID(foreignCtx, eventB.ID()); !errors.Is(err, tenantctx.ErrMismatch) {
+		t.Errorf("FindEventByID(foreign) error = %v, want %v", err, tenantctx.ErrMismatch)
+	}
+
+	if _, err := repository.ListEventsByTenantID(foreignCtx, tenantB.ID()); !errors.Is(err, tenantctx.ErrMismatch) {
+		t.Errorf("ListEventsByTenantID(foreign) error = %v, want %v", err, tenantctx.ErrMismatch)
+	}
+
+	// The caller may still load its own tenant's records.
+	ownCtx := tenantctx.WithTenantID(ctx, tenantB.PublicID())
+	if _, err := repository.FindEventByID(ownCtx, eventB.ID()); err != nil {
+		t.Errorf("FindEventByID(own) error = %v, want nil", err)
+	}
+
+	// A context without an authenticated tenant (e.g. service-token reads) is
+	// left unrestricted.
+	if _, err := repository.FindTenantByID(ctx, tenantB.ID()); err != nil {
+		t.Errorf("FindTenantByID(no tenant context) error = %v, want nil", err)
 	}
 }
 

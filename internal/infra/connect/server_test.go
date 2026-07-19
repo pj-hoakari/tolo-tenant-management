@@ -147,7 +147,8 @@ func TestRegisterTenantOverTransportRejectsDuplicateName(t *testing.T) {
 func TestCreateEventOverTransport(t *testing.T) {
 	tenantRepository := newIntegrationTenantRepository(t)
 	tenantService := application.NewTenantService(tenantRepository, infra.NewRelationService())
-	httpServer := httptest.NewServer(newTestHandler(t, tenantService))
+	handler, jwks := newDynamicTestHandler(t, tenantService)
+	httpServer := httptest.NewServer(handler)
 	t.Cleanup(httpServer.Close)
 	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
 
@@ -162,12 +163,14 @@ func TestCreateEventOverTransport(t *testing.T) {
 		t.Fatalf("RegisterTenant() error = %v", err)
 	}
 
+	tenantPublicID := registeredTenant.Msg.GetTenant().GetTenantPublicId()
+
 	createRequest := connectrpc.NewRequest(&tenantv1.CreateEventRequest{
-		TenantPublicId: registeredTenant.Msg.GetTenant().GetTenantPublicId(),
+		TenantPublicId: tenantPublicID,
 		Name:           "Summer Festival",
 		Type:           tenantv1.EventType_EVENT_TYPE_SHORT_TERM,
 	})
-	createRequest.Header().Set("Authorization", internalJWTs(t).tenantAccess)
+	createRequest.Header().Set("Authorization", mintTenantAccessToken(t, jwks, tenantPublicID))
 
 	eventResponse, err := client.CreateEvent(context.Background(), createRequest)
 	if err != nil {
@@ -206,15 +209,19 @@ func TestCreateEventOverTransport(t *testing.T) {
 
 func TestCreateEventOverTransportRejectsUnknownTenant(t *testing.T) {
 	tenantService := application.NewTenantService(newIntegrationTenantRepository(t), infra.NewRelationService())
-	httpServer := httptest.NewServer(newTestHandler(t, tenantService))
+	handler, jwks := newDynamicTestHandler(t, tenantService)
+	httpServer := httptest.NewServer(handler)
 	t.Cleanup(httpServer.Close)
 	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
 
+	// The caller is authenticated as the tenant it asks for, so the tenant
+	// context guard passes; the tenant simply does not exist, so the repository
+	// lookup rejects it as not found.
 	req := connectrpc.NewRequest(&tenantv1.CreateEventRequest{
 		TenantPublicId: "0000000000000000",
 		Name:           "Summer Festival",
 	})
-	req.Header().Set("Authorization", internalJWTs(t).tenantAccess)
+	req.Header().Set("Authorization", mintTenantAccessToken(t, jwks, "0000000000000000"))
 
 	_, err := client.CreateEvent(context.Background(), req)
 	if connectrpc.CodeOf(err) != connectrpc.CodeNotFound {
@@ -222,9 +229,45 @@ func TestCreateEventOverTransportRejectsUnknownTenant(t *testing.T) {
 	}
 }
 
+func TestCreateEventOverTransportRejectsForeignTenant(t *testing.T) {
+	tenantService := application.NewTenantService(newIntegrationTenantRepository(t), infra.NewRelationService())
+	handler, jwks := newDynamicTestHandler(t, tenantService)
+	httpServer := httptest.NewServer(handler)
+	t.Cleanup(httpServer.Close)
+	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
+
+	registerRequest := connectrpc.NewRequest(&tenantv1.RegisterTenantRequest{
+		Name:         "Tenant Owner",
+		ContractPlan: "standard",
+	})
+	registerRequest.Header().Set("Authorization", internalJWTs(t).registration)
+
+	registeredTenant, err := client.RegisterTenant(context.Background(), registerRequest)
+	if err != nil {
+		t.Fatalf("RegisterTenant() error = %v", err)
+	}
+
+	// A token authenticated as a different tenant must not be able to create an
+	// event under the registered tenant, even though the tenant exists.
+	foreignToken := mintTenantAccessToken(t, jwks, "ffffffffffffffff")
+
+	createRequest := connectrpc.NewRequest(&tenantv1.CreateEventRequest{
+		TenantPublicId: registeredTenant.Msg.GetTenant().GetTenantPublicId(),
+		Name:           "Intruder Event",
+		Type:           tenantv1.EventType_EVENT_TYPE_SHORT_TERM,
+	})
+	createRequest.Header().Set("Authorization", foreignToken)
+
+	_, err = client.CreateEvent(context.Background(), createRequest)
+	if got, want := connectrpc.CodeOf(err), connectrpc.CodePermissionDenied; got != want {
+		t.Fatalf("CreateEvent() error code = %v, want %v", got, want)
+	}
+}
+
 func TestTransitionEventStatusOverTransport(t *testing.T) {
 	tenantService := application.NewTenantService(newIntegrationTenantRepository(t), infra.NewRelationService())
-	httpServer := httptest.NewServer(newTestHandler(t, tenantService))
+	handler, jwks := newDynamicTestHandler(t, tenantService)
+	httpServer := httptest.NewServer(handler)
 	t.Cleanup(httpServer.Close)
 	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
 
@@ -239,11 +282,13 @@ func TestTransitionEventStatusOverTransport(t *testing.T) {
 		t.Fatalf("RegisterTenant() error = %v", err)
 	}
 
+	tenantAccess := mintTenantAccessToken(t, jwks, tenantResponse.Msg.GetTenant().GetTenantPublicId())
+
 	createRequest := connectrpc.NewRequest(&tenantv1.CreateEventRequest{
 		TenantPublicId: tenantResponse.Msg.GetTenant().GetTenantPublicId(),
 		Name:           "Status Event",
 	})
-	createRequest.Header().Set("Authorization", internalJWTs(t).tenantAccess)
+	createRequest.Header().Set("Authorization", tenantAccess)
 
 	eventResponse, err := client.CreateEvent(context.Background(), createRequest)
 	if err != nil {
@@ -256,7 +301,7 @@ func TestTransitionEventStatusOverTransport(t *testing.T) {
 		t.Helper()
 
 		req := connectrpc.NewRequest(&tenantv1.TransitionEventStatusRequest{EventId: eventID, To: to})
-		req.Header().Set("Authorization", internalJWTs(t).tenantAccess)
+		req.Header().Set("Authorization", tenantAccess)
 
 		response, err := client.TransitionEventStatus(context.Background(), req)
 		if err != nil {

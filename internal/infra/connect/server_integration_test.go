@@ -2,10 +2,7 @@ package connect
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -84,21 +81,6 @@ func internalJWTs(t *testing.T) testInternalJWTs {
 	}
 
 	return testTokens
-}
-
-func newJWKSStub(t *testing.T, jwks jwtgen.JWKS) *httptest.Server {
-	t.Helper()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-
-		if err := json.NewEncoder(w).Encode(jwks); err != nil {
-			t.Errorf("encode JWKS: %v", err)
-		}
-	}))
-	t.Cleanup(server.Close)
-
-	return server
 }
 
 func newIntegrationTenantRepository(t *testing.T) *db.PostgresTenantRepository {
