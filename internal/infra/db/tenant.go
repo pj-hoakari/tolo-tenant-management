@@ -10,6 +10,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/repository"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
 
 // PostgresTenantRepository persists tenants and their events in PostgreSQL.
@@ -63,6 +64,12 @@ func (r *PostgresTenantRepository) findTenant(ctx context.Context, query, value 
 			return domain.Tenant{}, repository.ErrTenantNotFound
 		}
 
+		return domain.Tenant{}, err
+	}
+
+	// Defense in depth: never return a tenant that differs from the
+	// authenticated tenant carried in the context.
+	if err := tenantctx.VerifyOwnership(ctx, row.PublicID); err != nil {
 		return domain.Tenant{}, err
 	}
 
