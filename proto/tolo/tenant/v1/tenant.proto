@@ -107,18 +107,16 @@ message RegisterTenantRequest {
 message RegisterTenantResponse { Tenant tenant = 1; }
 
 message ChangeTenantContractRequest {
-  string tenant_id = 1;
-  string contract_plan = 2;
+  string contract_plan = 1;
 }
 message ChangeTenantContractResponse { Tenant tenant = 1; }
 
-message ArchiveTenantRequest { string tenant_id = 1; }
+message ArchiveTenantRequest {}
 message ArchiveTenantResponse { Tenant tenant = 1; }
 
 message CreateEventRequest {
-  string tenant_public_id = 1;
-  string name = 2;
-  EventType type = 3;
+  string name = 1;
+  EventType type = 2;
 }
 message CreateEventResponse { Event event = 1; }
 
@@ -137,5 +135,5 @@ message TransitionEventStatusResponse { Event event = 1; }
 message GetEventRequest { string event_id = 1; }
 message GetEventResponse { Event event = 1; }
 
-message ListEventsRequest { string tenant_id = 1; }
+message ListEventsRequest {}
 message ListEventsResponse { repeated Event events = 1; }

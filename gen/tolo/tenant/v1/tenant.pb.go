@@ -449,8 +449,7 @@ func (x *RegisterTenantResponse) GetTenant() *Tenant {
 
 type ChangeTenantContractRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
-	ContractPlan  string                 `protobuf:"bytes,2,opt,name=contract_plan,json=contractPlan,proto3" json:"contract_plan,omitempty"`
+	ContractPlan  string                 `protobuf:"bytes,1,opt,name=contract_plan,json=contractPlan,proto3" json:"contract_plan,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -483,13 +482,6 @@ func (x *ChangeTenantContractRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ChangeTenantContractRequest.ProtoReflect.Descriptor instead.
 func (*ChangeTenantContractRequest) Descriptor() ([]byte, []int) {
 	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *ChangeTenantContractRequest) GetTenantId() string {
-	if x != nil {
-		return x.TenantId
-	}
-	return ""
 }
 
 func (x *ChangeTenantContractRequest) GetContractPlan() string {
@@ -545,7 +537,6 @@ func (x *ChangeTenantContractResponse) GetTenant() *Tenant {
 
 type ArchiveTenantRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -578,13 +569,6 @@ func (x *ArchiveTenantRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ArchiveTenantRequest.ProtoReflect.Descriptor instead.
 func (*ArchiveTenantRequest) Descriptor() ([]byte, []int) {
 	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *ArchiveTenantRequest) GetTenantId() string {
-	if x != nil {
-		return x.TenantId
-	}
-	return ""
 }
 
 type ArchiveTenantResponse struct {
@@ -632,12 +616,11 @@ func (x *ArchiveTenantResponse) GetTenant() *Tenant {
 }
 
 type CreateEventRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	TenantPublicId string                 `protobuf:"bytes,1,opt,name=tenant_public_id,json=tenantPublicId,proto3" json:"tenant_public_id,omitempty"`
-	Name           string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Type           EventType              `protobuf:"varint,3,opt,name=type,proto3,enum=tolo.tenant.v1.EventType" json:"type,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Type          EventType              `protobuf:"varint,2,opt,name=type,proto3,enum=tolo.tenant.v1.EventType" json:"type,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CreateEventRequest) Reset() {
@@ -668,13 +651,6 @@ func (x *CreateEventRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use CreateEventRequest.ProtoReflect.Descriptor instead.
 func (*CreateEventRequest) Descriptor() ([]byte, []int) {
 	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *CreateEventRequest) GetTenantPublicId() string {
-	if x != nil {
-		return x.TenantPublicId
-	}
-	return ""
 }
 
 func (x *CreateEventRequest) GetName() string {
@@ -1017,7 +993,6 @@ func (x *GetEventResponse) GetEvent() *Event {
 
 type ListEventsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1050,13 +1025,6 @@ func (x *ListEventsRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListEventsRequest.ProtoReflect.Descriptor instead.
 func (*ListEventsRequest) Descriptor() ([]byte, []int) {
 	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{17}
-}
-
-func (x *ListEventsRequest) GetTenantId() string {
-	if x != nil {
-		return x.TenantId
-	}
-	return ""
 }
 
 type ListEventsResponse struct {
@@ -1129,20 +1097,17 @@ const file_tolo_tenant_v1_tenant_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12#\n" +
 	"\rcontract_plan\x18\x02 \x01(\tR\fcontractPlan\"H\n" +
 	"\x16RegisterTenantResponse\x12.\n" +
-	"\x06tenant\x18\x01 \x01(\v2\x16.tolo.tenant.v1.TenantR\x06tenant\"_\n" +
-	"\x1bChangeTenantContractRequest\x12\x1b\n" +
-	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12#\n" +
-	"\rcontract_plan\x18\x02 \x01(\tR\fcontractPlan\"N\n" +
+	"\x06tenant\x18\x01 \x01(\v2\x16.tolo.tenant.v1.TenantR\x06tenant\"B\n" +
+	"\x1bChangeTenantContractRequest\x12#\n" +
+	"\rcontract_plan\x18\x01 \x01(\tR\fcontractPlan\"N\n" +
 	"\x1cChangeTenantContractResponse\x12.\n" +
-	"\x06tenant\x18\x01 \x01(\v2\x16.tolo.tenant.v1.TenantR\x06tenant\"3\n" +
-	"\x14ArchiveTenantRequest\x12\x1b\n" +
-	"\ttenant_id\x18\x01 \x01(\tR\btenantId\"G\n" +
+	"\x06tenant\x18\x01 \x01(\v2\x16.tolo.tenant.v1.TenantR\x06tenant\"\x16\n" +
+	"\x14ArchiveTenantRequest\"G\n" +
 	"\x15ArchiveTenantResponse\x12.\n" +
-	"\x06tenant\x18\x01 \x01(\v2\x16.tolo.tenant.v1.TenantR\x06tenant\"\x81\x01\n" +
-	"\x12CreateEventRequest\x12(\n" +
-	"\x10tenant_public_id\x18\x01 \x01(\tR\x0etenantPublicId\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12-\n" +
-	"\x04type\x18\x03 \x01(\x0e2\x19.tolo.tenant.v1.EventTypeR\x04type\"B\n" +
+	"\x06tenant\x18\x01 \x01(\v2\x16.tolo.tenant.v1.TenantR\x06tenant\"W\n" +
+	"\x12CreateEventRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12-\n" +
+	"\x04type\x18\x02 \x01(\x0e2\x19.tolo.tenant.v1.EventTypeR\x04type\"B\n" +
 	"\x13CreateEventResponse\x12+\n" +
 	"\x05event\x18\x01 \x01(\v2\x15.tolo.tenant.v1.EventR\x05event\"b\n" +
 	"\x16AssignEventTypeRequest\x12\x19\n" +
@@ -1158,9 +1123,8 @@ const file_tolo_tenant_v1_tenant_proto_rawDesc = "" +
 	"\x0fGetEventRequest\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\"?\n" +
 	"\x10GetEventResponse\x12+\n" +
-	"\x05event\x18\x01 \x01(\v2\x15.tolo.tenant.v1.EventR\x05event\"0\n" +
-	"\x11ListEventsRequest\x12\x1b\n" +
-	"\ttenant_id\x18\x01 \x01(\tR\btenantId\"C\n" +
+	"\x05event\x18\x01 \x01(\v2\x15.tolo.tenant.v1.EventR\x05event\"\x13\n" +
+	"\x11ListEventsRequest\"C\n" +
 	"\x12ListEventsResponse\x12-\n" +
 	"\x06events\x18\x01 \x03(\v2\x15.tolo.tenant.v1.EventR\x06events*\\\n" +
 	"\tEventType\x12\x1a\n" +
