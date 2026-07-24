@@ -1,7 +1,7 @@
 [tools]
 actionlint = "1.7.12"
 betterleaks = "latest"
-buf = "1.71.0"
+buf = "1.72.0"
 go = "1.26"
 golangci-lint = "v2.12.2"
 gomigrate = "latest"
