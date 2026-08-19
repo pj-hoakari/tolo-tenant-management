@@ -32,6 +32,17 @@ task migrate:create -- <migration_name>
 task migrate:down
 ```
 
+### トレースの確認（Jaeger）
+
+監視スタックはオーバーライドファイル `compose.o11y.yml` を重ねたときだけ有効になる。
+Jaeger が起動し、`server` に OTLP エクスポート用の環境変数（`OTEL_EXPORTER_OTLP_ENDPOINT` など）がセットされる。
+
+```bash
+docker compose -f compose.yml -f compose.o11y.yml up --build
+```
+
+Jaeger UI は `http://localhost:16686` 。
+
 ### connect-es の生成
 connect-es の生成（`task proto:gen:es`）はリリース時に CI で行う  
 ローカルで実行する場合は `clients/connect-es` の依存（`npm i`）を導入する必要がある

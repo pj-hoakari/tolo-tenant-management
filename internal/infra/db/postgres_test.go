@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
 	repositorypkg "github.com/pj-hoakari/tolo-tenant-management/internal/repository"
@@ -45,7 +44,9 @@ func TestMain(m *testing.M) {
 
 	databaseURL, err := container.ConnectionString(ctx, "sslmode=disable")
 	if err == nil {
-		testDB, err = sqlx.ConnectContext(ctx, "pgx", databaseURL)
+		// Open is the same instrumented entry point the server uses, so the
+		// repository tests also cover the OpenTelemetry driver wrapper.
+		testDB, err = Open(ctx, databaseURL)
 	}
 
 	if err != nil {
