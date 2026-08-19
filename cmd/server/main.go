@@ -11,13 +11,12 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/jmoiron/sqlx"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/infra"
 	connectinfra "github.com/pj-hoakari/tolo-tenant-management/internal/infra/connect"
 	dbinfra "github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/jwks"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/telemetry"
 )
 
 const (
@@ -44,7 +43,17 @@ func run() error {
 		return errors.New("DATABASE_URL is required")
 	}
 
-	db, err := openDatabase(ctx, databaseURL)
+	shutdownTracing, err := telemetry.Setup(ctx)
+	if err != nil {
+		return fmt.Errorf("setup tracing: %w", err)
+	}
+	defer shutdownTracingWithTimeout(shutdownTracing)
+
+	if telemetry.Enabled() {
+		log.Printf("tenant-management: tracing enabled for service %q", telemetry.ServiceName())
+	}
+
+	db, err := dbinfra.Open(ctx, databaseURL)
 	if err != nil {
 		return err
 	}
@@ -58,9 +67,15 @@ func run() error {
 		dbinfra.NewPostgresTenantRepository(db),
 		infra.NewRelationService(),
 	)
+
+	handler, err := connectinfra.NewHandlerWithJWKSURL(registerTenant, jwksURL)
+	if err != nil {
+		return fmt.Errorf("build handler: %w", err)
+	}
+
 	httpServer := &http.Server{
 		Addr:              addr,
-		Handler:           connectinfra.NewHandlerWithJWKSURL(registerTenant, jwksURL),
+		Handler:           handler,
 		ReadHeaderTimeout: readHeaderTimeout,
 	}
 
@@ -91,21 +106,15 @@ func run() error {
 	}
 }
 
-func openDatabase(ctx context.Context, databaseURL string) (*sqlx.DB, error) {
-	db, err := sqlx.Open("pgx", databaseURL)
-	if err != nil {
-		return nil, fmt.Errorf("open database: %w", err)
+// shutdownTracingWithTimeout flushes pending spans on a fresh context, because
+// the run context is already cancelled once the process starts shutting down.
+func shutdownTracingWithTimeout(shutdown telemetry.ShutdownFunc) {
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+
+	if err := shutdown(ctx); err != nil {
+		log.Printf("tenant-management: shutdown tracing: %v", err)
 	}
-
-	if err := db.PingContext(ctx); err != nil {
-		if closeErr := db.Close(); closeErr != nil {
-			return nil, fmt.Errorf("ping database: %w; close database: %v", err, closeErr)
-		}
-
-		return nil, fmt.Errorf("ping database: %w", err)
-	}
-
-	return db, nil
 }
 
 func getenv(key, fallback string) string {

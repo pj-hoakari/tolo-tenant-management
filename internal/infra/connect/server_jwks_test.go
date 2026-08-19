@@ -59,7 +59,12 @@ func newDynamicTestHandler(t *testing.T, service application.TenantUseCases) (ht
 	}))
 	t.Cleanup(server.Close)
 
-	return NewHandlerWithJWKSURL(service, server.URL), registry
+	handler, err := NewHandlerWithJWKSURL(service, server.URL)
+	if err != nil {
+		t.Fatalf("NewHandlerWithJWKSURL() error = %v", err)
+	}
+
+	return handler, registry
 }
 
 // mintTenantAccessToken issues a tenant_access internal JWT whose tenant_id
