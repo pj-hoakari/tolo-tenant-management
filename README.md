@@ -19,6 +19,11 @@ Docker Compose で PostgreSQL、golang-migrate によるマイグレーション
 docker compose up --build
 ```
 
+もしくは
+```bash
+task up:build
+```
+
 サーバーは `http://localhost:8080`、PostgreSQL は `localhost:5432` で待ち受ける。  
 アプリケーションは `DATABASE_URL` で接続先を設定する。  
 ローカルでマイグレーションを実行する場合は、Compose で PostgreSQL を起動してから次を実行する（接続先は `DATABASE_URL` で上書きできる）。
@@ -39,6 +44,11 @@ Jaeger が起動し、`server` に OTLP エクスポート用の環境変数（`
 
 ```bash
 docker compose -f compose.yml -f compose.o11y.yml up --build
+```
+
+もしくは
+```bash
+task up:build:o11y
 ```
 
 Jaeger UI は `http://localhost:16686` 。
