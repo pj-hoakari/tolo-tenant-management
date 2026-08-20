@@ -1,10 +1,13 @@
 # テナントコンテキスト 入出力整理
 
+ドメイン定義: tenant_domain.md
+デプロイ単位: tenant_management_spec.md
+
 ## ドメインイベント↔RPC 対応
 
 | ドメインイベント | 対応 RPC |
 |---|---|
-| TenantRegistered | TenantService.RegisterTenant |
+| TenantRegistered | TenantService.ClaimTenantOwnership |
 | TenantContractChanged | TenantService.ChangeTenantContract |
 | TenantArchived | TenantService.ArchiveTenant |
 | EventCreated | TenantService.CreateEvent |
@@ -15,6 +18,6 @@
 
 | 接点 | RPC |
 |---|---|
-| 識別子の参照整合（Relation、グラフ編集、観測） | TenantService.GetEvent |
-| 観測への設定値・履歴期間の供給 | GetEvent 応答の `observation_settings` |
-| 所属の書き込み（関係参照が所有） | Relation サービス側 |
+| 識別子の参照整合（グラフ編集） | TenantService.GetEvent |
+| 観測への設定値・履歴期間の供給 | TenantService.GetObservationSettings |
+| 所属の書き込み（関係参照が所有） | RelationAdminService（tenant_management_spec.md が実装） |
