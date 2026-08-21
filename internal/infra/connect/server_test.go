@@ -18,41 +18,72 @@ import (
 
 var publicIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
 
+type transportFixture struct {
+	repository *db.PostgresTenantRepository
+	jwks       *jwksRegistry
+	client     tenantv1connect.TenantServiceClient
+}
+
+func newTransportFixture(t *testing.T) transportFixture {
+	t.Helper()
+
+	repository := newIntegrationTenantRepository(t)
+	handler, jwks := newDynamicTestHandler(t, application.NewTenantService(repository))
+	httpServer := httptest.NewServer(handler)
+	t.Cleanup(httpServer.Close)
+
+	return transportFixture{
+		repository: repository,
+		jwks:       jwks,
+		client:     tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL),
+	}
+}
+
 // createTenant stores an owned tenant directly, standing in for the onboarding
 // flow that is not part of this transport's responsibilities.
-func createTenant(t *testing.T, repository *db.PostgresTenantRepository, publicID, name string) domain.Tenant {
+func (f transportFixture) createTenant(t *testing.T, publicID, name string) domain.Tenant {
 	t.Helper()
 
 	tenant := domain.NewTenant(uuid.Must(uuid.NewV7()).String(), publicID, name, "standard", false)
-	if err := repository.CreateTenant(context.Background(), tenant); err != nil {
+	if err := f.repository.CreateTenant(context.Background(), tenant); err != nil {
 		t.Fatalf("CreateTenant(%q) error = %v", name, err)
 	}
 
 	return tenant
 }
 
+func (f transportFixture) createEvent(t *testing.T, token string, tenantPublicID, name string) *tenantv1.Event {
+	t.Helper()
+
+	req := connectrpc.NewRequest(&tenantv1.CreateEventRequest{TenantId: tenantPublicID, Name: name})
+	req.Header().Set("Authorization", token)
+
+	res, err := f.client.CreateEvent(context.Background(), req)
+	if err != nil {
+		t.Fatalf("CreateEvent(%q) error = %v", name, err)
+	}
+
+	return res.Msg.GetEvent()
+}
+
 func TestCreateEventOverTransport(t *testing.T) {
-	tenantRepository := newIntegrationTenantRepository(t)
-	tenantService := application.NewTenantService(tenantRepository)
-	handler, jwks := newDynamicTestHandler(t, tenantService)
-	httpServer := httptest.NewServer(handler)
-	t.Cleanup(httpServer.Close)
-	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
+	fixture := newTransportFixture(t)
+	tenant := fixture.createTenant(t, "0123456789abcdef", "Event Host")
+	token := mintTenantAccessToken(t, fixture.jwks, tenant.PublicID())
 
-	tenant := createTenant(t, tenantRepository, "0123456789abcdef", "Event Host")
-
-	createRequest := connectrpc.NewRequest(&tenantv1.CreateEventRequest{
-		Name: "Summer Festival",
-		Type: tenantv1.EventType_EVENT_TYPE_SHORT_TERM,
+	req := connectrpc.NewRequest(&tenantv1.CreateEventRequest{
+		TenantId: tenant.PublicID(),
+		Name:     "Summer Festival",
+		Type:     tenantv1.EventType_EVENT_TYPE_SHORT_TERM,
 	})
-	createRequest.Header().Set("Authorization", mintTenantAccessToken(t, jwks, tenant.PublicID()))
+	req.Header().Set("Authorization", token)
 
-	eventResponse, err := client.CreateEvent(context.Background(), createRequest)
+	res, err := fixture.client.CreateEvent(context.Background(), req)
 	if err != nil {
 		t.Fatalf("CreateEvent() error = %v", err)
 	}
 
-	event := eventResponse.Msg.GetEvent()
+	event := res.Msg.GetEvent()
 	if got, want := event.GetTenantId(), tenant.PublicID(); got != want {
 		t.Errorf("Event.TenantId = %q, want %q", got, want)
 	}
@@ -76,78 +107,93 @@ func TestCreateEventOverTransport(t *testing.T) {
 	}
 }
 
-func TestCreateEventOverTransportRejectsUnknownTenant(t *testing.T) {
-	tenantService := application.NewTenantService(newIntegrationTenantRepository(t))
-	handler, jwks := newDynamicTestHandler(t, tenantService)
-	httpServer := httptest.NewServer(handler)
-	t.Cleanup(httpServer.Close)
-	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
+func TestCreateEventOverTransportRejectsInvalidTenantSelection(t *testing.T) {
+	fixture := newTransportFixture(t)
+	tenant := fixture.createTenant(t, "0123456789abcdef", "Own Tenant")
+	other := fixture.createTenant(t, "fedcba9876543210", "Other Tenant")
+	token := mintTenantAccessToken(t, fixture.jwks, tenant.PublicID())
 
-	// The JWT tenant does not exist, so the repository lookup rejects it.
-	req := connectrpc.NewRequest(&tenantv1.CreateEventRequest{
-		Name: "Summer Festival",
-	})
-	req.Header().Set("Authorization", mintTenantAccessToken(t, jwks, "0000000000000000"))
+	tests := []struct {
+		name     string
+		tenantID string
+		token    string
+		want     connectrpc.Code
+	}{
+		{name: "missing tenant_id", tenantID: "", token: token, want: connectrpc.CodeInvalidArgument},
+		{name: "tenant_id of another tenant", tenantID: other.PublicID(), token: token, want: connectrpc.CodePermissionDenied},
+		{name: "tenant_id of a nonexistent tenant", tenantID: "0000000000000000", token: token, want: connectrpc.CodePermissionDenied},
+		{name: "token for a nonexistent tenant", tenantID: "0000000000000000", token: mintTenantAccessToken(t, fixture.jwks, "0000000000000000"), want: connectrpc.CodeNotFound},
+	}
 
-	_, err := client.CreateEvent(context.Background(), req)
-	if connectrpc.CodeOf(err) != connectrpc.CodeNotFound {
-		t.Fatalf("CreateEvent() error code = %v, want %v", connectrpc.CodeOf(err), connectrpc.CodeNotFound)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := connectrpc.NewRequest(&tenantv1.CreateEventRequest{TenantId: tt.tenantID, Name: "Festival"})
+			req.Header().Set("Authorization", tt.token)
+
+			_, err := fixture.client.CreateEvent(context.Background(), req)
+			if got := connectrpc.CodeOf(err); got != tt.want {
+				t.Fatalf("CreateEvent() error code = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
-func TestCreateEventOverTransportRejectsForeignTenant(t *testing.T) {
-	tenantService := application.NewTenantService(newIntegrationTenantRepository(t))
-	handler, jwks := newDynamicTestHandler(t, tenantService)
-	httpServer := httptest.NewServer(handler)
-	t.Cleanup(httpServer.Close)
-	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
+func TestListEventsOverTransport(t *testing.T) {
+	fixture := newTransportFixture(t)
+	tenant := fixture.createTenant(t, "0123456789abcdef", "List Host")
+	other := fixture.createTenant(t, "fedcba9876543210", "Other Tenant")
+	token := mintTenantAccessToken(t, fixture.jwks, tenant.PublicID())
+	otherToken := mintTenantAccessToken(t, fixture.jwks, other.PublicID())
 
-	// The request has no tenant selector, so this token can only act as its own
-	// tenant. Because that tenant does not exist, it cannot create an event.
-	foreignToken := mintTenantAccessToken(t, jwks, "ffffffffffffffff")
+	first := fixture.createEvent(t, token, tenant.PublicID(), "Festival 1")
+	second := fixture.createEvent(t, token, tenant.PublicID(), "Festival 2")
+	fixture.createEvent(t, otherToken, other.PublicID(), "Other Festival")
 
-	createRequest := connectrpc.NewRequest(&tenantv1.CreateEventRequest{
-		Name: "Intruder Event",
-		Type: tenantv1.EventType_EVENT_TYPE_SHORT_TERM,
-	})
-	createRequest.Header().Set("Authorization", foreignToken)
+	req := connectrpc.NewRequest(&tenantv1.ListEventsRequest{TenantId: tenant.PublicID()})
+	req.Header().Set("Authorization", token)
 
-	_, err := client.CreateEvent(context.Background(), createRequest)
-	if got, want := connectrpc.CodeOf(err), connectrpc.CodeNotFound; got != want {
-		t.Fatalf("CreateEvent() error code = %v, want %v", got, want)
+	res, err := fixture.client.ListEvents(context.Background(), req)
+	if err != nil {
+		t.Fatalf("ListEvents() error = %v", err)
+	}
+
+	want := []string{first.GetEventId(), second.GetEventId()}
+	if got := res.Msg.GetEvents(); len(got) != len(want) {
+		t.Fatalf("event count = %d, want %d", len(got), len(want))
+	}
+
+	for i, event := range res.Msg.GetEvents() {
+		if got := event.GetEventId(); got != want[i] {
+			t.Errorf("Events[%d].EventId = %q, want %q", i, got, want[i])
+		}
+
+		if got := event.GetTenantId(); got != tenant.PublicID() {
+			t.Errorf("Events[%d].TenantId = %q, want %q", i, got, tenant.PublicID())
+		}
+	}
+
+	foreign := connectrpc.NewRequest(&tenantv1.ListEventsRequest{TenantId: other.PublicID()})
+	foreign.Header().Set("Authorization", token)
+
+	_, err = fixture.client.ListEvents(context.Background(), foreign)
+	if got, want := connectrpc.CodeOf(err), connectrpc.CodePermissionDenied; got != want {
+		t.Fatalf("ListEvents(foreign tenant) error code = %v, want %v", got, want)
 	}
 }
 
 func TestTransitionEventStatusOverTransport(t *testing.T) {
-	tenantRepository := newIntegrationTenantRepository(t)
-	tenantService := application.NewTenantService(tenantRepository)
-	handler, jwks := newDynamicTestHandler(t, tenantService)
-	httpServer := httptest.NewServer(handler)
-	t.Cleanup(httpServer.Close)
-	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
-
-	tenant := createTenant(t, tenantRepository, "0123456789abcdef", "Status Host")
-	tenantAccess := mintTenantAccessToken(t, jwks, tenant.PublicID())
-
-	createRequest := connectrpc.NewRequest(&tenantv1.CreateEventRequest{
-		Name: "Status Event",
-	})
-	createRequest.Header().Set("Authorization", tenantAccess)
-
-	eventResponse, err := client.CreateEvent(context.Background(), createRequest)
-	if err != nil {
-		t.Fatalf("CreateEvent() error = %v", err)
-	}
-
-	eventID := eventResponse.Msg.GetEvent().GetEventId()
+	fixture := newTransportFixture(t)
+	tenant := fixture.createTenant(t, "0123456789abcdef", "Status Host")
+	token := mintTenantAccessToken(t, fixture.jwks, tenant.PublicID())
+	eventID := fixture.createEvent(t, token, tenant.PublicID(), "Status Event").GetEventId()
 
 	transition := func(to tenantv1.EventStatus) (*tenantv1.Event, error) {
 		t.Helper()
 
 		req := connectrpc.NewRequest(&tenantv1.TransitionEventStatusRequest{EventId: eventID, To: to})
-		req.Header().Set("Authorization", tenantAccess)
+		req.Header().Set("Authorization", token)
 
-		response, err := client.TransitionEventStatus(context.Background(), req)
+		response, err := fixture.client.TransitionEventStatus(context.Background(), req)
 		if err != nil {
 			return nil, err
 		}
@@ -177,22 +223,37 @@ func TestTransitionEventStatusOverTransport(t *testing.T) {
 		}
 	}
 
-	_, err = transition(tenantv1.EventStatus_EVENT_STATUS_LOCKED)
+	_, err := transition(tenantv1.EventStatus_EVENT_STATUS_LOCKED)
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodeFailedPrecondition; got != want {
 		t.Errorf("invalid transition error code = %v, want %v", got, want)
 	}
 }
 
+func TestTransitionEventStatusOverTransportRejectsForeignEvent(t *testing.T) {
+	fixture := newTransportFixture(t)
+	tenant := fixture.createTenant(t, "0123456789abcdef", "Own Tenant")
+	other := fixture.createTenant(t, "fedcba9876543210", "Other Tenant")
+	otherEvent := fixture.createEvent(t, mintTenantAccessToken(t, fixture.jwks, other.PublicID()), other.PublicID(), "Other Festival")
+
+	req := connectrpc.NewRequest(&tenantv1.TransitionEventStatusRequest{
+		EventId: otherEvent.GetEventId(),
+		To:      tenantv1.EventStatus_EVENT_STATUS_OPEN,
+	})
+	req.Header().Set("Authorization", mintTenantAccessToken(t, fixture.jwks, tenant.PublicID()))
+
+	_, err := fixture.client.TransitionEventStatus(context.Background(), req)
+	if got, want := connectrpc.CodeOf(err), connectrpc.CodePermissionDenied; got != want {
+		t.Fatalf("TransitionEventStatus(foreign event) error code = %v, want %v", got, want)
+	}
+}
+
 func TestTransitionEventStatusOverTransportRejectsInvalidRequest(t *testing.T) {
-	tenantService := application.NewTenantService(newIntegrationTenantRepository(t))
-	httpServer := httptest.NewServer(newTestHandler(t, tenantService))
-	t.Cleanup(httpServer.Close)
-	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
+	fixture := newTransportFixture(t)
 
 	req := connectrpc.NewRequest(&tenantv1.TransitionEventStatusRequest{})
 	req.Header().Set("Authorization", internalJWTs(t).tenantAccess)
 
-	_, err := client.TransitionEventStatus(context.Background(), req)
+	_, err := fixture.client.TransitionEventStatus(context.Background(), req)
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodeInvalidArgument; got != want {
 		t.Fatalf("TransitionEventStatus() error code = %v, want %v", got, want)
 	}
@@ -203,7 +264,7 @@ func TestTransitionEventStatusOverTransportRejectsInvalidRequest(t *testing.T) {
 	})
 	req.Header().Set("Authorization", internalJWTs(t).tenantAccess)
 
-	_, err = client.TransitionEventStatus(context.Background(), req)
+	_, err = fixture.client.TransitionEventStatus(context.Background(), req)
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodeNotFound; got != want {
 		t.Fatalf("TransitionEventStatus() error code = %v, want %v", got, want)
 	}

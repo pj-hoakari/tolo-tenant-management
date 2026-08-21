@@ -17,9 +17,9 @@ import (
 var errNotImplemented = errors.New("tenant service method is not implemented")
 
 // tenantContextErrorCode maps the tenant-context guard errors to Connect codes.
-// A mismatch is a cross-tenant access attempt (permission denied); a missing
-// context tenant on a tenant-scoped call means the caller is not authenticated
-// as any tenant.
+// A mismatch between the requested tenant and the authenticated tenant is a
+// cross-tenant access attempt (permission denied); a missing context tenant on
+// a tenant-scoped call means the caller is not authenticated as any tenant.
 func tenantContextErrorCode(err error) (connectrpc.Code, bool) {
 	switch {
 	case errors.Is(err, tenantctx.ErrMismatch):
@@ -54,11 +54,12 @@ func (s *Service) ArchiveTenant(context.Context, *connectrpc.Request[tenantv1.Ar
 
 func (s *Service) CreateEvent(ctx context.Context, req *connectrpc.Request[tenantv1.CreateEventRequest]) (*connectrpc.Response[tenantv1.CreateEventResponse], error) {
 	event, err := s.tenantService.CreateEvent(ctx, application.CreateEventInput{
-		Name: req.Msg.GetName(),
-		Type: eventTypeDomain(req.Msg.GetType()),
+		TenantPublicID: req.Msg.GetTenantId(),
+		Name:           req.Msg.GetName(),
+		Type:           eventTypeDomain(req.Msg.GetType()),
 	})
 	if err != nil {
-		if errors.Is(err, application.ErrEventNameRequired) {
+		if errors.Is(err, application.ErrEventNameRequired) || errors.Is(err, application.ErrTenantIDRequired) {
 			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
 		}
 
@@ -197,9 +198,7 @@ func (s *Service) TransitionEventStatus(ctx context.Context, req *connectrpc.Req
 		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
 	}
 
-	return connectrpc.NewResponse(&tenantv1.TransitionEventStatusResponse{
-		Event: eventProto(event),
-	}), nil
+	return connectrpc.NewResponse(&tenantv1.TransitionEventStatusResponse{Event: eventProto(event)}), nil
 }
 
 // eventProto maps an event to its wire representation. Only public IDs are
@@ -225,15 +224,23 @@ func (s *Service) GetEvent(ctx context.Context, req *connectrpc.Request[tenantv1
 			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
 		}
 
+		if code, ok := tenantContextErrorCode(err); ok {
+			return nil, connectrpc.NewError(code, err)
+		}
+
 		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
 	}
 
 	return connectrpc.NewResponse(&tenantv1.GetEventResponse{Event: eventProto(event)}), nil
 }
 
-func (s *Service) ListEvents(ctx context.Context, _ *connectrpc.Request[tenantv1.ListEventsRequest]) (*connectrpc.Response[tenantv1.ListEventsResponse], error) {
-	events, err := s.tenantService.ListEvents(ctx)
+func (s *Service) ListEvents(ctx context.Context, req *connectrpc.Request[tenantv1.ListEventsRequest]) (*connectrpc.Response[tenantv1.ListEventsResponse], error) {
+	events, err := s.tenantService.ListEvents(ctx, req.Msg.GetTenantId())
 	if err != nil {
+		if errors.Is(err, application.ErrTenantIDRequired) {
+			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
+		}
+
 		if errors.Is(err, repository.ErrTenantNotFound) {
 			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
 		}

@@ -34,8 +34,9 @@ func TestCreateEvent(t *testing.T) {
 	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
 
 	event, err := service.CreateEvent(ctx, application.CreateEventInput{
-		Name: "Festival",
-		Type: domain.EventTypeShortTerm,
+		TenantPublicID: tenant.PublicID(),
+		Name:           "Festival",
+		Type:           domain.EventTypeShortTerm,
 	})
 	if err != nil {
 		t.Fatalf("CreateEvent() error = %v", err)
@@ -58,20 +59,75 @@ func TestCreateEvent(t *testing.T) {
 	}
 }
 
+func TestCreateEventKeepsUnspecifiedType(t *testing.T) {
+	t.Parallel()
+
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", false)
+	ctrl := gomock.NewController(t)
+	repo := NewMockTenantRepository(ctrl)
+	repo.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(tenant, nil)
+	repo.EXPECT().CreateEvent(gomock.Any(), gomock.Any()).Return(nil)
+	service := application.NewTenantService(repo)
+
+	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
+
+	event, err := service.CreateEvent(ctx, application.CreateEventInput{TenantPublicID: tenant.PublicID(), Name: "Festival"})
+	if err != nil {
+		t.Fatalf("CreateEvent() error = %v", err)
+	}
+
+	if got, want := event.Type(), domain.EventTypeUnspecified; got != want {
+		t.Errorf("Type() = %v, want %v", got, want)
+	}
+}
+
+func TestCreateEventRequiresTenantID(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	service := application.NewTenantService(NewMockTenantRepository(ctrl))
+
+	ctx := tenantctx.WithTenantPublicID(context.Background(), "tenant-public-id")
+
+	_, err := service.CreateEvent(ctx, application.CreateEventInput{Name: "Festival"})
+	if !errors.Is(err, application.ErrTenantIDRequired) {
+		t.Fatalf("CreateEvent() error = %v, want %v", err, application.ErrTenantIDRequired)
+	}
+}
+
 func TestCreateEventRejectsMissingContextTenant(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
-	repo := NewMockTenantRepository(ctrl)
 	// A tenant-scoped operation cannot proceed without a verified JWT tenant.
-	service := application.NewTenantService(repo)
+	service := application.NewTenantService(NewMockTenantRepository(ctrl))
 
 	_, err := service.CreateEvent(context.Background(), application.CreateEventInput{
-		Name: "Festival",
-		Type: domain.EventTypeShortTerm,
+		TenantPublicID: "tenant-public-id",
+		Name:           "Festival",
+		Type:           domain.EventTypeShortTerm,
 	})
 	if !errors.Is(err, tenantctx.ErrMissing) {
 		t.Fatalf("CreateEvent() error = %v, want %v", err, tenantctx.ErrMissing)
+	}
+}
+
+func TestCreateEventRejectsMismatchedRequestTenant(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	// The requested tenant differs from the authenticated one, so the use case
+	// refuses before touching the repository.
+	service := application.NewTenantService(NewMockTenantRepository(ctrl))
+
+	ctx := tenantctx.WithTenantPublicID(context.Background(), "tenant-public-id")
+
+	_, err := service.CreateEvent(ctx, application.CreateEventInput{
+		TenantPublicID: "other-tenant-public-id",
+		Name:           "Festival",
+	})
+	if !errors.Is(err, tenantctx.ErrMismatch) {
+		t.Fatalf("CreateEvent() error = %v, want %v", err, tenantctx.ErrMismatch)
 	}
 }
 
@@ -128,6 +184,24 @@ func TestTransitionEventStatus(t *testing.T) {
 
 	if got, want := updatedEventFromRepository, updatedEvent; got != want {
 		t.Errorf("updated event = %#v, want %#v", got, want)
+	}
+}
+
+func TestTransitionEventStatusValidatesInput(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	service := application.NewTenantService(NewMockTenantRepository(ctrl))
+	ctx := tenantctx.WithTenantPublicID(context.Background(), "tenant-public-id")
+
+	_, err := service.TransitionEventStatus(ctx, application.TransitionEventStatusInput{To: domain.EventStatusOpen})
+	if !errors.Is(err, application.ErrEventIDRequired) {
+		t.Errorf("TransitionEventStatus() error = %v, want %v", err, application.ErrEventIDRequired)
+	}
+
+	_, err = service.TransitionEventStatus(ctx, application.TransitionEventStatusInput{EventPublicID: "event-public-id"})
+	if !errors.Is(err, application.ErrEventStatusRequired) {
+		t.Errorf("TransitionEventStatus() error = %v, want %v", err, application.ErrEventStatusRequired)
 	}
 }
 
@@ -202,12 +276,26 @@ func TestListEvents(t *testing.T) {
 
 	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
 
-	got, err := service.ListEvents(ctx)
+	got, err := service.ListEvents(ctx, tenant.PublicID())
 	if err != nil {
 		t.Fatalf("ListEvents() error = %v", err)
 	}
 
 	if got, want := got, events; !slices.Equal(got, want) {
 		t.Errorf("ListEvents() = %#v, want %#v", got, want)
+	}
+}
+
+func TestListEventsRejectsMismatchedRequestTenant(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	service := application.NewTenantService(NewMockTenantRepository(ctrl))
+
+	ctx := tenantctx.WithTenantPublicID(context.Background(), "tenant-public-id")
+
+	_, err := service.ListEvents(ctx, "other-tenant-public-id")
+	if !errors.Is(err, tenantctx.ErrMismatch) {
+		t.Fatalf("ListEvents() error = %v, want %v", err, tenantctx.ErrMismatch)
 	}
 }

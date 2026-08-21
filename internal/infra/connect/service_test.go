@@ -119,7 +119,7 @@ func TestListEvents(t *testing.T) {
 
 	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
 
-	response, err := service.ListEvents(ctx, connectrpc.NewRequest(&tenantv1.ListEventsRequest{}))
+	response, err := service.ListEvents(ctx, connectrpc.NewRequest(&tenantv1.ListEventsRequest{TenantId: tenant.PublicID()}))
 	if err != nil {
 		t.Fatalf("ListEvents() error = %v", err)
 	}

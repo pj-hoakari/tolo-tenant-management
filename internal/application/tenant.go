@@ -11,6 +11,7 @@ import (
 )
 
 var (
+	ErrTenantIDRequired    = errors.New("tenant ID is required")
 	ErrEventNameRequired   = errors.New("event name is required")
 	ErrEventIDRequired     = errors.New("event ID is required")
 	ErrEventTypeRequired   = errors.New("event type is required")
@@ -18,9 +19,12 @@ var (
 )
 
 // CreateEventInput contains the values accepted by the CreateEvent use case.
+// TenantPublicID is the target tenant taken from the request; it is
+// cross-checked against the authenticated tenant carried in the context.
 type CreateEventInput struct {
-	Name string
-	Type domain.EventType
+	TenantPublicID string
+	Name           string
+	Type           domain.EventType
 }
 
 // TransitionEventStatusInput contains the requested event status change.
@@ -55,9 +59,9 @@ type GetEventUseCase interface {
 	GetEvent(context.Context, string) (domain.Event, error)
 }
 
-// ListEventsUseCase lists events belonging to the authenticated tenant.
+// ListEventsUseCase lists events belonging to the requested tenant.
 type ListEventsUseCase interface {
-	ListEvents(context.Context) ([]domain.Event, error)
+	ListEvents(context.Context, string) ([]domain.Event, error)
 }
 
 // TenantUseCases groups the tenant operations exposed by the Connect
@@ -79,17 +83,43 @@ func NewTenantService(tenantRepository repository.TenantRepository) *TenantServi
 	return &TenantService{tenantRepository: tenantRepository}
 }
 
+// resolveTenant loads the tenant named in the request after verifying that it
+// is the tenant the caller is authenticated for. The request carries the
+// target explicitly; the claim is only used to confirm it.
+func (s *TenantService) resolveTenant(ctx context.Context, tenantPublicID string) (domain.Tenant, error) {
+	if tenantPublicID == "" {
+		return domain.Tenant{}, ErrTenantIDRequired
+	}
+
+	if err := tenantctx.Ensure(ctx, tenantPublicID); err != nil {
+		return domain.Tenant{}, err
+	}
+
+	return s.tenantRepository.FindTenantByPublicID(ctx, tenantPublicID)
+}
+
+// resolveEvent loads the event named in the request and verifies that it
+// belongs to the tenant the caller is authenticated for. The tenant is only
+// known once the event is loaded, so the check happens here.
+func (s *TenantService) resolveEvent(ctx context.Context, eventPublicID string) (domain.Event, error) {
+	event, err := s.tenantRepository.FindEventByPublicID(ctx, eventPublicID)
+	if err != nil {
+		return domain.Event{}, err
+	}
+
+	if err := tenantctx.Ensure(ctx, event.TenantPublicID()); err != nil {
+		return domain.Event{}, err
+	}
+
+	return event, nil
+}
+
 func (s *TenantService) CreateEvent(ctx context.Context, input CreateEventInput) (domain.Event, error) {
 	if input.Name == "" {
 		return domain.Event{}, ErrEventNameRequired
 	}
 
-	tenantPublicID, ok := tenantctx.TenantPublicIDFromContext(ctx)
-	if !ok || tenantPublicID == "" {
-		return domain.Event{}, tenantctx.ErrMissing
-	}
-
-	tenant, err := s.tenantRepository.FindTenantByPublicID(ctx, tenantPublicID)
+	tenant, err := s.resolveTenant(ctx, input.TenantPublicID)
 	if err != nil {
 		return domain.Event{}, err
 	}
@@ -125,13 +155,8 @@ func (s *TenantService) TransitionEventStatus(ctx context.Context, input Transit
 		return domain.Event{}, ErrEventStatusRequired
 	}
 
-	event, err := s.tenantRepository.FindEventByPublicID(ctx, input.EventPublicID)
+	event, err := s.resolveEvent(ctx, input.EventPublicID)
 	if err != nil {
-		return domain.Event{}, err
-	}
-
-	// The tenant is only known once the event is loaded, so authorize here.
-	if err := tenantctx.Ensure(ctx, event.TenantPublicID()); err != nil {
 		return domain.Event{}, err
 	}
 
@@ -156,13 +181,8 @@ func (s *TenantService) AssignEventType(ctx context.Context, input AssignEventTy
 		return domain.Event{}, ErrEventTypeRequired
 	}
 
-	event, err := s.tenantRepository.FindEventByPublicID(ctx, input.EventPublicID)
+	event, err := s.resolveEvent(ctx, input.EventPublicID)
 	if err != nil {
-		return domain.Event{}, err
-	}
-
-	// The tenant is only known once the event is loaded, so authorize here.
-	if err := tenantctx.Ensure(ctx, event.TenantPublicID()); err != nil {
 		return domain.Event{}, err
 	}
 
@@ -178,6 +198,8 @@ func (s *TenantService) AssignEventType(ctx context.Context, input AssignEventTy
 	return updatedEvent, nil
 }
 
+// GetEvent serves the service-to-service referential-integrity read. The
+// tenant boundary for this read is enforced by the transport layer.
 func (s *TenantService) GetEvent(ctx context.Context, eventPublicID string) (domain.Event, error) {
 	if eventPublicID == "" {
 		return domain.Event{}, ErrEventIDRequired
@@ -186,13 +208,8 @@ func (s *TenantService) GetEvent(ctx context.Context, eventPublicID string) (dom
 	return s.tenantRepository.FindEventByPublicID(ctx, eventPublicID)
 }
 
-func (s *TenantService) ListEvents(ctx context.Context) ([]domain.Event, error) {
-	tenantPublicID, ok := tenantctx.TenantPublicIDFromContext(ctx)
-	if !ok || tenantPublicID == "" {
-		return nil, tenantctx.ErrMissing
-	}
-
-	tenant, err := s.tenantRepository.FindTenantByPublicID(ctx, tenantPublicID)
+func (s *TenantService) ListEvents(ctx context.Context, tenantPublicID string) ([]domain.Event, error) {
+	tenant, err := s.resolveTenant(ctx, tenantPublicID)
 	if err != nil {
 		return nil, err
 	}
