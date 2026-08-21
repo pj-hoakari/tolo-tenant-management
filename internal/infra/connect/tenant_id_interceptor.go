@@ -42,7 +42,10 @@ func TenantPublicIDFromContext(ctx context.Context) (string, bool) {
 	return tenantctx.TenantPublicIDFromContext(ctx)
 }
 
-func newTenantPublicIDInterceptor(validator JWTValidator) connectrpc.Interceptor {
+// NewClaimInterceptor extracts the authenticated subject and tenant from the
+// internal JWT into the request context according to the procedure's claim
+// policy. It is shared by every service served by this process.
+func NewClaimInterceptor(validator JWTValidator) connectrpc.Interceptor {
 	return connectrpc.UnaryInterceptorFunc(func(next connectrpc.UnaryFunc) connectrpc.UnaryFunc {
 		return func(ctx context.Context, req connectrpc.AnyRequest) (connectrpc.AnyResponse, error) {
 			policy := claimPolicyFor(req.Spec().Procedure)
@@ -77,6 +80,8 @@ func newTenantPublicIDInterceptor(validator JWTValidator) connectrpc.Interceptor
 
 // requiredTokenUse returns the credential class each procedure accepts.
 // StartTenantRegistration is unauthenticated and never reaches this check.
+// Procedures of other services (RelationAdminService) take the default,
+// tenant_access.
 func requiredTokenUse(procedure string) internalTokenUse {
 	switch procedure {
 	case tenantv1connect.TenantServiceClaimTenantOwnershipProcedure:
@@ -103,7 +108,9 @@ func hasScope(scope, requiredScope string) bool {
 // the service specification (tenant_management_spec.md「参照系 RPC と
 // テナント境界」「オンボーディング」). GetEvent enforces the boundary from a
 // user-origin service token; GetObservationSettings does not, because it may
-// be reached from machine-origin chains without tenant context.
+// be reached from machine-origin chains without tenant context. Procedures of
+// other services (RelationAdminService) take the default: the tenant claim is
+// required.
 func claimPolicyFor(procedure string) claimPolicy {
 	switch procedure {
 	case tenantv1connect.TenantServiceStartTenantRegistrationProcedure:

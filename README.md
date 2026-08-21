@@ -133,7 +133,17 @@ JWKS は `INTERNAL_JWKS_URL` から取得する。未設定時は Gateway コン
 
 - スキーマ: `tenant_memberships`（テナント×ユーザーで一意）と `event_roles`。`event∈tenant` は `events (id, tenant_id)` への複合外部キー、`event-role⇒tenant-role` は `tenant_memberships` への外部キーで担保し、所属の削除はイベントロールへ連鎖する
 - ロール: `owner`／`staff`。`admin` は予約値で付与できない
-- リポジトリは内部 ID で所属を扱い、公開 ID は読み出し時に結合して付与する。RPC（RelationAdminService）は別の作業単位で実装する
+- リポジトリは内部 ID で所属を扱い、公開 ID は読み出し時に結合して付与する
+
+#### RelationAdminService の認可
+
+`tolo.relation.v1.RelationAdminService`（`proto/tolo/relation/v1/relation.proto`）は TenantService と同じプロセスで配信し、同じ検証器とテナント ID interceptor を共有する（`internal/relation/infra/connect`）。
+すべての RPC が `tenant_access` を要求し、リクエストの `tenant_id`（`GrantEventRole` とイベント指定の `RevokeRole` はイベントの所属テナント）をクレームと突合する。
+
+| RPC | 要求 scope | 主な応答コード |
+|---|---|---|
+| AddTenantMember、ChangeTenantRole、GrantEventRole、RevokeRole | `tenant.write` | 重複所属・所属のないイベントロール・アーカイブ済みまたは `pending_owner` のテナント／イベントは `failed_precondition`、`ROLE_ADMIN` は `invalid_argument`、存在しない所属・テナント・イベントは `not_found` |
+| ListMemberships | `tenant.read` | `tenant_id` 指定はそのテナントの全所属、`user_id` 指定は認証テナント内のそのユーザーの所属のみ（他テナントの所属は返さない）。アーカイブ済みテナントも参照できる |
 
 ### テスト用内部 JWT の生成
 
