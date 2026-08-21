@@ -234,7 +234,14 @@ func (s *TenantService) ClaimTenantOwnership(ctx context.Context, input ClaimTen
 			return err
 		}
 
-		if tenant.OwnershipState() != domain.TenantOwnershipStatePendingOwner || claim.Expired(s.now()) || !claim.TokenHash.Matches(input.ClaimToken) {
+		// Evaluate every check without short-circuiting, so the response time
+		// does not reveal whether the tenant is still pending or the claim has
+		// expired; only the combined verdict is observable.
+		tokenMatches := claim.TokenHash.Matches(input.ClaimToken)
+		pending := tenant.OwnershipState() == domain.TenantOwnershipStatePendingOwner
+		expired := claim.Expired(s.now())
+
+		if !pending || expired || !tokenMatches {
 			return ErrOwnershipClaimRejected
 		}
 
