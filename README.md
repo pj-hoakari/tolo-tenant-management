@@ -115,7 +115,7 @@ JWKS は `INTERNAL_JWKS_URL` から取得する。未設定時は Gateway コン
 
 テナントは未認証の仮登録と、認証済みユーザーによる所有権取得の二段階で作成する（`docs/tenant_management_spec.md` の「オンボーディング」）。
 
-1. `StartTenantRegistration`（未認証）が `pending_owner` のテナントを作成し、所有権取得トークンの平文をこの応答でのみ返す。永続化するのは SHA-256 ハッシュだけで、トークンの有効期限は既定 24 時間（`application.DefaultOwnershipClaimTTL`）
+1. `StartTenantRegistration`（未認証）が `pending_owner` のテナントを作成し、所有権取得トークンの平文をこの応答でのみ返す。永続化するのは SHA-256 ハッシュだけで、トークンの有効期限は既定 1 時間（`application.DefaultOwnershipClaimTTL`）
 2. `ClaimTenantOwnership`（`registration` トークン、scope `tenant.claim`）が、対象が期限内の `pending_owner` であることとトークンのハッシュ一致を検証し、内部 JWT の `sub` をオーナーとして所属させ、`owned` へ遷移させ、トークンを消費する。これらは 1 つの DB トランザクションで確定する
 3. 以降は `tenantId` 指定で再認可した `tenant_access` でテナント配下を操作する
 

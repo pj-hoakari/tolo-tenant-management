@@ -33,7 +33,7 @@ var (
 
 // DefaultOwnershipClaimTTL is how long a pending_owner tenant waits for
 // ClaimTenantOwnership before it expires and its name is released.
-const DefaultOwnershipClaimTTL = 24 * time.Hour
+const DefaultOwnershipClaimTTL = time.Hour
 
 // StartTenantRegistrationInput contains the values accepted by the
 // StartTenantRegistration use case.
