@@ -337,6 +337,65 @@ func TestAddOwnerJoinsTheCallerTransaction(t *testing.T) {
 	}
 }
 
+func TestFindTenantRoleForShare(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	if _, err := f.memberships.AddTenantMember(ctx, f.tenantA.ID(), "user-1", domain.RoleOwner); err != nil {
+		t.Fatalf("AddTenantMember() error = %v", err)
+	}
+
+	role, err := f.memberships.FindTenantRoleForShare(ctx, f.tenantA.ID(), "user-1")
+	if err != nil || role != domain.RoleOwner {
+		t.Fatalf("FindTenantRoleForShare() = %v, %v, want %v", role, err, domain.RoleOwner)
+	}
+
+	if _, err := f.memberships.FindTenantRoleForShare(ctx, f.tenantA.ID(), "user-9"); !errors.Is(err, repository.ErrMembershipNotFound) {
+		t.Errorf("FindTenantRoleForShare(unknown member) error = %v, want %v", err, repository.ErrMembershipNotFound)
+	}
+
+	// The membership is looked up in the named tenant only.
+	if _, err := f.memberships.FindTenantRoleForShare(ctx, f.tenantB.ID(), "user-1"); !errors.Is(err, repository.ErrMembershipNotFound) {
+		t.Errorf("FindTenantRoleForShare(other tenant) error = %v, want %v", err, repository.ErrMembershipNotFound)
+	}
+}
+
+func TestFindTenantRoleForShareJoinsTheCallerTransaction(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	errAbort := errors.New("abort")
+
+	if _, err := f.memberships.AddTenantMember(ctx, f.tenantA.ID(), "user-1", domain.RoleOwner); err != nil {
+		t.Fatalf("AddTenantMember() error = %v", err)
+	}
+
+	err := f.memberships.WithinTransaction(ctx, func(ctx context.Context) error {
+		if _, err := f.memberships.ChangeTenantRole(ctx, f.tenantA.ID(), "user-1", domain.RoleStaff); err != nil {
+			return err
+		}
+
+		// The lookup runs in the same transaction, so it sees the change.
+		role, err := f.memberships.FindTenantRoleForShare(ctx, f.tenantA.ID(), "user-1")
+		if err != nil {
+			return err
+		}
+
+		if role != domain.RoleStaff {
+			t.Errorf("FindTenantRoleForShare() inside transaction = %v, want %v", role, domain.RoleStaff)
+		}
+
+		return errAbort
+	})
+	if !errors.Is(err, errAbort) {
+		t.Fatalf("WithinTransaction() error = %v, want %v", err, errAbort)
+	}
+
+	role, err := f.memberships.FindTenantRoleForShare(ctx, f.tenantA.ID(), "user-1")
+	if err != nil || role != domain.RoleOwner {
+		t.Errorf("FindTenantRoleForShare() after rollback = %v, %v, want %v", role, err, domain.RoleOwner)
+	}
+}
+
 func migrationPaths() []string {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {

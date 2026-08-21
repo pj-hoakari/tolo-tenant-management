@@ -34,6 +34,14 @@ func (r *PostgresMembershipRepository) executor(ctx context.Context) sqlx.ExtCon
 	return infradb.Executor(ctx, r.db)
 }
 
+// WithinTransaction runs fn inside one database transaction of the pool the
+// repository shares with the tenant repository, so that a permission check and
+// the membership write it guards commit together. See
+// infradb.RunInTransaction.
+func (r *PostgresMembershipRepository) WithinTransaction(ctx context.Context, fn func(context.Context) error) error {
+	return infradb.RunInTransaction(ctx, r.db, fn)
+}
+
 // AddOwner implements the tenant side's MembershipWriter port: the claiming
 // user becomes the owner of the tenant inside the caller's transaction.
 func (r *PostgresMembershipRepository) AddOwner(ctx context.Context, tenantID, userID string) error {
@@ -140,6 +148,34 @@ func (r *PostgresMembershipRepository) FindMembership(ctx context.Context, tenan
 	}
 
 	return memberships[0], nil
+}
+
+// FindTenantRoleForShare loads the tenant role of userID and holds a share
+// lock on the membership row until the surrounding transaction ends, so a
+// concurrent revoke or role change cannot slip in between the check and the
+// write it guards.
+func (r *PostgresMembershipRepository) FindTenantRoleForShare(ctx context.Context, tenantID, userID string) (domain.Role, error) {
+	var role string
+
+	err := r.executor(ctx).QueryRowxContext(ctx, `
+		SELECT tenant_role FROM tenant_memberships
+		WHERE tenant_id = $1 AND user_id = $2
+		FOR SHARE`,
+		tenantID, userID).Scan(&role)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.RoleUnspecified, repository.ErrMembershipNotFound
+		}
+
+		return domain.RoleUnspecified, fmt.Errorf("find tenant role: %w", err)
+	}
+
+	parsed, err := domain.ParseRole(role)
+	if err != nil {
+		return domain.RoleUnspecified, fmt.Errorf("parse tenant role: %w", err)
+	}
+
+	return parsed, nil
 }
 
 func (r *PostgresMembershipRepository) ListMembershipsByTenant(ctx context.Context, tenantID string) ([]domain.Membership, error) {

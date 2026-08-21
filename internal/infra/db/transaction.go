@@ -10,17 +10,18 @@ import (
 
 type transactionKey struct{}
 
-// WithinTransaction runs fn inside one database transaction. The transaction
-// travels in the context handed to fn, so every repository call made with that
-// context (including calls on other repositories sharing the same *sqlx.DB)
-// joins it. fn returning an error rolls the transaction back; otherwise it is
-// committed. A call made from inside a transaction simply joins it.
-func (r *PostgresTenantRepository) WithinTransaction(ctx context.Context, fn func(context.Context) error) error {
+// RunInTransaction runs fn inside one database transaction on pool. The
+// transaction travels in the context handed to fn, so every repository call
+// made with that context (including calls on other repositories sharing the
+// same *sqlx.DB) joins it. fn returning an error rolls the transaction back;
+// otherwise it is committed. A call made from inside a transaction simply
+// joins it. Repositories of every model expose it as their Transactor port.
+func RunInTransaction(ctx context.Context, pool *sqlx.DB, fn func(context.Context) error) error {
 	if _, ok := transactionFromContext(ctx); ok {
 		return fn(ctx)
 	}
 
-	tx, err := r.db.BeginTxx(ctx, nil)
+	tx, err := pool.BeginTxx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
@@ -38,6 +39,12 @@ func (r *PostgresTenantRepository) WithinTransaction(ctx context.Context, fn fun
 	}
 
 	return nil
+}
+
+// WithinTransaction runs fn inside one database transaction of the pool the
+// repository holds. See RunInTransaction.
+func (r *PostgresTenantRepository) WithinTransaction(ctx context.Context, fn func(context.Context) error) error {
+	return RunInTransaction(ctx, r.db, fn)
 }
 
 func transactionFromContext(ctx context.Context) (*sqlx.Tx, bool) {
