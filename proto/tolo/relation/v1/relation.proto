@@ -1,0 +1,110 @@
+syntax = "proto3";
+
+package tolo.relation.v1;
+
+import "authz/v1/options.proto";
+
+// RelationAdminService is the source of truth for memberships and roles. It is
+// implemented by Tenant Management next to tolo.tenant.v1 but kept in its own
+// package, because it speaks the language of the auth context.
+//
+// tenant_id / event_id are the public IDs issued by the tenant context.
+// Every RPC requires token_use=tenant_access; the target tenant (or the
+// event's tenant) is cross-checked against the tenant_id claim.
+service RelationAdminService {
+  // AddTenantMember makes a user a member of a tenant. A user may belong to
+  // several tenants but only once to the same tenant. The owner membership
+  // created by ClaimTenantOwnership does not go through this RPC.
+  rpc AddTenantMember(AddTenantMemberRequest) returns (AddTenantMemberResponse) {
+    option (authz.v1.auth_policy) = {
+      level: AUTH_LEVEL_AUTHENTICATED
+      required_scopes: "tenant.write"
+    };
+  }
+  rpc ChangeTenantRole(ChangeTenantRoleRequest) returns (ChangeTenantRoleResponse) {
+    option (authz.v1.auth_policy) = {
+      level: AUTH_LEVEL_AUTHENTICATED
+      required_scopes: "tenant.write"
+    };
+  }
+  // GrantEventRole assigns an event role. The event must belong to the
+  // tenant and the user must already be a member of that tenant.
+  rpc GrantEventRole(GrantEventRoleRequest) returns (GrantEventRoleResponse) {
+    option (authz.v1.auth_policy) = {
+      level: AUTH_LEVEL_AUTHENTICATED
+      required_scopes: "tenant.write"
+    };
+  }
+  // RevokeRole removes a membership (tenant scope) or an event role only
+  // (event scope).
+  rpc RevokeRole(RevokeRoleRequest) returns (RevokeRoleResponse) {
+    option (authz.v1.auth_policy) = {
+      level: AUTH_LEVEL_AUTHENTICATED
+      required_scopes: "tenant.write"
+    };
+  }
+  rpc ListMemberships(ListMembershipsRequest) returns (ListMembershipsResponse) {
+    option (authz.v1.auth_policy) = {
+      level: AUTH_LEVEL_AUTHENTICATED
+      required_scopes: "tenant.read"
+    };
+  }
+}
+
+// Membership is a user's membership of one tenant with the roles held there.
+message Membership {
+  string user_id = 1;
+  string tenant_id = 2;  // public ID
+  Role tenant_role = 3;
+  repeated EventRole event_roles = 4;
+}
+
+message EventRole {
+  string event_id = 1;  // public ID; the event belongs to the membership's tenant
+  Role role = 2;
+}
+
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_OWNER = 1;
+  ROLE_STAFF = 2;
+  ROLE_ADMIN = 3;  // reserved; cannot be granted
+}
+
+message AddTenantMemberRequest {
+  string tenant_id = 1;
+  string user_id = 2;
+  Role tenant_role = 3;
+}
+message AddTenantMemberResponse { Membership membership = 1; }
+
+message ChangeTenantRoleRequest {
+  string tenant_id = 1;
+  string user_id = 2;
+  Role tenant_role = 3;
+}
+message ChangeTenantRoleResponse { Membership membership = 1; }
+
+message GrantEventRoleRequest {
+  string event_id = 1;
+  string user_id = 2;
+  Role role = 3;
+}
+message GrantEventRoleResponse { Membership membership = 1; }
+
+message RevokeRoleRequest {
+  string user_id = 1;
+  oneof scope {
+    string tenant_id = 2;  // remove the tenant membership and its event roles
+    string event_id = 3;   // remove the event role only
+  }
+}
+message RevokeRoleResponse {}
+
+message ListMembershipsRequest {
+  oneof filter {
+    string tenant_id = 1;  // every membership of the tenant
+    string user_id = 2;    // the user's membership of the authenticated tenant
+  }
+}
+message ListMembershipsResponse { repeated Membership memberships = 1; }
