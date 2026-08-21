@@ -62,15 +62,13 @@ func TestEventProto(t *testing.T) {
 	}
 
 	got := eventProto(openEvent)
-	if got.GetObservationSettings() != nil {
-		t.Errorf("ObservationSettings = %#v, want nil", got.GetObservationSettings())
-	}
 
-	if got, want := got.GetEventId(), openEvent.ID(); got != want {
+	// The wire representation carries public IDs only.
+	if got, want := got.GetEventId(), openEvent.PublicID(); got != want {
 		t.Errorf("EventId = %q, want %q", got, want)
 	}
 
-	if got, want := got.GetTenantId(), openEvent.TenantID(); got != want {
+	if got, want := got.GetTenantId(), openEvent.TenantPublicID(); got != want {
 		t.Errorf("TenantId = %q, want %q", got, want)
 	}
 
@@ -84,12 +82,12 @@ func TestGetEvent(t *testing.T) {
 
 	service, _, events := newReadService(t)
 
-	response, err := service.GetEvent(context.Background(), connectrpc.NewRequest(&tenantv1.GetEventRequest{EventId: events[0].ID()}))
+	response, err := service.GetEvent(context.Background(), connectrpc.NewRequest(&tenantv1.GetEventRequest{EventId: events[0].PublicID()}))
 	if err != nil {
 		t.Fatalf("GetEvent() error = %v", err)
 	}
 
-	if got, want := response.Msg.GetEvent().GetEventId(), events[0].ID(); got != want {
+	if got, want := response.Msg.GetEvent().GetEventId(), events[0].PublicID(); got != want {
 		t.Errorf("EventId = %q, want %q", got, want)
 	}
 }
@@ -102,7 +100,7 @@ func TestAssignEventType(t *testing.T) {
 	ctx := tenantctx.WithTenantPublicID(context.Background(), events[0].TenantPublicID())
 
 	response, err := service.AssignEventType(ctx, connectrpc.NewRequest(&tenantv1.AssignEventTypeRequest{
-		EventId: events[0].ID(),
+		EventId: events[0].PublicID(),
 		Type:    tenantv1.EventType_EVENT_TYPE_LONG_TERM,
 	}))
 	if err != nil {
@@ -121,7 +119,7 @@ func TestListEvents(t *testing.T) {
 
 	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
 
-	response, err := service.ListEvents(ctx, connectrpc.NewRequest(&tenantv1.ListEventsRequest{}))
+	response, err := service.ListEvents(ctx, connectrpc.NewRequest(&tenantv1.ListEventsRequest{TenantId: tenant.PublicID()}))
 	if err != nil {
 		t.Fatalf("ListEvents() error = %v", err)
 	}
@@ -131,7 +129,7 @@ func TestListEvents(t *testing.T) {
 	}
 
 	for i, event := range events {
-		if got, want := response.Msg.GetEvents()[i].GetEventId(), event.ID(); got != want {
+		if got, want := response.Msg.GetEvents()[i].GetEventId(), event.PublicID(); got != want {
 			t.Errorf("Events[%d].EventId = %q, want %q", i, got, want)
 		}
 	}
@@ -148,10 +146,10 @@ func newReadService(t *testing.T) (*Service, domain.Tenant, []domain.Event) {
 
 	ctrl := gomock.NewController(t)
 	repository := NewMockTenantRepository(ctrl)
-	repository.EXPECT().FindEventByID(gomock.Any(), events[0].ID()).Return(events[0], nil).AnyTimes()
+	repository.EXPECT().FindEventByPublicID(gomock.Any(), events[0].PublicID()).Return(events[0], nil).AnyTimes()
 	repository.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(tenant, nil).AnyTimes()
 	repository.EXPECT().ListEventsByTenantID(gomock.Any(), tenant.ID()).Return(events, nil).AnyTimes()
 	repository.EXPECT().UpdateEvent(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
-	return NewService(application.NewTenantService(repository, nil)), tenant, events
+	return NewService(application.NewTenantService(repository)), tenant, events
 }

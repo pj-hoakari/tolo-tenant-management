@@ -44,11 +44,21 @@ func (r *PostgresTenantRepository) CreateEvent(ctx context.Context, event domain
 	return fmt.Errorf("create event for tenant %q: no row inserted", event.TenantID())
 }
 
-func (r *PostgresTenantRepository) FindEventByID(ctx context.Context, eventID string) (domain.Event, error) {
-	var row eventRow
-	if err := r.db.GetContext(ctx, &row, `
+func (r *PostgresTenantRepository) FindEventByPublicID(ctx context.Context, publicID string) (domain.Event, error) {
+	return r.findEvent(ctx, `
 		SELECT id, public_id, tenant_id, tenant_public_id, name, event_type, status
-		FROM events WHERE id = $1`, eventID); err != nil {
+		FROM events WHERE public_id = $1`, publicID)
+}
+
+func (r *PostgresTenantRepository) findEventByID(ctx context.Context, eventID string) (domain.Event, error) {
+	return r.findEvent(ctx, `
+		SELECT id, public_id, tenant_id, tenant_public_id, name, event_type, status
+		FROM events WHERE id = $1`, eventID)
+}
+
+func (r *PostgresTenantRepository) findEvent(ctx context.Context, query, value string) (domain.Event, error) {
+	var row eventRow
+	if err := r.db.GetContext(ctx, &row, query, value); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Event{}, repository.ErrEventNotFound
 		}
@@ -100,7 +110,7 @@ func (r *PostgresTenantRepository) UpdateEvent(ctx context.Context, event domain
 		return nil
 	}
 
-	storedEvent, err := r.FindEventByID(ctx, event.ID())
+	storedEvent, err := r.findEventByID(ctx, event.ID())
 	if err != nil {
 		return err
 	}

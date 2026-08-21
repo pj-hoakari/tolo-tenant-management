@@ -69,33 +69,19 @@ func (mr *MockTenantRepositoryMockRecorder) CreateTenant(arg0, arg1 any) *gomock
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateTenant", reflect.TypeOf((*MockTenantRepository)(nil).CreateTenant), arg0, arg1)
 }
 
-// DeleteTenant mocks base method.
-func (m *MockTenantRepository) DeleteTenant(arg0 context.Context, arg1 string) error {
+// FindEventByPublicID mocks base method.
+func (m *MockTenantRepository) FindEventByPublicID(arg0 context.Context, arg1 string) (domain.Event, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteTenant", arg0, arg1)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// DeleteTenant indicates an expected call of DeleteTenant.
-func (mr *MockTenantRepositoryMockRecorder) DeleteTenant(arg0, arg1 any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteTenant", reflect.TypeOf((*MockTenantRepository)(nil).DeleteTenant), arg0, arg1)
-}
-
-// FindEventByID mocks base method.
-func (m *MockTenantRepository) FindEventByID(arg0 context.Context, arg1 string) (domain.Event, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "FindEventByID", arg0, arg1)
+	ret := m.ctrl.Call(m, "FindEventByPublicID", arg0, arg1)
 	ret0, _ := ret[0].(domain.Event)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// FindEventByID indicates an expected call of FindEventByID.
-func (mr *MockTenantRepositoryMockRecorder) FindEventByID(arg0, arg1 any) *gomock.Call {
+// FindEventByPublicID indicates an expected call of FindEventByPublicID.
+func (mr *MockTenantRepositoryMockRecorder) FindEventByPublicID(arg0, arg1 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindEventByID", reflect.TypeOf((*MockTenantRepository)(nil).FindEventByID), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindEventByPublicID", reflect.TypeOf((*MockTenantRepository)(nil).FindEventByPublicID), arg0, arg1)
 }
 
 // FindTenantByID mocks base method.

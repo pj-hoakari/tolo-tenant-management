@@ -10,6 +10,7 @@ import (
 	_ "github.com/pj-hoakari/protoc-gen-authz-go/authz/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -22,12 +23,63 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type TenantOwnershipState int32
+
+const (
+	TenantOwnershipState_TENANT_OWNERSHIP_STATE_UNSPECIFIED TenantOwnershipState = 0
+	// Created without authentication; not usable for business operations yet.
+	TenantOwnershipState_TENANT_OWNERSHIP_STATE_PENDING_OWNER TenantOwnershipState = 1
+	// An authenticated owner membership exists; the tenant is usable.
+	TenantOwnershipState_TENANT_OWNERSHIP_STATE_OWNED TenantOwnershipState = 2
+)
+
+// Enum value maps for TenantOwnershipState.
+var (
+	TenantOwnershipState_name = map[int32]string{
+		0: "TENANT_OWNERSHIP_STATE_UNSPECIFIED",
+		1: "TENANT_OWNERSHIP_STATE_PENDING_OWNER",
+		2: "TENANT_OWNERSHIP_STATE_OWNED",
+	}
+	TenantOwnershipState_value = map[string]int32{
+		"TENANT_OWNERSHIP_STATE_UNSPECIFIED":   0,
+		"TENANT_OWNERSHIP_STATE_PENDING_OWNER": 1,
+		"TENANT_OWNERSHIP_STATE_OWNED":         2,
+	}
+)
+
+func (x TenantOwnershipState) Enum() *TenantOwnershipState {
+	p := new(TenantOwnershipState)
+	*p = x
+	return p
+}
+
+func (x TenantOwnershipState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (TenantOwnershipState) Descriptor() protoreflect.EnumDescriptor {
+	return file_tolo_tenant_v1_tenant_proto_enumTypes[0].Descriptor()
+}
+
+func (TenantOwnershipState) Type() protoreflect.EnumType {
+	return &file_tolo_tenant_v1_tenant_proto_enumTypes[0]
+}
+
+func (x TenantOwnershipState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use TenantOwnershipState.Descriptor instead.
+func (TenantOwnershipState) EnumDescriptor() ([]byte, []int) {
+	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{0}
+}
+
 type EventType int32
 
 const (
 	EventType_EVENT_TYPE_UNSPECIFIED EventType = 0
-	EventType_EVENT_TYPE_SHORT_TERM  EventType = 1
-	EventType_EVENT_TYPE_LONG_TERM   EventType = 2
+	EventType_EVENT_TYPE_SHORT_TERM  EventType = 1 // short history; subject to observation fallback
+	EventType_EVENT_TYPE_LONG_TERM   EventType = 2 // permanent installation
 )
 
 // Enum value maps for EventType.
@@ -55,11 +107,11 @@ func (x EventType) String() string {
 }
 
 func (EventType) Descriptor() protoreflect.EnumDescriptor {
-	return file_tolo_tenant_v1_tenant_proto_enumTypes[0].Descriptor()
+	return file_tolo_tenant_v1_tenant_proto_enumTypes[1].Descriptor()
 }
 
 func (EventType) Type() protoreflect.EnumType {
-	return &file_tolo_tenant_v1_tenant_proto_enumTypes[0]
+	return &file_tolo_tenant_v1_tenant_proto_enumTypes[1]
 }
 
 func (x EventType) Number() protoreflect.EnumNumber {
@@ -68,7 +120,7 @@ func (x EventType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use EventType.Descriptor instead.
 func (EventType) EnumDescriptor() ([]byte, []int) {
-	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{0}
+	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{1}
 }
 
 type EventStatus int32
@@ -79,7 +131,7 @@ const (
 	EventStatus_EVENT_STATUS_OPEN        EventStatus = 2
 	EventStatus_EVENT_STATUS_LOCKED      EventStatus = 3
 	EventStatus_EVENT_STATUS_CLOSED      EventStatus = 4
-	EventStatus_EVENT_STATUS_ARCHIVED    EventStatus = 5
+	EventStatus_EVENT_STATUS_ARCHIVED    EventStatus = 5 // soft delete
 )
 
 // Enum value maps for EventStatus.
@@ -113,11 +165,11 @@ func (x EventStatus) String() string {
 }
 
 func (EventStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_tolo_tenant_v1_tenant_proto_enumTypes[1].Descriptor()
+	return file_tolo_tenant_v1_tenant_proto_enumTypes[2].Descriptor()
 }
 
 func (EventStatus) Type() protoreflect.EnumType {
-	return &file_tolo_tenant_v1_tenant_proto_enumTypes[1]
+	return &file_tolo_tenant_v1_tenant_proto_enumTypes[2]
 }
 
 func (x EventStatus) Number() protoreflect.EnumNumber {
@@ -126,17 +178,17 @@ func (x EventStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use EventStatus.Descriptor instead.
 func (EventStatus) EnumDescriptor() ([]byte, []int) {
-	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{1}
+	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{2}
 }
 
 // Tenant is the customer-organization, billing, and onboarding boundary.
 type Tenant struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	TenantId       string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"` // UUIDv7 internal ID
-	Name           string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	ContractPlan   string                 `protobuf:"bytes,3,opt,name=contract_plan,json=contractPlan,proto3" json:"contract_plan,omitempty"`
+	TenantId       string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`             // public ID (random 16-character hex)
+	Name           string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`                                     // unique
+	ContractPlan   string                 `protobuf:"bytes,3,opt,name=contract_plan,json=contractPlan,proto3" json:"contract_plan,omitempty"` // identifier only; billing details are out of scope
 	Archived       bool                   `protobuf:"varint,4,opt,name=archived,proto3" json:"archived,omitempty"`
-	TenantPublicId string                 `protobuf:"bytes,5,opt,name=tenant_public_id,json=tenantPublicId,proto3" json:"tenant_public_id,omitempty"` // 16-character hex ID for URLs
+	OwnershipState TenantOwnershipState   `protobuf:"varint,5,opt,name=ownership_state,json=ownershipState,proto3,enum=tolo.tenant.v1.TenantOwnershipState" json:"ownership_state,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -199,26 +251,23 @@ func (x *Tenant) GetArchived() bool {
 	return false
 }
 
-func (x *Tenant) GetTenantPublicId() string {
+func (x *Tenant) GetOwnershipState() TenantOwnershipState {
 	if x != nil {
-		return x.TenantPublicId
+		return x.OwnershipState
 	}
-	return ""
+	return TenantOwnershipState_TENANT_OWNERSHIP_STATE_UNSPECIFIED
 }
 
 // Event is an installation or occasion owned by exactly one tenant.
 type Event struct {
-	state               protoimpl.MessageState `protogen:"open.v1"`
-	EventId             string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`    // UUIDv7 internal ID
-	TenantId            string                 `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"` // UUIDv7 internal tenant ID
-	Name                string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Type                EventType              `protobuf:"varint,4,opt,name=type,proto3,enum=tolo.tenant.v1.EventType" json:"type,omitempty"`
-	Status              EventStatus            `protobuf:"varint,5,opt,name=status,proto3,enum=tolo.tenant.v1.EventStatus" json:"status,omitempty"`
-	ObservationSettings *ObservationSettings   `protobuf:"bytes,6,opt,name=observation_settings,json=observationSettings,proto3" json:"observation_settings,omitempty"`
-	EventPublicId       string                 `protobuf:"bytes,7,opt,name=event_public_id,json=eventPublicId,proto3" json:"event_public_id,omitempty"`    // 16-character hex ID for URLs
-	TenantPublicId      string                 `protobuf:"bytes,8,opt,name=tenant_public_id,json=tenantPublicId,proto3" json:"tenant_public_id,omitempty"` // 16-character hex ID for URLs
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EventId       string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`    // public ID (random 16-character hex)
+	TenantId      string                 `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"` // public ID of the owning tenant
+	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Type          EventType              `protobuf:"varint,4,opt,name=type,proto3,enum=tolo.tenant.v1.EventType" json:"type,omitempty"`
+	Status        EventStatus            `protobuf:"varint,5,opt,name=status,proto3,enum=tolo.tenant.v1.EventStatus" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Event) Reset() {
@@ -286,30 +335,11 @@ func (x *Event) GetStatus() EventStatus {
 	return EventStatus_EVENT_STATUS_UNSPECIFIED
 }
 
-func (x *Event) GetObservationSettings() *ObservationSettings {
-	if x != nil {
-		return x.ObservationSettings
-	}
-	return nil
-}
-
-func (x *Event) GetEventPublicId() string {
-	if x != nil {
-		return x.EventPublicId
-	}
-	return ""
-}
-
-func (x *Event) GetTenantPublicId() string {
-	if x != nil {
-		return x.TenantPublicId
-	}
-	return ""
-}
-
+// ObservationSettings holds the values Observation reads for an event. It is
+// returned only by GetObservationSettings / UpdateObservationSettings.
 type ObservationSettings struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
-	HistoryWindowDays int32                  `protobuf:"varint,1,opt,name=history_window_days,json=historyWindowDays,proto3" json:"history_window_days,omitempty"`
+	HistoryWindowDays int32                  `protobuf:"varint,1,opt,name=history_window_days,json=historyWindowDays,proto3" json:"history_window_days,omitempty"` // window for historical percentiles; default 30
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -351,7 +381,7 @@ func (x *ObservationSettings) GetHistoryWindowDays() int32 {
 	return 0
 }
 
-type RegisterTenantRequest struct {
+type StartTenantRegistrationRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	ContractPlan  string                 `protobuf:"bytes,2,opt,name=contract_plan,json=contractPlan,proto3" json:"contract_plan,omitempty"`
@@ -359,20 +389,20 @@ type RegisterTenantRequest struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *RegisterTenantRequest) Reset() {
-	*x = RegisterTenantRequest{}
+func (x *StartTenantRegistrationRequest) Reset() {
+	*x = StartTenantRegistrationRequest{}
 	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *RegisterTenantRequest) String() string {
+func (x *StartTenantRegistrationRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*RegisterTenantRequest) ProtoMessage() {}
+func (*StartTenantRegistrationRequest) ProtoMessage() {}
 
-func (x *RegisterTenantRequest) ProtoReflect() protoreflect.Message {
+func (x *StartTenantRegistrationRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -384,46 +414,48 @@ func (x *RegisterTenantRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use RegisterTenantRequest.ProtoReflect.Descriptor instead.
-func (*RegisterTenantRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use StartTenantRegistrationRequest.ProtoReflect.Descriptor instead.
+func (*StartTenantRegistrationRequest) Descriptor() ([]byte, []int) {
 	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *RegisterTenantRequest) GetName() string {
+func (x *StartTenantRegistrationRequest) GetName() string {
 	if x != nil {
 		return x.Name
 	}
 	return ""
 }
 
-func (x *RegisterTenantRequest) GetContractPlan() string {
+func (x *StartTenantRegistrationRequest) GetContractPlan() string {
 	if x != nil {
 		return x.ContractPlan
 	}
 	return ""
 }
 
-type RegisterTenantResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Tenant        *Tenant                `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+type StartTenantRegistrationResponse struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	Tenant              *Tenant                `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`                                                        // ownership_state is PENDING_OWNER
+	OwnershipClaimToken string                 `protobuf:"bytes,2,opt,name=ownership_claim_token,json=ownershipClaimToken,proto3" json:"ownership_claim_token,omitempty"` // one-time; never returned again
+	ExpiresAt           *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
-func (x *RegisterTenantResponse) Reset() {
-	*x = RegisterTenantResponse{}
+func (x *StartTenantRegistrationResponse) Reset() {
+	*x = StartTenantRegistrationResponse{}
 	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *RegisterTenantResponse) String() string {
+func (x *StartTenantRegistrationResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*RegisterTenantResponse) ProtoMessage() {}
+func (*StartTenantRegistrationResponse) ProtoMessage() {}
 
-func (x *RegisterTenantResponse) ProtoReflect() protoreflect.Message {
+func (x *StartTenantRegistrationResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -435,12 +467,122 @@ func (x *RegisterTenantResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use RegisterTenantResponse.ProtoReflect.Descriptor instead.
-func (*RegisterTenantResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use StartTenantRegistrationResponse.ProtoReflect.Descriptor instead.
+func (*StartTenantRegistrationResponse) Descriptor() ([]byte, []int) {
 	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *RegisterTenantResponse) GetTenant() *Tenant {
+func (x *StartTenantRegistrationResponse) GetTenant() *Tenant {
+	if x != nil {
+		return x.Tenant
+	}
+	return nil
+}
+
+func (x *StartTenantRegistrationResponse) GetOwnershipClaimToken() string {
+	if x != nil {
+		return x.OwnershipClaimToken
+	}
+	return ""
+}
+
+func (x *StartTenantRegistrationResponse) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+type ClaimTenantOwnershipRequest struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	TenantId            string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	OwnershipClaimToken string                 `protobuf:"bytes,2,opt,name=ownership_claim_token,json=ownershipClaimToken,proto3" json:"ownership_claim_token,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *ClaimTenantOwnershipRequest) Reset() {
+	*x = ClaimTenantOwnershipRequest{}
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClaimTenantOwnershipRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClaimTenantOwnershipRequest) ProtoMessage() {}
+
+func (x *ClaimTenantOwnershipRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClaimTenantOwnershipRequest.ProtoReflect.Descriptor instead.
+func (*ClaimTenantOwnershipRequest) Descriptor() ([]byte, []int) {
+	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ClaimTenantOwnershipRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *ClaimTenantOwnershipRequest) GetOwnershipClaimToken() string {
+	if x != nil {
+		return x.OwnershipClaimToken
+	}
+	return ""
+}
+
+type ClaimTenantOwnershipResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Tenant        *Tenant                `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClaimTenantOwnershipResponse) Reset() {
+	*x = ClaimTenantOwnershipResponse{}
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClaimTenantOwnershipResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClaimTenantOwnershipResponse) ProtoMessage() {}
+
+func (x *ClaimTenantOwnershipResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClaimTenantOwnershipResponse.ProtoReflect.Descriptor instead.
+func (*ClaimTenantOwnershipResponse) Descriptor() ([]byte, []int) {
+	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ClaimTenantOwnershipResponse) GetTenant() *Tenant {
 	if x != nil {
 		return x.Tenant
 	}
@@ -449,14 +591,15 @@ func (x *RegisterTenantResponse) GetTenant() *Tenant {
 
 type ChangeTenantContractRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ContractPlan  string                 `protobuf:"bytes,1,opt,name=contract_plan,json=contractPlan,proto3" json:"contract_plan,omitempty"`
+	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	ContractPlan  string                 `protobuf:"bytes,2,opt,name=contract_plan,json=contractPlan,proto3" json:"contract_plan,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ChangeTenantContractRequest) Reset() {
 	*x = ChangeTenantContractRequest{}
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[5]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -468,7 +611,7 @@ func (x *ChangeTenantContractRequest) String() string {
 func (*ChangeTenantContractRequest) ProtoMessage() {}
 
 func (x *ChangeTenantContractRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[5]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -481,7 +624,14 @@ func (x *ChangeTenantContractRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChangeTenantContractRequest.ProtoReflect.Descriptor instead.
 func (*ChangeTenantContractRequest) Descriptor() ([]byte, []int) {
-	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{5}
+	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ChangeTenantContractRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
 }
 
 func (x *ChangeTenantContractRequest) GetContractPlan() string {
@@ -500,7 +650,7 @@ type ChangeTenantContractResponse struct {
 
 func (x *ChangeTenantContractResponse) Reset() {
 	*x = ChangeTenantContractResponse{}
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[6]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -512,7 +662,7 @@ func (x *ChangeTenantContractResponse) String() string {
 func (*ChangeTenantContractResponse) ProtoMessage() {}
 
 func (x *ChangeTenantContractResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[6]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -525,7 +675,7 @@ func (x *ChangeTenantContractResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChangeTenantContractResponse.ProtoReflect.Descriptor instead.
 func (*ChangeTenantContractResponse) Descriptor() ([]byte, []int) {
-	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{6}
+	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ChangeTenantContractResponse) GetTenant() *Tenant {
@@ -537,13 +687,14 @@ func (x *ChangeTenantContractResponse) GetTenant() *Tenant {
 
 type ArchiveTenantRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ArchiveTenantRequest) Reset() {
 	*x = ArchiveTenantRequest{}
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[7]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -555,7 +706,7 @@ func (x *ArchiveTenantRequest) String() string {
 func (*ArchiveTenantRequest) ProtoMessage() {}
 
 func (x *ArchiveTenantRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[7]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -568,7 +719,14 @@ func (x *ArchiveTenantRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ArchiveTenantRequest.ProtoReflect.Descriptor instead.
 func (*ArchiveTenantRequest) Descriptor() ([]byte, []int) {
-	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{7}
+	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ArchiveTenantRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
 }
 
 type ArchiveTenantResponse struct {
@@ -580,7 +738,7 @@ type ArchiveTenantResponse struct {
 
 func (x *ArchiveTenantResponse) Reset() {
 	*x = ArchiveTenantResponse{}
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[8]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -592,7 +750,7 @@ func (x *ArchiveTenantResponse) String() string {
 func (*ArchiveTenantResponse) ProtoMessage() {}
 
 func (x *ArchiveTenantResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[8]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -605,7 +763,7 @@ func (x *ArchiveTenantResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ArchiveTenantResponse.ProtoReflect.Descriptor instead.
 func (*ArchiveTenantResponse) Descriptor() ([]byte, []int) {
-	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{8}
+	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ArchiveTenantResponse) GetTenant() *Tenant {
@@ -617,15 +775,16 @@ func (x *ArchiveTenantResponse) GetTenant() *Tenant {
 
 type CreateEventRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Type          EventType              `protobuf:"varint,2,opt,name=type,proto3,enum=tolo.tenant.v1.EventType" json:"type,omitempty"`
+	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Type          EventType              `protobuf:"varint,3,opt,name=type,proto3,enum=tolo.tenant.v1.EventType" json:"type,omitempty"` // optional; left UNSPECIFIED when omitted
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CreateEventRequest) Reset() {
 	*x = CreateEventRequest{}
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[9]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -637,7 +796,7 @@ func (x *CreateEventRequest) String() string {
 func (*CreateEventRequest) ProtoMessage() {}
 
 func (x *CreateEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[9]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -650,7 +809,14 @@ func (x *CreateEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateEventRequest.ProtoReflect.Descriptor instead.
 func (*CreateEventRequest) Descriptor() ([]byte, []int) {
-	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{9}
+	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *CreateEventRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
 }
 
 func (x *CreateEventRequest) GetName() string {
@@ -676,7 +842,7 @@ type CreateEventResponse struct {
 
 func (x *CreateEventResponse) Reset() {
 	*x = CreateEventResponse{}
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[10]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -688,7 +854,7 @@ func (x *CreateEventResponse) String() string {
 func (*CreateEventResponse) ProtoMessage() {}
 
 func (x *CreateEventResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[10]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -701,7 +867,7 @@ func (x *CreateEventResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateEventResponse.ProtoReflect.Descriptor instead.
 func (*CreateEventResponse) Descriptor() ([]byte, []int) {
-	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{10}
+	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CreateEventResponse) GetEvent() *Event {
@@ -721,7 +887,7 @@ type AssignEventTypeRequest struct {
 
 func (x *AssignEventTypeRequest) Reset() {
 	*x = AssignEventTypeRequest{}
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[11]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -733,7 +899,7 @@ func (x *AssignEventTypeRequest) String() string {
 func (*AssignEventTypeRequest) ProtoMessage() {}
 
 func (x *AssignEventTypeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[11]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -746,7 +912,7 @@ func (x *AssignEventTypeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssignEventTypeRequest.ProtoReflect.Descriptor instead.
 func (*AssignEventTypeRequest) Descriptor() ([]byte, []int) {
-	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{11}
+	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *AssignEventTypeRequest) GetEventId() string {
@@ -772,7 +938,7 @@ type AssignEventTypeResponse struct {
 
 func (x *AssignEventTypeResponse) Reset() {
 	*x = AssignEventTypeResponse{}
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[12]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -784,7 +950,7 @@ func (x *AssignEventTypeResponse) String() string {
 func (*AssignEventTypeResponse) ProtoMessage() {}
 
 func (x *AssignEventTypeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[12]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -797,7 +963,7 @@ func (x *AssignEventTypeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssignEventTypeResponse.ProtoReflect.Descriptor instead.
 func (*AssignEventTypeResponse) Descriptor() ([]byte, []int) {
-	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{12}
+	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *AssignEventTypeResponse) GetEvent() *Event {
@@ -810,14 +976,14 @@ func (x *AssignEventTypeResponse) GetEvent() *Event {
 type TransitionEventStatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	EventId       string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
-	To            EventStatus            `protobuf:"varint,2,opt,name=to,proto3,enum=tolo.tenant.v1.EventStatus" json:"to,omitempty"`
+	To            EventStatus            `protobuf:"varint,2,opt,name=to,proto3,enum=tolo.tenant.v1.EventStatus" json:"to,omitempty"` // the server validates the transition table
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *TransitionEventStatusRequest) Reset() {
 	*x = TransitionEventStatusRequest{}
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[13]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -829,7 +995,7 @@ func (x *TransitionEventStatusRequest) String() string {
 func (*TransitionEventStatusRequest) ProtoMessage() {}
 
 func (x *TransitionEventStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[13]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -842,7 +1008,7 @@ func (x *TransitionEventStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransitionEventStatusRequest.ProtoReflect.Descriptor instead.
 func (*TransitionEventStatusRequest) Descriptor() ([]byte, []int) {
-	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{13}
+	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *TransitionEventStatusRequest) GetEventId() string {
@@ -868,7 +1034,7 @@ type TransitionEventStatusResponse struct {
 
 func (x *TransitionEventStatusResponse) Reset() {
 	*x = TransitionEventStatusResponse{}
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[14]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -880,7 +1046,7 @@ func (x *TransitionEventStatusResponse) String() string {
 func (*TransitionEventStatusResponse) ProtoMessage() {}
 
 func (x *TransitionEventStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[14]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -893,7 +1059,7 @@ func (x *TransitionEventStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransitionEventStatusResponse.ProtoReflect.Descriptor instead.
 func (*TransitionEventStatusResponse) Descriptor() ([]byte, []int) {
-	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{14}
+	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *TransitionEventStatusResponse) GetEvent() *Event {
@@ -912,7 +1078,7 @@ type GetEventRequest struct {
 
 func (x *GetEventRequest) Reset() {
 	*x = GetEventRequest{}
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[15]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -924,7 +1090,7 @@ func (x *GetEventRequest) String() string {
 func (*GetEventRequest) ProtoMessage() {}
 
 func (x *GetEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[15]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -937,7 +1103,7 @@ func (x *GetEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetEventRequest.ProtoReflect.Descriptor instead.
 func (*GetEventRequest) Descriptor() ([]byte, []int) {
-	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{15}
+	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *GetEventRequest) GetEventId() string {
@@ -956,7 +1122,7 @@ type GetEventResponse struct {
 
 func (x *GetEventResponse) Reset() {
 	*x = GetEventResponse{}
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[16]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -968,7 +1134,7 @@ func (x *GetEventResponse) String() string {
 func (*GetEventResponse) ProtoMessage() {}
 
 func (x *GetEventResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[16]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -981,7 +1147,7 @@ func (x *GetEventResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetEventResponse.ProtoReflect.Descriptor instead.
 func (*GetEventResponse) Descriptor() ([]byte, []int) {
-	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{16}
+	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *GetEventResponse) GetEvent() *Event {
@@ -991,15 +1157,201 @@ func (x *GetEventResponse) GetEvent() *Event {
 	return nil
 }
 
-type ListEventsRequest struct {
+type GetObservationSettingsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	EventId       string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
+func (x *GetObservationSettingsRequest) Reset() {
+	*x = GetObservationSettingsRequest{}
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetObservationSettingsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetObservationSettingsRequest) ProtoMessage() {}
+
+func (x *GetObservationSettingsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetObservationSettingsRequest.ProtoReflect.Descriptor instead.
+func (*GetObservationSettingsRequest) Descriptor() ([]byte, []int) {
+	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *GetObservationSettingsRequest) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
+}
+
+type GetObservationSettingsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Settings      *ObservationSettings   `protobuf:"bytes,1,opt,name=settings,proto3" json:"settings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetObservationSettingsResponse) Reset() {
+	*x = GetObservationSettingsResponse{}
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetObservationSettingsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetObservationSettingsResponse) ProtoMessage() {}
+
+func (x *GetObservationSettingsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetObservationSettingsResponse.ProtoReflect.Descriptor instead.
+func (*GetObservationSettingsResponse) Descriptor() ([]byte, []int) {
+	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *GetObservationSettingsResponse) GetSettings() *ObservationSettings {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
+type UpdateObservationSettingsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EventId       string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	Settings      *ObservationSettings   `protobuf:"bytes,2,opt,name=settings,proto3" json:"settings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateObservationSettingsRequest) Reset() {
+	*x = UpdateObservationSettingsRequest{}
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateObservationSettingsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateObservationSettingsRequest) ProtoMessage() {}
+
+func (x *UpdateObservationSettingsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateObservationSettingsRequest.ProtoReflect.Descriptor instead.
+func (*UpdateObservationSettingsRequest) Descriptor() ([]byte, []int) {
+	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *UpdateObservationSettingsRequest) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
+}
+
+func (x *UpdateObservationSettingsRequest) GetSettings() *ObservationSettings {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
+type UpdateObservationSettingsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Settings      *ObservationSettings   `protobuf:"bytes,1,opt,name=settings,proto3" json:"settings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateObservationSettingsResponse) Reset() {
+	*x = UpdateObservationSettingsResponse{}
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateObservationSettingsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateObservationSettingsResponse) ProtoMessage() {}
+
+func (x *UpdateObservationSettingsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateObservationSettingsResponse.ProtoReflect.Descriptor instead.
+func (*UpdateObservationSettingsResponse) Descriptor() ([]byte, []int) {
+	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *UpdateObservationSettingsResponse) GetSettings() *ObservationSettings {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
+type ListEventsRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	TenantId        string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	IncludeArchived bool                   `protobuf:"varint,2,opt,name=include_archived,json=includeArchived,proto3" json:"include_archived,omitempty"` // default false: archived events are omitted
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
 func (x *ListEventsRequest) Reset() {
 	*x = ListEventsRequest{}
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[17]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1011,7 +1363,7 @@ func (x *ListEventsRequest) String() string {
 func (*ListEventsRequest) ProtoMessage() {}
 
 func (x *ListEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[17]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1024,7 +1376,21 @@ func (x *ListEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListEventsRequest.ProtoReflect.Descriptor instead.
 func (*ListEventsRequest) Descriptor() ([]byte, []int) {
-	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{17}
+	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *ListEventsRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *ListEventsRequest) GetIncludeArchived() bool {
+	if x != nil {
+		return x.IncludeArchived
+	}
+	return false
 }
 
 type ListEventsResponse struct {
@@ -1036,7 +1402,7 @@ type ListEventsResponse struct {
 
 func (x *ListEventsResponse) Reset() {
 	*x = ListEventsResponse{}
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[18]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1048,7 +1414,7 @@ func (x *ListEventsResponse) String() string {
 func (*ListEventsResponse) ProtoMessage() {}
 
 func (x *ListEventsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[18]
+	mi := &file_tolo_tenant_v1_tenant_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1061,7 +1427,7 @@ func (x *ListEventsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListEventsResponse.ProtoReflect.Descriptor instead.
 func (*ListEventsResponse) Descriptor() ([]byte, []int) {
-	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{18}
+	return file_tolo_tenant_v1_tenant_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ListEventsResponse) GetEvents() []*Event {
@@ -1075,39 +1441,47 @@ var File_tolo_tenant_v1_tenant_proto protoreflect.FileDescriptor
 
 const file_tolo_tenant_v1_tenant_proto_rawDesc = "" +
 	"\n" +
-	"\x1btolo/tenant/v1/tenant.proto\x12\x0etolo.tenant.v1\x1a\x16authz/v1/options.proto\"\xa4\x01\n" +
+	"\x1btolo/tenant/v1/tenant.proto\x12\x0etolo.tenant.v1\x1a\x16authz/v1/options.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc9\x01\n" +
 	"\x06Tenant\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12#\n" +
 	"\rcontract_plan\x18\x03 \x01(\tR\fcontractPlan\x12\x1a\n" +
-	"\barchived\x18\x04 \x01(\bR\barchived\x12(\n" +
-	"\x10tenant_public_id\x18\x05 \x01(\tR\x0etenantPublicId\"\xe1\x02\n" +
+	"\barchived\x18\x04 \x01(\bR\barchived\x12M\n" +
+	"\x0fownership_state\x18\x05 \x01(\x0e2$.tolo.tenant.v1.TenantOwnershipStateR\x0eownershipState\"\xb7\x01\n" +
 	"\x05Event\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x1b\n" +
 	"\ttenant_id\x18\x02 \x01(\tR\btenantId\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12-\n" +
 	"\x04type\x18\x04 \x01(\x0e2\x19.tolo.tenant.v1.EventTypeR\x04type\x123\n" +
-	"\x06status\x18\x05 \x01(\x0e2\x1b.tolo.tenant.v1.EventStatusR\x06status\x12V\n" +
-	"\x14observation_settings\x18\x06 \x01(\v2#.tolo.tenant.v1.ObservationSettingsR\x13observationSettings\x12&\n" +
-	"\x0fevent_public_id\x18\a \x01(\tR\reventPublicId\x12(\n" +
-	"\x10tenant_public_id\x18\b \x01(\tR\x0etenantPublicId\"E\n" +
+	"\x06status\x18\x05 \x01(\x0e2\x1b.tolo.tenant.v1.EventStatusR\x06status\"E\n" +
 	"\x13ObservationSettings\x12.\n" +
-	"\x13history_window_days\x18\x01 \x01(\x05R\x11historyWindowDays\"P\n" +
-	"\x15RegisterTenantRequest\x12\x12\n" +
+	"\x13history_window_days\x18\x01 \x01(\x05R\x11historyWindowDays\"Y\n" +
+	"\x1eStartTenantRegistrationRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12#\n" +
-	"\rcontract_plan\x18\x02 \x01(\tR\fcontractPlan\"H\n" +
-	"\x16RegisterTenantResponse\x12.\n" +
-	"\x06tenant\x18\x01 \x01(\v2\x16.tolo.tenant.v1.TenantR\x06tenant\"B\n" +
-	"\x1bChangeTenantContractRequest\x12#\n" +
-	"\rcontract_plan\x18\x01 \x01(\tR\fcontractPlan\"N\n" +
+	"\rcontract_plan\x18\x02 \x01(\tR\fcontractPlan\"\xc0\x01\n" +
+	"\x1fStartTenantRegistrationResponse\x12.\n" +
+	"\x06tenant\x18\x01 \x01(\v2\x16.tolo.tenant.v1.TenantR\x06tenant\x122\n" +
+	"\x15ownership_claim_token\x18\x02 \x01(\tR\x13ownershipClaimToken\x129\n" +
+	"\n" +
+	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"n\n" +
+	"\x1bClaimTenantOwnershipRequest\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x122\n" +
+	"\x15ownership_claim_token\x18\x02 \x01(\tR\x13ownershipClaimToken\"N\n" +
+	"\x1cClaimTenantOwnershipResponse\x12.\n" +
+	"\x06tenant\x18\x01 \x01(\v2\x16.tolo.tenant.v1.TenantR\x06tenant\"_\n" +
+	"\x1bChangeTenantContractRequest\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12#\n" +
+	"\rcontract_plan\x18\x02 \x01(\tR\fcontractPlan\"N\n" +
 	"\x1cChangeTenantContractResponse\x12.\n" +
-	"\x06tenant\x18\x01 \x01(\v2\x16.tolo.tenant.v1.TenantR\x06tenant\"\x16\n" +
-	"\x14ArchiveTenantRequest\"G\n" +
+	"\x06tenant\x18\x01 \x01(\v2\x16.tolo.tenant.v1.TenantR\x06tenant\"3\n" +
+	"\x14ArchiveTenantRequest\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\"G\n" +
 	"\x15ArchiveTenantResponse\x12.\n" +
-	"\x06tenant\x18\x01 \x01(\v2\x16.tolo.tenant.v1.TenantR\x06tenant\"W\n" +
-	"\x12CreateEventRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12-\n" +
-	"\x04type\x18\x02 \x01(\x0e2\x19.tolo.tenant.v1.EventTypeR\x04type\"B\n" +
+	"\x06tenant\x18\x01 \x01(\v2\x16.tolo.tenant.v1.TenantR\x06tenant\"t\n" +
+	"\x12CreateEventRequest\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12-\n" +
+	"\x04type\x18\x03 \x01(\x0e2\x19.tolo.tenant.v1.EventTypeR\x04type\"B\n" +
 	"\x13CreateEventResponse\x12+\n" +
 	"\x05event\x18\x01 \x01(\v2\x15.tolo.tenant.v1.EventR\x05event\"b\n" +
 	"\x16AssignEventTypeRequest\x12\x19\n" +
@@ -1123,10 +1497,25 @@ const file_tolo_tenant_v1_tenant_proto_rawDesc = "" +
 	"\x0fGetEventRequest\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\"?\n" +
 	"\x10GetEventResponse\x12+\n" +
-	"\x05event\x18\x01 \x01(\v2\x15.tolo.tenant.v1.EventR\x05event\"\x13\n" +
-	"\x11ListEventsRequest\"C\n" +
+	"\x05event\x18\x01 \x01(\v2\x15.tolo.tenant.v1.EventR\x05event\":\n" +
+	"\x1dGetObservationSettingsRequest\x12\x19\n" +
+	"\bevent_id\x18\x01 \x01(\tR\aeventId\"a\n" +
+	"\x1eGetObservationSettingsResponse\x12?\n" +
+	"\bsettings\x18\x01 \x01(\v2#.tolo.tenant.v1.ObservationSettingsR\bsettings\"~\n" +
+	" UpdateObservationSettingsRequest\x12\x19\n" +
+	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12?\n" +
+	"\bsettings\x18\x02 \x01(\v2#.tolo.tenant.v1.ObservationSettingsR\bsettings\"d\n" +
+	"!UpdateObservationSettingsResponse\x12?\n" +
+	"\bsettings\x18\x01 \x01(\v2#.tolo.tenant.v1.ObservationSettingsR\bsettings\"[\n" +
+	"\x11ListEventsRequest\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12)\n" +
+	"\x10include_archived\x18\x02 \x01(\bR\x0fincludeArchived\"C\n" +
 	"\x12ListEventsResponse\x12-\n" +
-	"\x06events\x18\x01 \x03(\v2\x15.tolo.tenant.v1.EventR\x06events*\\\n" +
+	"\x06events\x18\x01 \x03(\v2\x15.tolo.tenant.v1.EventR\x06events*\x8a\x01\n" +
+	"\x14TenantOwnershipState\x12&\n" +
+	"\"TENANT_OWNERSHIP_STATE_UNSPECIFIED\x10\x00\x12(\n" +
+	"$TENANT_OWNERSHIP_STATE_PENDING_OWNER\x10\x01\x12 \n" +
+	"\x1cTENANT_OWNERSHIP_STATE_OWNED\x10\x02*\\\n" +
 	"\tEventType\x12\x1a\n" +
 	"\x16EVENT_TYPE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15EVENT_TYPE_SHORT_TERM\x10\x01\x12\x18\n" +
@@ -1137,15 +1526,19 @@ const file_tolo_tenant_v1_tenant_proto_rawDesc = "" +
 	"\x11EVENT_STATUS_OPEN\x10\x02\x12\x17\n" +
 	"\x13EVENT_STATUS_LOCKED\x10\x03\x12\x17\n" +
 	"\x13EVENT_STATUS_CLOSED\x10\x04\x12\x19\n" +
-	"\x15EVENT_STATUS_ARCHIVED\x10\x052\xbd\a\n" +
-	"\rTenantService\x12x\n" +
-	"\x0eRegisterTenant\x12%.tolo.tenant.v1.RegisterTenantRequest\x1a&.tolo.tenant.v1.RegisterTenantResponse\"\x17\x8a\xb5\x18\x13\b\x02\x12\x0ftenant.register\x12\x87\x01\n" +
+	"\x15EVENT_STATUS_ARCHIVED\x10\x052\xec\n" +
+	"\n" +
+	"\rTenantService\x12\x82\x01\n" +
+	"\x17StartTenantRegistration\x12..tolo.tenant.v1.StartTenantRegistrationRequest\x1a/.tolo.tenant.v1.StartTenantRegistrationResponse\"\x06\x8a\xb5\x18\x02\b\x01\x12\x87\x01\n" +
+	"\x14ClaimTenantOwnership\x12+.tolo.tenant.v1.ClaimTenantOwnershipRequest\x1a,.tolo.tenant.v1.ClaimTenantOwnershipResponse\"\x14\x8a\xb5\x18\x10\b\x02\x12\ftenant.claim\x12\x87\x01\n" +
 	"\x14ChangeTenantContract\x12+.tolo.tenant.v1.ChangeTenantContractRequest\x1a,.tolo.tenant.v1.ChangeTenantContractResponse\"\x14\x8a\xb5\x18\x10\b\x02\x12\ftenant.write\x12r\n" +
 	"\rArchiveTenant\x12$.tolo.tenant.v1.ArchiveTenantRequest\x1a%.tolo.tenant.v1.ArchiveTenantResponse\"\x14\x8a\xb5\x18\x10\b\x02\x12\ftenant.write\x12l\n" +
 	"\vCreateEvent\x12\".tolo.tenant.v1.CreateEventRequest\x1a#.tolo.tenant.v1.CreateEventResponse\"\x14\x8a\xb5\x18\x10\b\x02\x12\fevents.write\x12x\n" +
 	"\x0fAssignEventType\x12&.tolo.tenant.v1.AssignEventTypeRequest\x1a'.tolo.tenant.v1.AssignEventTypeResponse\"\x14\x8a\xb5\x18\x10\b\x02\x12\fevents.write\x12\x8a\x01\n" +
 	"\x15TransitionEventStatus\x12,.tolo.tenant.v1.TransitionEventStatusRequest\x1a-.tolo.tenant.v1.TransitionEventStatusResponse\"\x14\x8a\xb5\x18\x10\b\x02\x12\fevents.write\x12U\n" +
-	"\bGetEvent\x12\x1f.tolo.tenant.v1.GetEventRequest\x1a .tolo.tenant.v1.GetEventResponse\"\x06\x8a\xb5\x18\x02\b\x03\x12h\n" +
+	"\bGetEvent\x12\x1f.tolo.tenant.v1.GetEventRequest\x1a .tolo.tenant.v1.GetEventResponse\"\x06\x8a\xb5\x18\x02\b\x03\x12\x7f\n" +
+	"\x16GetObservationSettings\x12-.tolo.tenant.v1.GetObservationSettingsRequest\x1a..tolo.tenant.v1.GetObservationSettingsResponse\"\x06\x8a\xb5\x18\x02\b\x03\x12\x96\x01\n" +
+	"\x19UpdateObservationSettings\x120.tolo.tenant.v1.UpdateObservationSettingsRequest\x1a1.tolo.tenant.v1.UpdateObservationSettingsResponse\"\x14\x8a\xb5\x18\x10\b\x02\x12\fevents.write\x12h\n" +
 	"\n" +
 	"ListEvents\x12!.tolo.tenant.v1.ListEventsRequest\x1a\".tolo.tenant.v1.ListEventsResponse\"\x13\x8a\xb5\x18\x0f\b\x02\x12\vevents.readB\xc5\x01\n" +
 	"\x12com.tolo.tenant.v1B\vTenantProtoP\x01ZHgithub.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1;tenantv1\xa2\x02\x03TTX\xaa\x02\x0eTolo.Tenant.V1\xca\x02\x0eTolo\\Tenant\\V1\xe2\x02\x1aTolo\\Tenant\\V1\\GPBMetadata\xea\x02\x10Tolo::Tenant::V1b\x06proto3"
@@ -1162,67 +1555,86 @@ func file_tolo_tenant_v1_tenant_proto_rawDescGZIP() []byte {
 	return file_tolo_tenant_v1_tenant_proto_rawDescData
 }
 
-var file_tolo_tenant_v1_tenant_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_tolo_tenant_v1_tenant_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_tolo_tenant_v1_tenant_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_tolo_tenant_v1_tenant_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_tolo_tenant_v1_tenant_proto_goTypes = []any{
-	(EventType)(0),                        // 0: tolo.tenant.v1.EventType
-	(EventStatus)(0),                      // 1: tolo.tenant.v1.EventStatus
-	(*Tenant)(nil),                        // 2: tolo.tenant.v1.Tenant
-	(*Event)(nil),                         // 3: tolo.tenant.v1.Event
-	(*ObservationSettings)(nil),           // 4: tolo.tenant.v1.ObservationSettings
-	(*RegisterTenantRequest)(nil),         // 5: tolo.tenant.v1.RegisterTenantRequest
-	(*RegisterTenantResponse)(nil),        // 6: tolo.tenant.v1.RegisterTenantResponse
-	(*ChangeTenantContractRequest)(nil),   // 7: tolo.tenant.v1.ChangeTenantContractRequest
-	(*ChangeTenantContractResponse)(nil),  // 8: tolo.tenant.v1.ChangeTenantContractResponse
-	(*ArchiveTenantRequest)(nil),          // 9: tolo.tenant.v1.ArchiveTenantRequest
-	(*ArchiveTenantResponse)(nil),         // 10: tolo.tenant.v1.ArchiveTenantResponse
-	(*CreateEventRequest)(nil),            // 11: tolo.tenant.v1.CreateEventRequest
-	(*CreateEventResponse)(nil),           // 12: tolo.tenant.v1.CreateEventResponse
-	(*AssignEventTypeRequest)(nil),        // 13: tolo.tenant.v1.AssignEventTypeRequest
-	(*AssignEventTypeResponse)(nil),       // 14: tolo.tenant.v1.AssignEventTypeResponse
-	(*TransitionEventStatusRequest)(nil),  // 15: tolo.tenant.v1.TransitionEventStatusRequest
-	(*TransitionEventStatusResponse)(nil), // 16: tolo.tenant.v1.TransitionEventStatusResponse
-	(*GetEventRequest)(nil),               // 17: tolo.tenant.v1.GetEventRequest
-	(*GetEventResponse)(nil),              // 18: tolo.tenant.v1.GetEventResponse
-	(*ListEventsRequest)(nil),             // 19: tolo.tenant.v1.ListEventsRequest
-	(*ListEventsResponse)(nil),            // 20: tolo.tenant.v1.ListEventsResponse
+	(TenantOwnershipState)(0),                 // 0: tolo.tenant.v1.TenantOwnershipState
+	(EventType)(0),                            // 1: tolo.tenant.v1.EventType
+	(EventStatus)(0),                          // 2: tolo.tenant.v1.EventStatus
+	(*Tenant)(nil),                            // 3: tolo.tenant.v1.Tenant
+	(*Event)(nil),                             // 4: tolo.tenant.v1.Event
+	(*ObservationSettings)(nil),               // 5: tolo.tenant.v1.ObservationSettings
+	(*StartTenantRegistrationRequest)(nil),    // 6: tolo.tenant.v1.StartTenantRegistrationRequest
+	(*StartTenantRegistrationResponse)(nil),   // 7: tolo.tenant.v1.StartTenantRegistrationResponse
+	(*ClaimTenantOwnershipRequest)(nil),       // 8: tolo.tenant.v1.ClaimTenantOwnershipRequest
+	(*ClaimTenantOwnershipResponse)(nil),      // 9: tolo.tenant.v1.ClaimTenantOwnershipResponse
+	(*ChangeTenantContractRequest)(nil),       // 10: tolo.tenant.v1.ChangeTenantContractRequest
+	(*ChangeTenantContractResponse)(nil),      // 11: tolo.tenant.v1.ChangeTenantContractResponse
+	(*ArchiveTenantRequest)(nil),              // 12: tolo.tenant.v1.ArchiveTenantRequest
+	(*ArchiveTenantResponse)(nil),             // 13: tolo.tenant.v1.ArchiveTenantResponse
+	(*CreateEventRequest)(nil),                // 14: tolo.tenant.v1.CreateEventRequest
+	(*CreateEventResponse)(nil),               // 15: tolo.tenant.v1.CreateEventResponse
+	(*AssignEventTypeRequest)(nil),            // 16: tolo.tenant.v1.AssignEventTypeRequest
+	(*AssignEventTypeResponse)(nil),           // 17: tolo.tenant.v1.AssignEventTypeResponse
+	(*TransitionEventStatusRequest)(nil),      // 18: tolo.tenant.v1.TransitionEventStatusRequest
+	(*TransitionEventStatusResponse)(nil),     // 19: tolo.tenant.v1.TransitionEventStatusResponse
+	(*GetEventRequest)(nil),                   // 20: tolo.tenant.v1.GetEventRequest
+	(*GetEventResponse)(nil),                  // 21: tolo.tenant.v1.GetEventResponse
+	(*GetObservationSettingsRequest)(nil),     // 22: tolo.tenant.v1.GetObservationSettingsRequest
+	(*GetObservationSettingsResponse)(nil),    // 23: tolo.tenant.v1.GetObservationSettingsResponse
+	(*UpdateObservationSettingsRequest)(nil),  // 24: tolo.tenant.v1.UpdateObservationSettingsRequest
+	(*UpdateObservationSettingsResponse)(nil), // 25: tolo.tenant.v1.UpdateObservationSettingsResponse
+	(*ListEventsRequest)(nil),                 // 26: tolo.tenant.v1.ListEventsRequest
+	(*ListEventsResponse)(nil),                // 27: tolo.tenant.v1.ListEventsResponse
+	(*timestamppb.Timestamp)(nil),             // 28: google.protobuf.Timestamp
 }
 var file_tolo_tenant_v1_tenant_proto_depIdxs = []int32{
-	0,  // 0: tolo.tenant.v1.Event.type:type_name -> tolo.tenant.v1.EventType
-	1,  // 1: tolo.tenant.v1.Event.status:type_name -> tolo.tenant.v1.EventStatus
-	4,  // 2: tolo.tenant.v1.Event.observation_settings:type_name -> tolo.tenant.v1.ObservationSettings
-	2,  // 3: tolo.tenant.v1.RegisterTenantResponse.tenant:type_name -> tolo.tenant.v1.Tenant
-	2,  // 4: tolo.tenant.v1.ChangeTenantContractResponse.tenant:type_name -> tolo.tenant.v1.Tenant
-	2,  // 5: tolo.tenant.v1.ArchiveTenantResponse.tenant:type_name -> tolo.tenant.v1.Tenant
-	0,  // 6: tolo.tenant.v1.CreateEventRequest.type:type_name -> tolo.tenant.v1.EventType
-	3,  // 7: tolo.tenant.v1.CreateEventResponse.event:type_name -> tolo.tenant.v1.Event
-	0,  // 8: tolo.tenant.v1.AssignEventTypeRequest.type:type_name -> tolo.tenant.v1.EventType
-	3,  // 9: tolo.tenant.v1.AssignEventTypeResponse.event:type_name -> tolo.tenant.v1.Event
-	1,  // 10: tolo.tenant.v1.TransitionEventStatusRequest.to:type_name -> tolo.tenant.v1.EventStatus
-	3,  // 11: tolo.tenant.v1.TransitionEventStatusResponse.event:type_name -> tolo.tenant.v1.Event
-	3,  // 12: tolo.tenant.v1.GetEventResponse.event:type_name -> tolo.tenant.v1.Event
-	3,  // 13: tolo.tenant.v1.ListEventsResponse.events:type_name -> tolo.tenant.v1.Event
-	5,  // 14: tolo.tenant.v1.TenantService.RegisterTenant:input_type -> tolo.tenant.v1.RegisterTenantRequest
-	7,  // 15: tolo.tenant.v1.TenantService.ChangeTenantContract:input_type -> tolo.tenant.v1.ChangeTenantContractRequest
-	9,  // 16: tolo.tenant.v1.TenantService.ArchiveTenant:input_type -> tolo.tenant.v1.ArchiveTenantRequest
-	11, // 17: tolo.tenant.v1.TenantService.CreateEvent:input_type -> tolo.tenant.v1.CreateEventRequest
-	13, // 18: tolo.tenant.v1.TenantService.AssignEventType:input_type -> tolo.tenant.v1.AssignEventTypeRequest
-	15, // 19: tolo.tenant.v1.TenantService.TransitionEventStatus:input_type -> tolo.tenant.v1.TransitionEventStatusRequest
-	17, // 20: tolo.tenant.v1.TenantService.GetEvent:input_type -> tolo.tenant.v1.GetEventRequest
-	19, // 21: tolo.tenant.v1.TenantService.ListEvents:input_type -> tolo.tenant.v1.ListEventsRequest
-	6,  // 22: tolo.tenant.v1.TenantService.RegisterTenant:output_type -> tolo.tenant.v1.RegisterTenantResponse
-	8,  // 23: tolo.tenant.v1.TenantService.ChangeTenantContract:output_type -> tolo.tenant.v1.ChangeTenantContractResponse
-	10, // 24: tolo.tenant.v1.TenantService.ArchiveTenant:output_type -> tolo.tenant.v1.ArchiveTenantResponse
-	12, // 25: tolo.tenant.v1.TenantService.CreateEvent:output_type -> tolo.tenant.v1.CreateEventResponse
-	14, // 26: tolo.tenant.v1.TenantService.AssignEventType:output_type -> tolo.tenant.v1.AssignEventTypeResponse
-	16, // 27: tolo.tenant.v1.TenantService.TransitionEventStatus:output_type -> tolo.tenant.v1.TransitionEventStatusResponse
-	18, // 28: tolo.tenant.v1.TenantService.GetEvent:output_type -> tolo.tenant.v1.GetEventResponse
-	20, // 29: tolo.tenant.v1.TenantService.ListEvents:output_type -> tolo.tenant.v1.ListEventsResponse
-	22, // [22:30] is the sub-list for method output_type
-	14, // [14:22] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	0,  // 0: tolo.tenant.v1.Tenant.ownership_state:type_name -> tolo.tenant.v1.TenantOwnershipState
+	1,  // 1: tolo.tenant.v1.Event.type:type_name -> tolo.tenant.v1.EventType
+	2,  // 2: tolo.tenant.v1.Event.status:type_name -> tolo.tenant.v1.EventStatus
+	3,  // 3: tolo.tenant.v1.StartTenantRegistrationResponse.tenant:type_name -> tolo.tenant.v1.Tenant
+	28, // 4: tolo.tenant.v1.StartTenantRegistrationResponse.expires_at:type_name -> google.protobuf.Timestamp
+	3,  // 5: tolo.tenant.v1.ClaimTenantOwnershipResponse.tenant:type_name -> tolo.tenant.v1.Tenant
+	3,  // 6: tolo.tenant.v1.ChangeTenantContractResponse.tenant:type_name -> tolo.tenant.v1.Tenant
+	3,  // 7: tolo.tenant.v1.ArchiveTenantResponse.tenant:type_name -> tolo.tenant.v1.Tenant
+	1,  // 8: tolo.tenant.v1.CreateEventRequest.type:type_name -> tolo.tenant.v1.EventType
+	4,  // 9: tolo.tenant.v1.CreateEventResponse.event:type_name -> tolo.tenant.v1.Event
+	1,  // 10: tolo.tenant.v1.AssignEventTypeRequest.type:type_name -> tolo.tenant.v1.EventType
+	4,  // 11: tolo.tenant.v1.AssignEventTypeResponse.event:type_name -> tolo.tenant.v1.Event
+	2,  // 12: tolo.tenant.v1.TransitionEventStatusRequest.to:type_name -> tolo.tenant.v1.EventStatus
+	4,  // 13: tolo.tenant.v1.TransitionEventStatusResponse.event:type_name -> tolo.tenant.v1.Event
+	4,  // 14: tolo.tenant.v1.GetEventResponse.event:type_name -> tolo.tenant.v1.Event
+	5,  // 15: tolo.tenant.v1.GetObservationSettingsResponse.settings:type_name -> tolo.tenant.v1.ObservationSettings
+	5,  // 16: tolo.tenant.v1.UpdateObservationSettingsRequest.settings:type_name -> tolo.tenant.v1.ObservationSettings
+	5,  // 17: tolo.tenant.v1.UpdateObservationSettingsResponse.settings:type_name -> tolo.tenant.v1.ObservationSettings
+	4,  // 18: tolo.tenant.v1.ListEventsResponse.events:type_name -> tolo.tenant.v1.Event
+	6,  // 19: tolo.tenant.v1.TenantService.StartTenantRegistration:input_type -> tolo.tenant.v1.StartTenantRegistrationRequest
+	8,  // 20: tolo.tenant.v1.TenantService.ClaimTenantOwnership:input_type -> tolo.tenant.v1.ClaimTenantOwnershipRequest
+	10, // 21: tolo.tenant.v1.TenantService.ChangeTenantContract:input_type -> tolo.tenant.v1.ChangeTenantContractRequest
+	12, // 22: tolo.tenant.v1.TenantService.ArchiveTenant:input_type -> tolo.tenant.v1.ArchiveTenantRequest
+	14, // 23: tolo.tenant.v1.TenantService.CreateEvent:input_type -> tolo.tenant.v1.CreateEventRequest
+	16, // 24: tolo.tenant.v1.TenantService.AssignEventType:input_type -> tolo.tenant.v1.AssignEventTypeRequest
+	18, // 25: tolo.tenant.v1.TenantService.TransitionEventStatus:input_type -> tolo.tenant.v1.TransitionEventStatusRequest
+	20, // 26: tolo.tenant.v1.TenantService.GetEvent:input_type -> tolo.tenant.v1.GetEventRequest
+	22, // 27: tolo.tenant.v1.TenantService.GetObservationSettings:input_type -> tolo.tenant.v1.GetObservationSettingsRequest
+	24, // 28: tolo.tenant.v1.TenantService.UpdateObservationSettings:input_type -> tolo.tenant.v1.UpdateObservationSettingsRequest
+	26, // 29: tolo.tenant.v1.TenantService.ListEvents:input_type -> tolo.tenant.v1.ListEventsRequest
+	7,  // 30: tolo.tenant.v1.TenantService.StartTenantRegistration:output_type -> tolo.tenant.v1.StartTenantRegistrationResponse
+	9,  // 31: tolo.tenant.v1.TenantService.ClaimTenantOwnership:output_type -> tolo.tenant.v1.ClaimTenantOwnershipResponse
+	11, // 32: tolo.tenant.v1.TenantService.ChangeTenantContract:output_type -> tolo.tenant.v1.ChangeTenantContractResponse
+	13, // 33: tolo.tenant.v1.TenantService.ArchiveTenant:output_type -> tolo.tenant.v1.ArchiveTenantResponse
+	15, // 34: tolo.tenant.v1.TenantService.CreateEvent:output_type -> tolo.tenant.v1.CreateEventResponse
+	17, // 35: tolo.tenant.v1.TenantService.AssignEventType:output_type -> tolo.tenant.v1.AssignEventTypeResponse
+	19, // 36: tolo.tenant.v1.TenantService.TransitionEventStatus:output_type -> tolo.tenant.v1.TransitionEventStatusResponse
+	21, // 37: tolo.tenant.v1.TenantService.GetEvent:output_type -> tolo.tenant.v1.GetEventResponse
+	23, // 38: tolo.tenant.v1.TenantService.GetObservationSettings:output_type -> tolo.tenant.v1.GetObservationSettingsResponse
+	25, // 39: tolo.tenant.v1.TenantService.UpdateObservationSettings:output_type -> tolo.tenant.v1.UpdateObservationSettingsResponse
+	27, // 40: tolo.tenant.v1.TenantService.ListEvents:output_type -> tolo.tenant.v1.ListEventsResponse
+	30, // [30:41] is the sub-list for method output_type
+	19, // [19:30] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_tolo_tenant_v1_tenant_proto_init() }
@@ -1235,8 +1647,8 @@ func file_tolo_tenant_v1_tenant_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tolo_tenant_v1_tenant_proto_rawDesc), len(file_tolo_tenant_v1_tenant_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   19,
+			NumEnums:      3,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

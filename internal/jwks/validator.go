@@ -39,8 +39,9 @@ type InternalJWTClaims struct {
 	Scope     string `json:"scope"`
 	ClientID  string `json:"client_id"`
 	SourceJTI string `json:"src_jti"`
-	// TenantPublicID is carried in the legacy tenant_id JWT claim. Its value is
-	// the tenant's 16-character hexadecimal public ID, not its UUIDv7 ID.
+	// TenantPublicID is carried in the tenant_id JWT claim. Its value is the
+	// tenant's 16-character hexadecimal public ID, the same value the proto
+	// tenant_id fields carry; the internal UUIDv7 never appears in claims.
 	TenantPublicID string `json:"tenant_id"`
 }
 

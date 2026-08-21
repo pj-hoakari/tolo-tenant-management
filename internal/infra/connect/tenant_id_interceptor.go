@@ -47,11 +47,14 @@ func newTenantPublicIDInterceptor(validator JWTValidator) connectrpc.Interceptor
 	})
 }
 
+// requiredTokenUse returns the credential class each procedure accepts.
+// StartTenantRegistration is unauthenticated and never reaches this check.
 func requiredTokenUse(procedure string) internalTokenUse {
 	switch procedure {
-	case tenantv1connect.TenantServiceRegisterTenantProcedure:
+	case tenantv1connect.TenantServiceClaimTenantOwnershipProcedure:
 		return internalTokenUseRegistration
-	case tenantv1connect.TenantServiceGetEventProcedure:
+	case tenantv1connect.TenantServiceGetEventProcedure,
+		tenantv1connect.TenantServiceGetObservationSettingsProcedure:
 		return internalTokenUseService
 	default:
 		return internalTokenUseTenantAccess
@@ -68,10 +71,14 @@ func hasScope(scope, requiredScope string) bool {
 	return false
 }
 
+// tenantIDNotRequired lists the procedures that are not served under a
+// tenant_access credential and therefore carry no tenant_id claim to extract.
 func tenantIDNotRequired(procedure string) bool {
 	switch procedure {
-	case tenantv1connect.TenantServiceRegisterTenantProcedure,
-		tenantv1connect.TenantServiceGetEventProcedure:
+	case tenantv1connect.TenantServiceStartTenantRegistrationProcedure,
+		tenantv1connect.TenantServiceClaimTenantOwnershipProcedure,
+		tenantv1connect.TenantServiceGetEventProcedure,
+		tenantv1connect.TenantServiceGetObservationSettingsProcedure:
 		return true
 	default:
 		return false

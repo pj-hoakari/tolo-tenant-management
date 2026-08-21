@@ -33,17 +33,9 @@ func (r *jwksRegistry) document() jwtgen.JWKS {
 	return jwtgen.JWKS{Keys: append([]jwtgen.JWK(nil), r.keys...)}
 }
 
-func newTestHandler(t *testing.T, service application.TenantUseCases) http.Handler {
-	t.Helper()
-
-	handler, _ := newDynamicTestHandler(t, service)
-
-	return handler
-}
-
 // newDynamicTestHandler builds a handler whose JWKS endpoint can grow at
-// runtime, returning the registry so tests can register tokens minted for a
-// tenant public ID that is only known after RegisterTenant.
+// runtime, returning the registry so tests can register tokens minted for the
+// tenant public ID of a tenant created by the test.
 func newDynamicTestHandler(t *testing.T, service application.TenantUseCases) (http.Handler, *jwksRegistry) {
 	t.Helper()
 
@@ -69,8 +61,8 @@ func newDynamicTestHandler(t *testing.T, service application.TenantUseCases) (ht
 
 // mintTenantAccessToken issues a tenant_access internal JWT whose tenant_id
 // claim is tenantPublicID and registers its signing key so the handler can
-// verify it. This mirrors the API Gateway issuing a token bound to the tenant
-// the caller is authenticated for.
+// verify it. This mirrors the Service Gateway issuing a token bound to the
+// tenant the caller is authenticated for.
 func mintTenantAccessToken(t *testing.T, registry *jwksRegistry, tenantPublicID string) string {
 	t.Helper()
 

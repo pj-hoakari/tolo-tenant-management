@@ -92,12 +92,8 @@ func TestPostgresTenantRepositoryTenants(t *testing.T) {
 		})
 	}
 
-	if err := repository.DeleteTenant(ctx, tenant.ID()); err != nil {
-		t.Fatalf("DeleteTenant() error = %v", err)
-	}
-
-	if _, err := repository.FindTenantByID(ctx, tenant.ID()); !errors.Is(err, repositorypkg.ErrTenantNotFound) {
-		t.Errorf("FindTenantByID() error = %v, want %v", err, repositorypkg.ErrTenantNotFound)
+	if _, err := repository.FindTenantByPublicID(ctx, "tenant-999"); !errors.Is(err, repositorypkg.ErrTenantNotFound) {
+		t.Errorf("FindTenantByPublicID() error = %v, want %v", err, repositorypkg.ErrTenantNotFound)
 	}
 }
 
@@ -141,9 +137,9 @@ func TestPostgresTenantRepositoryEvents(t *testing.T) {
 		}
 	}
 
-	got, err := repository.FindEventByID(ctx, event1.ID())
+	got, err := repository.FindEventByPublicID(ctx, event1.PublicID())
 	if err != nil {
-		t.Fatalf("FindEventByID() error = %v", err)
+		t.Fatalf("FindEventByPublicID() error = %v", err)
 	}
 
 	if got != event1 {
@@ -170,9 +166,9 @@ func TestPostgresTenantRepositoryEvents(t *testing.T) {
 		t.Fatalf("UpdateEvent() error = %v", err)
 	}
 
-	got, err = repository.FindEventByID(ctx, updated.ID())
+	got, err = repository.FindEventByPublicID(ctx, updated.PublicID())
 	if err != nil {
-		t.Fatalf("FindEventByID() after update error = %v", err)
+		t.Fatalf("FindEventByPublicID() after update error = %v", err)
 	}
 
 	if got != updated {
@@ -210,8 +206,8 @@ func TestPostgresTenantRepositoryEventErrors(t *testing.T) {
 		t.Errorf("missing tenant create error = %v, want %v", err, repositorypkg.ErrTenantNotFound)
 	}
 
-	if _, err := repository.FindEventByID(ctx, "00000000-0000-0000-0000-000000000099"); !errors.Is(err, repositorypkg.ErrEventNotFound) {
-		t.Errorf("FindEventByID() error = %v, want %v", err, repositorypkg.ErrEventNotFound)
+	if _, err := repository.FindEventByPublicID(ctx, "event-099"); !errors.Is(err, repositorypkg.ErrEventNotFound) {
+		t.Errorf("FindEventByPublicID() error = %v, want %v", err, repositorypkg.ErrEventNotFound)
 	}
 
 	missingEvent := newEvent("00000000-0000-0000-0000-000000000099", "event-099", activeTenant, "Missing festival", domain.EventTypeShortTerm, domain.EventStatusDraft)
@@ -260,8 +256,8 @@ func TestPostgresTenantRepositoryRejectsForeignTenantOnReconstitution(t *testing
 		t.Errorf("FindTenantByPublicID(foreign) error = %v, want %v", err, tenantctx.ErrMismatch)
 	}
 
-	if _, err := repository.FindEventByID(foreignCtx, eventB.ID()); !errors.Is(err, tenantctx.ErrMismatch) {
-		t.Errorf("FindEventByID(foreign) error = %v, want %v", err, tenantctx.ErrMismatch)
+	if _, err := repository.FindEventByPublicID(foreignCtx, eventB.PublicID()); !errors.Is(err, tenantctx.ErrMismatch) {
+		t.Errorf("FindEventByPublicID(foreign) error = %v, want %v", err, tenantctx.ErrMismatch)
 	}
 
 	if _, err := repository.ListEventsByTenantID(foreignCtx, tenantB.ID()); !errors.Is(err, tenantctx.ErrMismatch) {
@@ -270,8 +266,8 @@ func TestPostgresTenantRepositoryRejectsForeignTenantOnReconstitution(t *testing
 
 	// The caller may still load its own tenant's records.
 	ownCtx := tenantctx.WithTenantPublicID(ctx, tenantB.PublicID())
-	if _, err := repository.FindEventByID(ownCtx, eventB.ID()); err != nil {
-		t.Errorf("FindEventByID(own) error = %v, want nil", err)
+	if _, err := repository.FindEventByPublicID(ownCtx, eventB.PublicID()); err != nil {
+		t.Errorf("FindEventByPublicID(own) error = %v, want nil", err)
 	}
 
 	// A context without an authenticated tenant (e.g. service-token reads) is

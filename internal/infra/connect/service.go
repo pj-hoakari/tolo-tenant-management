@@ -17,9 +17,9 @@ import (
 var errNotImplemented = errors.New("tenant service method is not implemented")
 
 // tenantContextErrorCode maps the tenant-context guard errors to Connect codes.
-// A mismatch is a cross-tenant access attempt (permission denied); a missing
-// context tenant on a tenant-scoped call means the caller is not authenticated
-// as any tenant.
+// A mismatch between the requested tenant and the authenticated tenant is a
+// cross-tenant access attempt (permission denied); a missing context tenant on
+// a tenant-scoped call means the caller is not authenticated as any tenant.
 func tenantContextErrorCode(err error) (connectrpc.Code, bool) {
 	switch {
 	case errors.Is(err, tenantctx.ErrMismatch):
@@ -44,32 +44,12 @@ func NewService(tenantService application.TenantUseCases) *Service {
 	}
 }
 
-func (s *Service) RegisterTenant(ctx context.Context, req *connectrpc.Request[tenantv1.RegisterTenantRequest]) (*connectrpc.Response[tenantv1.RegisterTenantResponse], error) {
-	tenant, err := s.tenantService.RegisterTenant(ctx, application.RegisterTenantInput{
-		Name:         req.Msg.GetName(),
-		ContractPlan: req.Msg.GetContractPlan(),
-	})
-	if err != nil {
-		if errors.Is(err, application.ErrTenantNameRequired) || errors.Is(err, application.ErrTenantContractPlanRequired) {
-			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
-		}
+func (s *Service) StartTenantRegistration(context.Context, *connectrpc.Request[tenantv1.StartTenantRegistrationRequest]) (*connectrpc.Response[tenantv1.StartTenantRegistrationResponse], error) {
+	return nil, connectrpc.NewError(connectrpc.CodeUnimplemented, errNotImplemented)
+}
 
-		if errors.Is(err, repository.ErrTenantNameAlreadyExists) {
-			return nil, connectrpc.NewError(connectrpc.CodeAlreadyExists, err)
-		}
-
-		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
-	}
-
-	return connectrpc.NewResponse(&tenantv1.RegisterTenantResponse{
-		Tenant: &tenantv1.Tenant{
-			TenantId:       tenant.ID(),
-			Name:           tenant.Name(),
-			ContractPlan:   tenant.ContractPlan(),
-			Archived:       tenant.Archived(),
-			TenantPublicId: tenant.PublicID(),
-		},
-	}), nil
+func (s *Service) ClaimTenantOwnership(context.Context, *connectrpc.Request[tenantv1.ClaimTenantOwnershipRequest]) (*connectrpc.Response[tenantv1.ClaimTenantOwnershipResponse], error) {
+	return nil, connectrpc.NewError(connectrpc.CodeUnimplemented, errNotImplemented)
 }
 
 func (s *Service) ChangeTenantContract(context.Context, *connectrpc.Request[tenantv1.ChangeTenantContractRequest]) (*connectrpc.Response[tenantv1.ChangeTenantContractResponse], error) {
@@ -82,11 +62,12 @@ func (s *Service) ArchiveTenant(context.Context, *connectrpc.Request[tenantv1.Ar
 
 func (s *Service) CreateEvent(ctx context.Context, req *connectrpc.Request[tenantv1.CreateEventRequest]) (*connectrpc.Response[tenantv1.CreateEventResponse], error) {
 	event, err := s.tenantService.CreateEvent(ctx, application.CreateEventInput{
-		Name: req.Msg.GetName(),
-		Type: eventTypeDomain(req.Msg.GetType()),
+		TenantPublicID: req.Msg.GetTenantId(),
+		Name:           req.Msg.GetName(),
+		Type:           eventTypeDomain(req.Msg.GetType()),
 	})
 	if err != nil {
-		if errors.Is(err, application.ErrEventNameRequired) {
+		if errors.Is(err, application.ErrEventNameRequired) || errors.Is(err, application.ErrTenantIDRequired) {
 			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
 		}
 
@@ -105,18 +86,7 @@ func (s *Service) CreateEvent(ctx context.Context, req *connectrpc.Request[tenan
 		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
 	}
 
-	return connectrpc.NewResponse(&tenantv1.CreateEventResponse{
-		Event: &tenantv1.Event{
-			EventId:             event.ID(),
-			TenantId:            event.TenantID(),
-			Name:                event.Name(),
-			Type:                eventTypeProto(event.Type()),
-			Status:              eventStatusProto(event.Status()),
-			ObservationSettings: nil,
-			EventPublicId:       event.PublicID(),
-			TenantPublicId:      event.TenantPublicID(),
-		},
-	}), nil
+	return connectrpc.NewResponse(&tenantv1.CreateEventResponse{Event: eventProto(event)}), nil
 }
 
 func eventTypeDomain(eventType tenantv1.EventType) domain.EventType {
@@ -185,8 +155,8 @@ func eventStatusDomain(eventStatus tenantv1.EventStatus) domain.EventStatus {
 
 func (s *Service) AssignEventType(ctx context.Context, req *connectrpc.Request[tenantv1.AssignEventTypeRequest]) (*connectrpc.Response[tenantv1.AssignEventTypeResponse], error) {
 	event, err := s.tenantService.AssignEventType(ctx, application.AssignEventTypeInput{
-		EventID: req.Msg.GetEventId(),
-		Type:    eventTypeDomain(req.Msg.GetType()),
+		EventPublicID: req.Msg.GetEventId(),
+		Type:          eventTypeDomain(req.Msg.GetType()),
 	})
 	if err != nil {
 		if errors.Is(err, application.ErrEventIDRequired) || errors.Is(err, application.ErrEventTypeRequired) {
@@ -213,8 +183,8 @@ func (s *Service) AssignEventType(ctx context.Context, req *connectrpc.Request[t
 
 func (s *Service) TransitionEventStatus(ctx context.Context, req *connectrpc.Request[tenantv1.TransitionEventStatusRequest]) (*connectrpc.Response[tenantv1.TransitionEventStatusResponse], error) {
 	event, err := s.tenantService.TransitionEventStatus(ctx, application.TransitionEventStatusInput{
-		EventID: req.Msg.GetEventId(),
-		To:      eventStatusDomain(req.Msg.GetTo()),
+		EventPublicID: req.Msg.GetEventId(),
+		To:            eventStatusDomain(req.Msg.GetTo()),
 	})
 	if err != nil {
 		if errors.Is(err, application.ErrEventIDRequired) || errors.Is(err, application.ErrEventStatusRequired) {
@@ -236,21 +206,18 @@ func (s *Service) TransitionEventStatus(ctx context.Context, req *connectrpc.Req
 		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
 	}
 
-	return connectrpc.NewResponse(&tenantv1.TransitionEventStatusResponse{
-		Event: eventProto(event),
-	}), nil
+	return connectrpc.NewResponse(&tenantv1.TransitionEventStatusResponse{Event: eventProto(event)}), nil
 }
 
+// eventProto maps an event to its wire representation. Only public IDs are
+// exposed; the internal primary keys never leave the service.
 func eventProto(event domain.Event) *tenantv1.Event {
 	return &tenantv1.Event{
-		EventId:             event.ID(),
-		TenantId:            event.TenantID(),
-		Name:                event.Name(),
-		Type:                eventTypeProto(event.Type()),
-		Status:              eventStatusProto(event.Status()),
-		ObservationSettings: nil,
-		EventPublicId:       event.PublicID(),
-		TenantPublicId:      event.TenantPublicID(),
+		EventId:  event.PublicID(),
+		TenantId: event.TenantPublicID(),
+		Name:     event.Name(),
+		Type:     eventTypeProto(event.Type()),
+		Status:   eventStatusProto(event.Status()),
 	}
 }
 
@@ -265,15 +232,31 @@ func (s *Service) GetEvent(ctx context.Context, req *connectrpc.Request[tenantv1
 			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
 		}
 
+		if code, ok := tenantContextErrorCode(err); ok {
+			return nil, connectrpc.NewError(code, err)
+		}
+
 		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
 	}
 
 	return connectrpc.NewResponse(&tenantv1.GetEventResponse{Event: eventProto(event)}), nil
 }
 
-func (s *Service) ListEvents(ctx context.Context, _ *connectrpc.Request[tenantv1.ListEventsRequest]) (*connectrpc.Response[tenantv1.ListEventsResponse], error) {
-	events, err := s.tenantService.ListEvents(ctx)
+func (s *Service) GetObservationSettings(context.Context, *connectrpc.Request[tenantv1.GetObservationSettingsRequest]) (*connectrpc.Response[tenantv1.GetObservationSettingsResponse], error) {
+	return nil, connectrpc.NewError(connectrpc.CodeUnimplemented, errNotImplemented)
+}
+
+func (s *Service) UpdateObservationSettings(context.Context, *connectrpc.Request[tenantv1.UpdateObservationSettingsRequest]) (*connectrpc.Response[tenantv1.UpdateObservationSettingsResponse], error) {
+	return nil, connectrpc.NewError(connectrpc.CodeUnimplemented, errNotImplemented)
+}
+
+func (s *Service) ListEvents(ctx context.Context, req *connectrpc.Request[tenantv1.ListEventsRequest]) (*connectrpc.Response[tenantv1.ListEventsResponse], error) {
+	events, err := s.tenantService.ListEvents(ctx, req.Msg.GetTenantId())
 	if err != nil {
+		if errors.Is(err, application.ErrTenantIDRequired) {
+			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
+		}
+
 		if errors.Is(err, repository.ErrTenantNotFound) {
 			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
 		}
