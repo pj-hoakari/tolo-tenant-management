@@ -443,15 +443,31 @@ func TestCurrentPermissionOverTransport(t *testing.T) {
 		})
 	}
 
-	// Reads rely on the scope only, so a caller who does not belong to the
-	// tenant still lists its memberships. The empty list also shows that the
-	// refused writes above left nothing behind.
-	readToken := f.mintToken(t, strangerTenant.PublicID(), "tenant.read")
-
-	res, err := f.client.ListMemberships(ctx, authorized(readToken, &relationv1.ListMembershipsRequest{Filter: &relationv1.ListMembershipsRequest_TenantId{TenantId: strangerTenant.PublicID()}}))
-	if err != nil || len(res.Msg.GetMemberships()) != 0 {
-		t.Errorf("ListMemberships(non-member) = %v, %v, want empty list", res, err)
+	// Reads rely on the scope only, so even the caller who does not belong to
+	// the tenant lists its memberships. The lists also show that the refused
+	// writes above left nothing behind: the stranger tenant has no membership
+	// at all, and the staff tenant only the caller's own.
+	staffRead := f.listMemberships(t, f.mintToken(t, staffTenant.PublicID(), "tenant.read"), staffTenant.PublicID())
+	if len(staffRead) != 1 || membershipOf(staffRead, callerSubject) == nil {
+		t.Errorf("ListMemberships(staff tenant) = %v, want the caller's own membership only", staffRead)
 	}
+
+	strangerRead := f.listMemberships(t, f.mintToken(t, strangerTenant.PublicID(), "tenant.read"), strangerTenant.PublicID())
+	if len(strangerRead) != 0 {
+		t.Errorf("ListMemberships(non-member) = %v, want empty list", strangerRead)
+	}
+}
+
+// listMemberships lists the memberships of the tenant through the transport.
+func (f fixture) listMemberships(t *testing.T, token, tenantPublicID string) []*relationv1.Membership {
+	t.Helper()
+
+	res, err := f.client.ListMemberships(context.Background(), authorized(token, &relationv1.ListMembershipsRequest{Filter: &relationv1.ListMembershipsRequest_TenantId{TenantId: tenantPublicID}}))
+	if err != nil {
+		t.Fatalf("ListMemberships(%q) error = %v", tenantPublicID, err)
+	}
+
+	return res.Msg.GetMemberships()
 }
 
 // membershipOf returns the listed membership of userID, or nil.
