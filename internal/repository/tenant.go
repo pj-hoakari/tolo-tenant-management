@@ -4,6 +4,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
 )
@@ -31,7 +32,14 @@ type Transactor interface {
 // only carries public IDs. Internal primary keys stay inside the repository
 // and the domain model.
 type TenantRepository interface {
+	// CreateTenant stores an owned tenant.
 	CreateTenant(context.Context, domain.Tenant) error
+	// CreatePendingTenant stores a pending_owner tenant together with the hash
+	// and expiry of its one-time ownership claim token.
+	CreatePendingTenant(context.Context, domain.Tenant, domain.OwnershipClaim) error
+	// DeleteExpiredPendingTenants physically removes pending_owner tenants
+	// whose claim expired before now, releasing their names.
+	DeleteExpiredPendingTenants(context.Context, time.Time) (int64, error)
 	FindTenantByID(context.Context, string) (domain.Tenant, error)
 	FindTenantByPublicID(context.Context, string) (domain.Tenant, error)
 	CreateEvent(context.Context, domain.Event) error

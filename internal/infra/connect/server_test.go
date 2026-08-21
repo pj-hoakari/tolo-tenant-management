@@ -2,9 +2,11 @@ package connect
 
 import (
 	"context"
+	"errors"
 	"net/http/httptest"
 	"regexp"
 	"testing"
+	"time"
 
 	connectrpc "connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -14,6 +16,7 @@ import (
 	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/repository"
 )
 
 var publicIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
@@ -24,11 +27,11 @@ type transportFixture struct {
 	client     tenantv1connect.TenantServiceClient
 }
 
-func newTransportFixture(t *testing.T) transportFixture {
+func newTransportFixture(t *testing.T, options ...application.Option) transportFixture {
 	t.Helper()
 
 	repository := newIntegrationTenantRepository(t)
-	handler, jwks := newDynamicTestHandler(t, application.NewTenantService(repository))
+	handler, jwks := newDynamicTestHandler(t, application.NewTenantService(repository, options...))
 	httpServer := httptest.NewServer(handler)
 	t.Cleanup(httpServer.Close)
 
@@ -66,15 +69,74 @@ func (f transportFixture) createEvent(t *testing.T, token string, tenantPublicID
 	return res.Msg.GetEvent()
 }
 
-func TestStartTenantRegistrationAcceptsUnauthenticatedRequests(t *testing.T) {
-	fixture := newTransportFixture(t)
+var claimTokenPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
 
-	// The public RPC must pass both the authz verifier and the tenant ID
-	// interceptor without a bearer token. The use case itself is not
-	// implemented yet, so the handler stub answers.
-	_, err := fixture.client.StartTenantRegistration(context.Background(), connectrpc.NewRequest(&tenantv1.StartTenantRegistrationRequest{Name: "Acme", ContractPlan: "standard"}))
-	if got, want := connectrpc.CodeOf(err), connectrpc.CodeUnimplemented; got != want {
-		t.Fatalf("StartTenantRegistration() error code = %v, want %v", got, want)
+func TestStartTenantRegistrationOverTransport(t *testing.T) {
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	fixture := newTransportFixture(t, application.WithClock(func() time.Time { return now }))
+
+	// The public RPC is served without a bearer token.
+	res, err := fixture.client.StartTenantRegistration(context.Background(), connectrpc.NewRequest(&tenantv1.StartTenantRegistrationRequest{Name: "Acme", ContractPlan: "standard"}))
+	if err != nil {
+		t.Fatalf("StartTenantRegistration() error = %v", err)
+	}
+
+	tenant := res.Msg.GetTenant()
+	if got, want := tenant.GetOwnershipState(), tenantv1.TenantOwnershipState_TENANT_OWNERSHIP_STATE_PENDING_OWNER; got != want {
+		t.Errorf("Tenant.OwnershipState = %v, want %v", got, want)
+	}
+
+	if got := tenant.GetTenantId(); !publicIDPattern.MatchString(got) {
+		t.Errorf("Tenant.TenantId = %q, want 16-character hex", got)
+	}
+
+	if got := res.Msg.GetOwnershipClaimToken(); !claimTokenPattern.MatchString(got) {
+		t.Errorf("OwnershipClaimToken = %q, want 43-character base64url", got)
+	}
+
+	if got, want := res.Msg.GetExpiresAt().AsTime(), now.Add(application.DefaultOwnershipClaimTTL); !got.Equal(want) {
+		t.Errorf("ExpiresAt = %v, want %v", got, want)
+	}
+
+	t.Run("rejects duplicate names while the registration is pending", func(t *testing.T) {
+		_, err := fixture.client.StartTenantRegistration(context.Background(), connectrpc.NewRequest(&tenantv1.StartTenantRegistrationRequest{Name: "Acme", ContractPlan: "standard"}))
+		if got, want := connectrpc.CodeOf(err), connectrpc.CodeAlreadyExists; got != want {
+			t.Fatalf("StartTenantRegistration() error code = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("rejects missing required fields", func(t *testing.T) {
+		_, err := fixture.client.StartTenantRegistration(context.Background(), connectrpc.NewRequest(&tenantv1.StartTenantRegistrationRequest{Name: "Acme"}))
+		if got, want := connectrpc.CodeOf(err), connectrpc.CodeInvalidArgument; got != want {
+			t.Fatalf("StartTenantRegistration() error code = %v, want %v", got, want)
+		}
+	})
+}
+
+func TestStartTenantRegistrationOverTransportReleasesExpiredNames(t *testing.T) {
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	fixture := newTransportFixture(t, application.WithClock(func() time.Time { return now }), application.WithOwnershipClaimTTL(time.Hour))
+
+	first, err := fixture.client.StartTenantRegistration(context.Background(), connectrpc.NewRequest(&tenantv1.StartTenantRegistrationRequest{Name: "Acme", ContractPlan: "standard"}))
+	if err != nil {
+		t.Fatalf("first StartTenantRegistration() error = %v", err)
+	}
+
+	// Once the first registration expires, the next registration sweeps it
+	// and the name is free again.
+	now = now.Add(2 * time.Hour)
+
+	second, err := fixture.client.StartTenantRegistration(context.Background(), connectrpc.NewRequest(&tenantv1.StartTenantRegistrationRequest{Name: "Acme", ContractPlan: "standard"}))
+	if err != nil {
+		t.Fatalf("second StartTenantRegistration() error = %v", err)
+	}
+
+	if first.Msg.GetTenant().GetTenantId() == second.Msg.GetTenant().GetTenantId() {
+		t.Error("second registration reused the expired tenant instead of creating a new one")
+	}
+
+	if _, err := fixture.repository.FindTenantByPublicID(context.Background(), first.Msg.GetTenant().GetTenantId()); !errors.Is(err, repository.ErrTenantNotFound) {
+		t.Errorf("expired tenant lookup error = %v, want %v", err, repository.ErrTenantNotFound)
 	}
 }
 

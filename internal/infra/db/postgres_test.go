@@ -356,3 +356,62 @@ func TestPostgresTenantRepositoryWithinTransaction(t *testing.T) {
 		t.Errorf("FindTenantByID() after commit error = %v, want nil", err)
 	}
 }
+
+func TestPostgresTenantRepositoryPendingTenants(t *testing.T) {
+	repository := newTestRepository(t)
+	ctx := context.Background()
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+
+	_, hash, err := domain.NewOwnershipClaimToken()
+	if err != nil {
+		t.Fatalf("NewOwnershipClaimToken() error = %v", err)
+	}
+
+	expired := domain.NewTenant("00000000-0000-0000-0000-000000000001", "tenant-001", "Expired", "standard", domain.TenantOwnershipStatePendingOwner, false)
+	live := domain.NewTenant("00000000-0000-0000-0000-000000000002", "tenant-002", "Live", "standard", domain.TenantOwnershipStatePendingOwner, false)
+	owned := newTenant("00000000-0000-0000-0000-000000000003", "tenant-003", "Owned", false)
+
+	if err := repository.CreatePendingTenant(ctx, expired, domain.OwnershipClaim{TokenHash: hash, ExpiresAt: now.Add(-time.Minute)}); err != nil {
+		t.Fatalf("CreatePendingTenant(expired) error = %v", err)
+	}
+
+	if err := repository.CreatePendingTenant(ctx, live, domain.OwnershipClaim{TokenHash: hash, ExpiresAt: now.Add(time.Minute)}); err != nil {
+		t.Fatalf("CreatePendingTenant(live) error = %v", err)
+	}
+
+	if err := repository.CreateTenant(ctx, owned); err != nil {
+		t.Fatalf("CreateTenant(owned) error = %v", err)
+	}
+
+	got, err := repository.FindTenantByPublicID(ctx, live.PublicID())
+	if err != nil {
+		t.Fatalf("FindTenantByPublicID(live) error = %v", err)
+	}
+
+	if got != live {
+		t.Errorf("found tenant = %#v, want %#v", got, live)
+	}
+
+	if err := repository.CreatePendingTenant(ctx, owned, domain.OwnershipClaim{TokenHash: hash, ExpiresAt: now}); !errors.Is(err, domain.ErrTenantNotPendingOwner) {
+		t.Errorf("CreatePendingTenant(owned tenant) error = %v, want %v", err, domain.ErrTenantNotPendingOwner)
+	}
+
+	deleted, err := repository.DeleteExpiredPendingTenants(ctx, now)
+	if err != nil {
+		t.Fatalf("DeleteExpiredPendingTenants() error = %v", err)
+	}
+
+	if deleted != 1 {
+		t.Errorf("deleted = %d, want 1", deleted)
+	}
+
+	if _, err := repository.FindTenantByID(ctx, expired.ID()); !errors.Is(err, repositorypkg.ErrTenantNotFound) {
+		t.Errorf("FindTenantByID(expired) error = %v, want %v", err, repositorypkg.ErrTenantNotFound)
+	}
+
+	for _, tenant := range []domain.Tenant{live, owned} {
+		if _, err := repository.FindTenantByID(ctx, tenant.ID()); err != nil {
+			t.Errorf("FindTenantByID(%q) error = %v, want nil", tenant.Name(), err)
+		}
+	}
+}

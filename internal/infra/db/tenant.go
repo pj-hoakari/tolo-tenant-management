@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"
@@ -34,6 +35,39 @@ func (r *PostgresTenantRepository) CreateTenant(ctx context.Context, tenant doma
 	}
 
 	return nil
+}
+
+func (r *PostgresTenantRepository) CreatePendingTenant(ctx context.Context, tenant domain.Tenant, claim domain.OwnershipClaim) error {
+	if tenant.OwnershipState() != domain.TenantOwnershipStatePendingOwner {
+		return fmt.Errorf("create pending tenant: %w", domain.ErrTenantNotPendingOwner)
+	}
+
+	_, err := r.executor(ctx).ExecContext(ctx, `
+		INSERT INTO tenants (id, public_id, name, contract_plan, ownership_state, ownership_claim_token_hash, ownership_claim_expires_at, archived)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		tenant.ID(), tenant.PublicID(), tenant.Name(), tenant.ContractPlan(), tenant.OwnershipState().String(), claim.TokenHash[:], claim.ExpiresAt, tenant.Archived())
+	if err != nil {
+		return mapTenantConstraintError(err)
+	}
+
+	return nil
+}
+
+func (r *PostgresTenantRepository) DeleteExpiredPendingTenants(ctx context.Context, now time.Time) (int64, error) {
+	result, err := r.executor(ctx).ExecContext(ctx, `
+		DELETE FROM tenants
+		WHERE ownership_state = $1 AND ownership_claim_expires_at <= $2`,
+		domain.TenantOwnershipStatePendingOwner.String(), now)
+	if err != nil {
+		return 0, fmt.Errorf("delete expired pending tenants: %w", err)
+	}
+
+	deleted, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("get deleted pending tenant row count: %w", err)
+	}
+
+	return deleted, nil
 }
 
 func (r *PostgresTenantRepository) FindTenantByID(ctx context.Context, tenantID string) (domain.Tenant, error) {

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
@@ -329,5 +330,71 @@ func TestListEventsRejectsMismatchedRequestTenant(t *testing.T) {
 	_, err := service.ListEvents(ctx, "other-tenant-public-id")
 	if !errors.Is(err, tenantctx.ErrMismatch) {
 		t.Fatalf("ListEvents() error = %v, want %v", err, tenantctx.ErrMismatch)
+	}
+}
+
+func TestStartTenantRegistration(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	ctrl := gomock.NewController(t)
+	repo := NewMockTenantRepository(ctrl)
+
+	var (
+		createdTenant domain.Tenant
+		createdClaim  domain.OwnershipClaim
+	)
+
+	gomock.InOrder(
+		// Expired registrations are swept before the new one is stored.
+		repo.EXPECT().DeleteExpiredPendingTenants(gomock.Any(), now).Return(int64(0), nil),
+		repo.EXPECT().CreatePendingTenant(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, tenant domain.Tenant, claim domain.OwnershipClaim) error {
+			createdTenant, createdClaim = tenant, claim
+
+			return nil
+		}),
+	)
+	service := application.NewTenantService(repo, application.WithClock(func() time.Time { return now }), application.WithOwnershipClaimTTL(time.Hour))
+
+	registration, err := service.StartTenantRegistration(context.Background(), application.StartTenantRegistrationInput{Name: "Acme", ContractPlan: "standard"})
+	if err != nil {
+		t.Fatalf("StartTenantRegistration() error = %v", err)
+	}
+
+	if got, want := registration.Tenant, createdTenant; got != want {
+		t.Errorf("registration tenant = %#v, want stored %#v", got, want)
+	}
+
+	if got, want := createdTenant.OwnershipState(), domain.TenantOwnershipStatePendingOwner; got != want {
+		t.Errorf("OwnershipState() = %v, want %v", got, want)
+	}
+
+	if !createdClaim.TokenHash.Matches(registration.ClaimToken) {
+		t.Error("stored token hash does not match the returned claim token")
+	}
+
+	if got, want := registration.ExpiresAt, now.Add(time.Hour); !got.Equal(want) {
+		t.Errorf("ExpiresAt = %v, want %v", got, want)
+	}
+
+	if got, want := createdClaim.ExpiresAt, registration.ExpiresAt; !got.Equal(want) {
+		t.Errorf("stored ExpiresAt = %v, want %v", got, want)
+	}
+}
+
+func TestStartTenantRegistrationValidatesInput(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	service := application.NewTenantService(NewMockTenantRepository(ctrl))
+
+	_, err := service.StartTenantRegistration(context.Background(), application.StartTenantRegistrationInput{ContractPlan: "standard"})
+	if !errors.Is(err, application.ErrTenantNameRequired) {
+		t.Errorf("StartTenantRegistration() error = %v, want %v", err, application.ErrTenantNameRequired)
+	}
+
+	_, err = service.StartTenantRegistration(context.Background(), application.StartTenantRegistrationInput{Name: "Acme"})
+	if !errors.Is(err, application.ErrTenantContractPlanRequired) {
+		t.Errorf("StartTenantRegistration() error = %v, want %v", err, application.ErrTenantContractPlanRequired)
 	}
 }

@@ -12,10 +12,49 @@ package application_test
 import (
 	context "context"
 	reflect "reflect"
+	time "time"
 
 	domain "github.com/pj-hoakari/tolo-tenant-management/internal/domain"
 	gomock "go.uber.org/mock/gomock"
 )
+
+// MockTransactor is a mock of Transactor interface.
+type MockTransactor struct {
+	ctrl     *gomock.Controller
+	recorder *MockTransactorMockRecorder
+	isgomock struct{}
+}
+
+// MockTransactorMockRecorder is the mock recorder for MockTransactor.
+type MockTransactorMockRecorder struct {
+	mock *MockTransactor
+}
+
+// NewMockTransactor creates a new mock instance.
+func NewMockTransactor(ctrl *gomock.Controller) *MockTransactor {
+	mock := &MockTransactor{ctrl: ctrl}
+	mock.recorder = &MockTransactorMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockTransactor) EXPECT() *MockTransactorMockRecorder {
+	return m.recorder
+}
+
+// WithinTransaction mocks base method.
+func (m *MockTransactor) WithinTransaction(ctx context.Context, fn func(context.Context) error) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "WithinTransaction", ctx, fn)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// WithinTransaction indicates an expected call of WithinTransaction.
+func (mr *MockTransactorMockRecorder) WithinTransaction(ctx, fn any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WithinTransaction", reflect.TypeOf((*MockTransactor)(nil).WithinTransaction), ctx, fn)
+}
 
 // MockTenantRepository is a mock of TenantRepository interface.
 type MockTenantRepository struct {
@@ -55,6 +94,20 @@ func (mr *MockTenantRepositoryMockRecorder) CreateEvent(arg0, arg1 any) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateEvent", reflect.TypeOf((*MockTenantRepository)(nil).CreateEvent), arg0, arg1)
 }
 
+// CreatePendingTenant mocks base method.
+func (m *MockTenantRepository) CreatePendingTenant(arg0 context.Context, arg1 domain.Tenant, arg2 domain.OwnershipClaim) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreatePendingTenant", arg0, arg1, arg2)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreatePendingTenant indicates an expected call of CreatePendingTenant.
+func (mr *MockTenantRepositoryMockRecorder) CreatePendingTenant(arg0, arg1, arg2 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreatePendingTenant", reflect.TypeOf((*MockTenantRepository)(nil).CreatePendingTenant), arg0, arg1, arg2)
+}
+
 // CreateTenant mocks base method.
 func (m *MockTenantRepository) CreateTenant(arg0 context.Context, arg1 domain.Tenant) error {
 	m.ctrl.T.Helper()
@@ -67,6 +120,21 @@ func (m *MockTenantRepository) CreateTenant(arg0 context.Context, arg1 domain.Te
 func (mr *MockTenantRepositoryMockRecorder) CreateTenant(arg0, arg1 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateTenant", reflect.TypeOf((*MockTenantRepository)(nil).CreateTenant), arg0, arg1)
+}
+
+// DeleteExpiredPendingTenants mocks base method.
+func (m *MockTenantRepository) DeleteExpiredPendingTenants(arg0 context.Context, arg1 time.Time) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteExpiredPendingTenants", arg0, arg1)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DeleteExpiredPendingTenants indicates an expected call of DeleteExpiredPendingTenants.
+func (mr *MockTenantRepositoryMockRecorder) DeleteExpiredPendingTenants(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteExpiredPendingTenants", reflect.TypeOf((*MockTenantRepository)(nil).DeleteExpiredPendingTenants), arg0, arg1)
 }
 
 // FindEventByPublicID mocks base method.
