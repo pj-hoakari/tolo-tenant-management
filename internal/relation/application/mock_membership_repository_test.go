@@ -146,6 +146,20 @@ func (mr *MockMembershipRepositoryMockRecorder) ListMembershipsByUser(ctx, userI
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListMembershipsByUser", reflect.TypeOf((*MockMembershipRepository)(nil).ListMembershipsByUser), ctx, userID)
 }
 
+// LockTenantMemberships mocks base method.
+func (m *MockMembershipRepository) LockTenantMemberships(ctx context.Context, tenantID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LockTenantMemberships", ctx, tenantID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// LockTenantMemberships indicates an expected call of LockTenantMemberships.
+func (mr *MockMembershipRepositoryMockRecorder) LockTenantMemberships(ctx, tenantID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockTenantMemberships", reflect.TypeOf((*MockMembershipRepository)(nil).LockTenantMemberships), ctx, tenantID)
+}
+
 // RevokeEventRole mocks base method.
 func (m *MockMembershipRepository) RevokeEventRole(ctx context.Context, eventID, userID string) error {
 	m.ctrl.T.Helper()

@@ -228,13 +228,17 @@ func (s *RelationService) ListMemberships(ctx context.Context, input ListMembers
 // waits for the write to commit. The scope of the internal JWT is verified by
 // the transport beforehand; this re-reads what the caller may do right now.
 //
-// The lock is the trade-off: each caller holds FOR SHARE on its own membership
-// row while writing another member's row, so two administrators revoking or
-// downgrading each other at the same time can deadlock. PostgreSQL aborts one
-// of the two transactions and that call fails (the transport reports it as an
-// internal error). This is accepted as rare, and the client's retry succeeds.
+// The transaction opens by taking the tenant's advisory lock, so the
+// membership writes of one tenant run one at a time: two administrators
+// revoking or downgrading each other queue instead of holding each other's
+// membership rows and deadlocking. The row lock of the check itself stays as
+// defense in depth against a write that does not pass through here.
 func (s *RelationService) withCurrentPermission(ctx context.Context, tenantID string, write func(context.Context) error) error {
 	return s.transactor.WithinTransaction(ctx, func(ctx context.Context) error {
+		if err := s.memberships.LockTenantMemberships(ctx, tenantID); err != nil {
+			return err
+		}
+
 		if err := s.authorizer.Require(ctx, tenantID, domain.ScopeTenantWrite); err != nil {
 			return err
 		}

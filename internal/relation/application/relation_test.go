@@ -58,6 +58,12 @@ func newMocks(t *testing.T) mocks {
 	return mocks{tenants: tenants, memberships: memberships, service: application.NewRelationService(tenants, memberships, passthroughTransactor{})}
 }
 
+// expectLock expects the tenant's advisory lock, which the write RPCs take
+// before anything else in their transaction.
+func (m mocks) expectLock(tenantID string) *gomock.Call {
+	return m.memberships.EXPECT().LockTenantMemberships(gomock.Any(), tenantID).Return(nil)
+}
+
 // expectOwner expects the current-permission check the write RPCs run against
 // the caller's membership before the write itself.
 func (m mocks) expectOwner(tenantID string) *gomock.Call {
@@ -70,8 +76,10 @@ func TestAddTenantMember(t *testing.T) {
 	m := newMocks(t)
 	want := domain.NewMembership("user-1", ownedTenant.ID(), ownedTenant.PublicID(), domain.RoleStaff, nil)
 	m.tenants.EXPECT().FindTenantByPublicID(gomock.Any(), ownedTenant.PublicID()).Return(ownedTenant, nil)
-	// The caller's current permission is re-checked before the write.
+	// The tenant is locked and the caller's current permission re-checked
+	// before the write.
 	gomock.InOrder(
+		m.expectLock(ownedTenant.ID()),
 		m.expectOwner(ownedTenant.ID()),
 		m.memberships.EXPECT().AddTenantMember(gomock.Any(), ownedTenant.ID(), "user-1", domain.RoleStaff).Return(want, nil),
 	)
@@ -132,6 +140,7 @@ func TestGrantEventRole(t *testing.T) {
 	m.tenants.EXPECT().FindEventByPublicID(gomock.Any(), draftEvent.PublicID()).Return(draftEvent, nil)
 	m.tenants.EXPECT().FindTenantByPublicID(gomock.Any(), ownedTenant.PublicID()).Return(ownedTenant, nil)
 	gomock.InOrder(
+		m.expectLock(draftEvent.TenantID()),
 		m.expectOwner(draftEvent.TenantID()),
 		m.memberships.EXPECT().GrantEventRole(gomock.Any(), draftEvent.ID(), "user-1", domain.RoleStaff).Return(want, nil),
 	)
@@ -188,6 +197,7 @@ func TestRevokeRole(t *testing.T) {
 		m := newMocks(t)
 		m.tenants.EXPECT().FindTenantByPublicID(gomock.Any(), ownedTenant.PublicID()).Return(ownedTenant, nil)
 		gomock.InOrder(
+			m.expectLock(ownedTenant.ID()),
 			m.expectOwner(ownedTenant.ID()),
 			m.memberships.EXPECT().RevokeTenantMembership(gomock.Any(), ownedTenant.ID(), "user-1").Return(nil),
 		)
@@ -204,6 +214,7 @@ func TestRevokeRole(t *testing.T) {
 		m.tenants.EXPECT().FindEventByPublicID(gomock.Any(), draftEvent.PublicID()).Return(draftEvent, nil)
 		m.tenants.EXPECT().FindTenantByPublicID(gomock.Any(), ownedTenant.PublicID()).Return(ownedTenant, nil)
 		gomock.InOrder(
+			m.expectLock(draftEvent.TenantID()),
 			m.expectOwner(draftEvent.TenantID()),
 			m.memberships.EXPECT().RevokeEventRole(gomock.Any(), draftEvent.ID(), "user-1").Return(nil),
 		)
@@ -254,6 +265,8 @@ func TestCurrentPermissionGates(t *testing.T) {
 
 			m := newMocks(t)
 			m.tenants.EXPECT().FindTenantByPublicID(gomock.Any(), ownedTenant.PublicID()).Return(ownedTenant, nil)
+			// The tenant is locked even when the check then refuses the write.
+			m.expectLock(ownedTenant.ID())
 
 			if tt.lookup {
 				m.memberships.EXPECT().FindTenantRoleForShare(gomock.Any(), ownedTenant.ID(), callerID).Return(tt.role, tt.err)
@@ -312,7 +325,10 @@ func TestCurrentPermissionGatesEveryWrite(t *testing.T) {
 			}
 
 			m.tenants.EXPECT().FindTenantByPublicID(gomock.Any(), ownedTenant.PublicID()).Return(ownedTenant, nil)
-			m.memberships.EXPECT().FindTenantRoleForShare(gomock.Any(), ownedTenant.ID(), callerID).Return(domain.RoleStaff, nil)
+			gomock.InOrder(
+				m.expectLock(ownedTenant.ID()),
+				m.memberships.EXPECT().FindTenantRoleForShare(gomock.Any(), ownedTenant.ID(), callerID).Return(domain.RoleStaff, nil),
+			)
 
 			if err := tt.call(ownCtx(), m.service); !errors.Is(err, application.ErrPermissionDenied) {
 				t.Fatalf("%s error = %v, want %v", tt.name, err, application.ErrPermissionDenied)

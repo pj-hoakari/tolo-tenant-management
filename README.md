@@ -147,6 +147,7 @@ JWKS は `INTERNAL_JWKS_URL` から取得する。未設定時は Gateway コン
 
 書き込み4 RPC は、JWT の scope 検証に加えて、呼び出し元自身の現在の所属とロールを書き込みと同じ DB トランザクション内で読み直す（`internal/relation/application/authorizer.go`）。
 確認時に呼び出し元の所属行を `FOR SHARE` でロックするため、確認から書き込みの確定までの間に剥奪や降格が割り込むことはない。
+同じトランザクションの冒頭でテナント単位のアドバイザリロック（`pg_advisory_xact_lock`）を取得し、同一テナントの所属書き込みを直列化するため、複数の管理者が互いを同時に剥奪・降格してもデッドロックしない。
 所属が存在しない場合、または現在のロールが `tenant.write` を発行できない場合は `permission_denied` を返す。
 ListMemberships は読み取りのため再確認せず、トークンの scope のみに依存する。
 
