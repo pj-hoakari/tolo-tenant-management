@@ -66,7 +66,10 @@ func run() error {
 		}
 	}()
 
-	tenantService := application.NewTenantService(dbinfra.NewPostgresTenantRepository(db))
+	tenantRepository := dbinfra.NewPostgresTenantRepository(db)
+	// The relation model (memberships) is not implemented yet, so ownership
+	// claims fail closed instead of producing owned tenants without an owner.
+	tenantService := application.NewTenantService(tenantRepository, tenantRepository, application.UnavailableMembershipWriter{})
 
 	handler, err := connectinfra.NewHandlerWithJWTSettings(tenantService, jwtSettings)
 	if err != nil {

@@ -70,6 +70,53 @@ func (r *PostgresTenantRepository) DeleteExpiredPendingTenants(ctx context.Conte
 	return deleted, nil
 }
 
+func (r *PostgresTenantRepository) FindTenantByPublicIDForUpdate(ctx context.Context, publicID string) (domain.Tenant, domain.OwnershipClaim, error) {
+	var row tenantClaimRow
+	if err := sqlx.GetContext(ctx, r.executor(ctx), &row, `
+		SELECT id, public_id, name, contract_plan, ownership_state, archived, ownership_claim_token_hash, ownership_claim_expires_at
+		FROM tenants WHERE public_id = $1
+		FOR UPDATE`, publicID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.Tenant{}, domain.OwnershipClaim{}, repository.ErrTenantNotFound
+		}
+
+		return domain.Tenant{}, domain.OwnershipClaim{}, err
+	}
+
+	tenant, err := row.domain(ctx)
+	if err != nil {
+		return domain.Tenant{}, domain.OwnershipClaim{}, err
+	}
+
+	return tenant, row.claim(), nil
+}
+
+func (r *PostgresTenantRepository) MarkTenantOwned(ctx context.Context, tenant domain.Tenant) error {
+	if tenant.OwnershipState() != domain.TenantOwnershipStateOwned {
+		return fmt.Errorf("mark tenant owned: %w", domain.ErrTenantNotPendingOwner)
+	}
+
+	result, err := r.executor(ctx).ExecContext(ctx, `
+		UPDATE tenants
+		SET ownership_state = $2, ownership_claim_token_hash = NULL, ownership_claim_expires_at = NULL
+		WHERE id = $1 AND ownership_state = $3`,
+		tenant.ID(), domain.TenantOwnershipStateOwned.String(), domain.TenantOwnershipStatePendingOwner.String())
+	if err != nil {
+		return fmt.Errorf("mark tenant owned: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("get marked tenant row count: %w", err)
+	}
+
+	if rows == 0 {
+		return domain.ErrTenantNotPendingOwner
+	}
+
+	return nil
+}
+
 func (r *PostgresTenantRepository) FindTenantByID(ctx context.Context, tenantID string) (domain.Tenant, error) {
 	return r.findTenant(ctx, `SELECT id, public_id, name, contract_plan, ownership_state, archived FROM tenants WHERE id = $1`, tenantID)
 }
@@ -85,6 +132,25 @@ type tenantRow struct {
 	ContractPlan   string `db:"contract_plan"`
 	OwnershipState string `db:"ownership_state"`
 	Archived       bool   `db:"archived"`
+}
+
+type tenantClaimRow struct {
+	tenantRow
+	ClaimTokenHash []byte       `db:"ownership_claim_token_hash"`
+	ClaimExpiresAt sql.NullTime `db:"ownership_claim_expires_at"`
+}
+
+// claim reconstitutes the pending ownership claim; it is zero for an owned
+// tenant, whose claim columns are NULL.
+func (r tenantClaimRow) claim() domain.OwnershipClaim {
+	var claim domain.OwnershipClaim
+	copy(claim.TokenHash[:], r.ClaimTokenHash)
+
+	if r.ClaimExpiresAt.Valid {
+		claim.ExpiresAt = r.ClaimExpiresAt.Time
+	}
+
+	return claim
 }
 
 func (r tenantRow) domain(ctx context.Context) (domain.Tenant, error) {

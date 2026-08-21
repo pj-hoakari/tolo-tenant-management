@@ -71,8 +71,32 @@ func (s *Service) StartTenantRegistration(ctx context.Context, req *connectrpc.R
 	}), nil
 }
 
-func (s *Service) ClaimTenantOwnership(context.Context, *connectrpc.Request[tenantv1.ClaimTenantOwnershipRequest]) (*connectrpc.Response[tenantv1.ClaimTenantOwnershipResponse], error) {
-	return nil, connectrpc.NewError(connectrpc.CodeUnimplemented, errNotImplemented)
+func (s *Service) ClaimTenantOwnership(ctx context.Context, req *connectrpc.Request[tenantv1.ClaimTenantOwnershipRequest]) (*connectrpc.Response[tenantv1.ClaimTenantOwnershipResponse], error) {
+	tenant, err := s.tenantService.ClaimTenantOwnership(ctx, application.ClaimTenantOwnershipInput{
+		TenantPublicID: req.Msg.GetTenantId(),
+		ClaimToken:     req.Msg.GetOwnershipClaimToken(),
+	})
+	if err != nil {
+		if errors.Is(err, application.ErrTenantIDRequired) || errors.Is(err, application.ErrOwnershipClaimTokenRequired) {
+			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
+		}
+
+		if errors.Is(err, repository.ErrTenantNotFound) {
+			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
+		}
+
+		if errors.Is(err, application.ErrOwnershipClaimRejected) || errors.Is(err, tenantctx.ErrSubjectMissing) {
+			return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, err)
+		}
+
+		if errors.Is(err, application.ErrOwnerMembershipUnavailable) {
+			return nil, connectrpc.NewError(connectrpc.CodeUnavailable, err)
+		}
+
+		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
+	}
+
+	return connectrpc.NewResponse(&tenantv1.ClaimTenantOwnershipResponse{Tenant: tenantProto(tenant)}), nil
 }
 
 func (s *Service) ChangeTenantContract(context.Context, *connectrpc.Request[tenantv1.ChangeTenantContractRequest]) (*connectrpc.Response[tenantv1.ChangeTenantContractResponse], error) {

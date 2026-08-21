@@ -40,6 +40,13 @@ type TenantRepository interface {
 	// DeleteExpiredPendingTenants physically removes pending_owner tenants
 	// whose claim expired before now, releasing their names.
 	DeleteExpiredPendingTenants(context.Context, time.Time) (int64, error)
+	// FindTenantByPublicIDForUpdate loads a tenant and its pending ownership
+	// claim (zero for an owned tenant), locking the row for the rest of the
+	// surrounding transaction.
+	FindTenantByPublicIDForUpdate(context.Context, string) (domain.Tenant, domain.OwnershipClaim, error)
+	// MarkTenantOwned records the ownership transition of a pending_owner
+	// tenant and consumes its claim token.
+	MarkTenantOwned(context.Context, domain.Tenant) error
 	FindTenantByID(context.Context, string) (domain.Tenant, error)
 	FindTenantByPublicID(context.Context, string) (domain.Tenant, error)
 	CreateEvent(context.Context, domain.Event) error

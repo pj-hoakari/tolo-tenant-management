@@ -415,3 +415,66 @@ func TestPostgresTenantRepositoryPendingTenants(t *testing.T) {
 		}
 	}
 }
+
+func TestPostgresTenantRepositoryOwnershipClaim(t *testing.T) {
+	repository := newTestRepository(t)
+	ctx := context.Background()
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+
+	token, hash, err := domain.NewOwnershipClaimToken()
+	if err != nil {
+		t.Fatalf("NewOwnershipClaimToken() error = %v", err)
+	}
+
+	pending := domain.NewTenant("00000000-0000-0000-0000-000000000001", "tenant-001", "Acme", "standard", domain.TenantOwnershipStatePendingOwner, false)
+	if err := repository.CreatePendingTenant(ctx, pending, domain.OwnershipClaim{TokenHash: hash, ExpiresAt: now}); err != nil {
+		t.Fatalf("CreatePendingTenant() error = %v", err)
+	}
+
+	err = repository.WithinTransaction(ctx, func(ctx context.Context) error {
+		tenant, claim, err := repository.FindTenantByPublicIDForUpdate(ctx, pending.PublicID())
+		if err != nil {
+			return err
+		}
+
+		if tenant != pending {
+			t.Errorf("locked tenant = %#v, want %#v", tenant, pending)
+		}
+
+		if !claim.TokenHash.Matches(token) || !claim.ExpiresAt.Equal(now) {
+			t.Errorf("locked claim = %#v, want hash of token expiring at %v", claim, now)
+		}
+
+		owned, err := tenant.ClaimOwnership()
+		if err != nil {
+			return err
+		}
+
+		return repository.MarkTenantOwned(ctx, owned)
+	})
+	if err != nil {
+		t.Fatalf("claim transaction error = %v", err)
+	}
+
+	tenant, claim, err := repository.FindTenantByPublicIDForUpdate(ctx, pending.PublicID())
+	if err != nil {
+		t.Fatalf("FindTenantByPublicIDForUpdate() after claim error = %v", err)
+	}
+
+	if got, want := tenant.OwnershipState(), domain.TenantOwnershipStateOwned; got != want {
+		t.Errorf("OwnershipState() after claim = %v, want %v", got, want)
+	}
+
+	// The claim token is consumed: the stored claim is cleared.
+	if claim != (domain.OwnershipClaim{}) {
+		t.Errorf("claim after ownership = %#v, want zero", claim)
+	}
+
+	if err := repository.MarkTenantOwned(ctx, tenant); !errors.Is(err, domain.ErrTenantNotPendingOwner) {
+		t.Errorf("second MarkTenantOwned() error = %v, want %v", err, domain.ErrTenantNotPendingOwner)
+	}
+
+	if _, _, err := repository.FindTenantByPublicIDForUpdate(ctx, "tenant-999"); !errors.Is(err, repositorypkg.ErrTenantNotFound) {
+		t.Errorf("FindTenantByPublicIDForUpdate(unknown) error = %v, want %v", err, repositorypkg.ErrTenantNotFound)
+	}
+}

@@ -1,8 +1,9 @@
-// Package tenantctx carries the authenticated tenant's public ID through the
-// request context and verifies that tenant-scoped work targets that tenant.
+// Package tenantctx carries the authenticated principal's facts (the subject
+// and the tenant's public ID) through the request context and verifies that
+// tenant-scoped work targets that tenant.
 //
-// The authenticated tenant ID is a request-scoped authorization fact set by the
-// transport interceptor from the verified internal JWT. It is deliberately kept
+// These are request-scoped authorization facts set by the transport
+// interceptor from the verified internal JWT. It is deliberately kept
 // out of the domain layer: whether a caller may act on a given tenant is
 // contextual authorization, not an intrinsic domain invariant, so domain value
 // objects stay free of request context.
@@ -17,12 +18,30 @@ var (
 	// ErrMissing indicates the authenticated tenant ID is absent from the
 	// context on an operation that requires it.
 	ErrMissing = errors.New("tenant ID is missing from context")
+	// ErrSubjectMissing indicates the authenticated subject is absent from the
+	// context on an operation that requires it.
+	ErrSubjectMissing = errors.New("subject is missing from context")
 	// ErrMismatch indicates a tenant-scoped operation targets a tenant other
 	// than the authenticated one carried in the context.
 	ErrMismatch = errors.New("tenant ID does not match context")
 )
 
 type contextKey struct{}
+
+type subjectKey struct{}
+
+// WithSubject stores the authenticated subject (the internal JWT's sub) on
+// the context.
+func WithSubject(ctx context.Context, subject string) context.Context {
+	return context.WithValue(ctx, subjectKey{}, subject)
+}
+
+// SubjectFromContext returns the authenticated subject stored by WithSubject.
+func SubjectFromContext(ctx context.Context) (string, bool) {
+	subject, ok := ctx.Value(subjectKey{}).(string)
+
+	return subject, ok && subject != ""
+}
 
 // WithTenantPublicID stores the authenticated tenant's public ID on the context.
 func WithTenantPublicID(ctx context.Context, tenantPublicID string) context.Context {

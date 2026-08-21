@@ -15,6 +15,33 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
+// passthroughTransactor runs the unit of work directly; the repository mocks
+// do not observe transactions.
+type passthroughTransactor struct{}
+
+func (passthroughTransactor) WithinTransaction(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
+// membershipRecorder records owner memberships and can be made to fail.
+type membershipRecorder struct {
+	err      error
+	tenantID string
+	userID   string
+	calls    int
+}
+
+func (r *membershipRecorder) AddOwner(_ context.Context, tenantID, userID string) error {
+	r.calls++
+	r.tenantID, r.userID = tenantID, userID
+
+	return r.err
+}
+
+func newService(repo *MockTenantRepository, options ...application.Option) *application.TenantService {
+	return application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{}, options...)
+}
+
 func TestCreateEvent(t *testing.T) {
 	t.Parallel()
 
@@ -30,7 +57,7 @@ func TestCreateEvent(t *testing.T) {
 
 		return nil
 	})
-	service := application.NewTenantService(repo)
+	service := newService(repo)
 
 	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
 
@@ -68,7 +95,7 @@ func TestCreateEventKeepsUnspecifiedType(t *testing.T) {
 	repo := NewMockTenantRepository(ctrl)
 	repo.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(tenant, nil)
 	repo.EXPECT().CreateEvent(gomock.Any(), gomock.Any()).Return(nil)
-	service := application.NewTenantService(repo)
+	service := newService(repo)
 
 	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
 
@@ -86,7 +113,7 @@ func TestCreateEventRequiresTenantID(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
-	service := application.NewTenantService(NewMockTenantRepository(ctrl))
+	service := newService(NewMockTenantRepository(ctrl))
 
 	ctx := tenantctx.WithTenantPublicID(context.Background(), "tenant-public-id")
 
@@ -103,7 +130,7 @@ func TestCreateEventRejectsPendingOwnerTenant(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	repo := NewMockTenantRepository(ctrl)
 	repo.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(tenant, nil)
-	service := application.NewTenantService(repo)
+	service := newService(repo)
 
 	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
 
@@ -118,7 +145,7 @@ func TestCreateEventRejectsMissingContextTenant(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	// A tenant-scoped operation cannot proceed without a verified JWT tenant.
-	service := application.NewTenantService(NewMockTenantRepository(ctrl))
+	service := newService(NewMockTenantRepository(ctrl))
 
 	_, err := service.CreateEvent(context.Background(), application.CreateEventInput{
 		TenantPublicID: "tenant-public-id",
@@ -136,7 +163,7 @@ func TestCreateEventRejectsMismatchedRequestTenant(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	// The requested tenant differs from the authenticated one, so the use case
 	// refuses before touching the repository.
-	service := application.NewTenantService(NewMockTenantRepository(ctrl))
+	service := newService(NewMockTenantRepository(ctrl))
 
 	ctx := tenantctx.WithTenantPublicID(context.Background(), "tenant-public-id")
 
@@ -156,7 +183,7 @@ func TestTransitionEventStatusRejectsMismatchedContextTenant(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	repo := NewMockTenantRepository(ctrl)
 	repo.EXPECT().FindEventByPublicID(gomock.Any(), event.PublicID()).Return(event, nil)
-	service := application.NewTenantService(repo)
+	service := newService(repo)
 
 	ctx := tenantctx.WithTenantPublicID(context.Background(), "other-tenant-public-id")
 
@@ -184,7 +211,7 @@ func TestTransitionEventStatus(t *testing.T) {
 
 		return nil
 	})
-	service := application.NewTenantService(repo)
+	service := newService(repo)
 
 	ctx := tenantctx.WithTenantPublicID(context.Background(), event.TenantPublicID())
 
@@ -209,7 +236,7 @@ func TestTransitionEventStatusValidatesInput(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
-	service := application.NewTenantService(NewMockTenantRepository(ctrl))
+	service := newService(NewMockTenantRepository(ctrl))
 	ctx := tenantctx.WithTenantPublicID(context.Background(), "tenant-public-id")
 
 	_, err := service.TransitionEventStatus(ctx, application.TransitionEventStatusInput{To: domain.EventStatusOpen})
@@ -238,7 +265,7 @@ func TestAssignEventType(t *testing.T) {
 
 		return nil
 	})
-	service := application.NewTenantService(repository)
+	service := newService(repository)
 
 	ctx := tenantctx.WithTenantPublicID(context.Background(), event.TenantPublicID())
 
@@ -266,7 +293,7 @@ func TestGetEvent(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	repository := NewMockTenantRepository(ctrl)
 	repository.EXPECT().FindEventByPublicID(gomock.Any(), event.PublicID()).Return(event, nil)
-	service := application.NewTenantService(repository)
+	service := newService(repository)
 
 	ctx := tenantctx.WithTenantPublicID(context.Background(), event.TenantPublicID())
 
@@ -301,7 +328,7 @@ func TestGetEventEnforcesTenantBoundary(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			repository := NewMockTenantRepository(ctrl)
 			repository.EXPECT().FindEventByPublicID(gomock.Any(), event.PublicID()).Return(event, nil)
-			service := application.NewTenantService(repository)
+			service := newService(repository)
 
 			if _, err := service.GetEvent(tt.ctx, event.PublicID()); !errors.Is(err, tt.want) {
 				t.Fatalf("GetEvent() error = %v, want %v", err, tt.want)
@@ -322,7 +349,7 @@ func TestListEvents(t *testing.T) {
 	repository := NewMockTenantRepository(ctrl)
 	repository.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(tenant, nil)
 	repository.EXPECT().ListEventsByTenantID(gomock.Any(), tenant.ID()).Return(events, nil)
-	service := application.NewTenantService(repository)
+	service := newService(repository)
 
 	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
 
@@ -340,7 +367,7 @@ func TestListEventsRejectsMismatchedRequestTenant(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
-	service := application.NewTenantService(NewMockTenantRepository(ctrl))
+	service := newService(NewMockTenantRepository(ctrl))
 
 	ctx := tenantctx.WithTenantPublicID(context.Background(), "tenant-public-id")
 
@@ -371,7 +398,7 @@ func TestStartTenantRegistration(t *testing.T) {
 			return nil
 		}),
 	)
-	service := application.NewTenantService(repo, application.WithClock(func() time.Time { return now }), application.WithOwnershipClaimTTL(time.Hour))
+	service := newService(repo, application.WithClock(func() time.Time { return now }), application.WithOwnershipClaimTTL(time.Hour))
 
 	registration, err := service.StartTenantRegistration(context.Background(), application.StartTenantRegistrationInput{Name: "Acme", ContractPlan: "standard"})
 	if err != nil {
@@ -403,7 +430,7 @@ func TestStartTenantRegistrationValidatesInput(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
-	service := application.NewTenantService(NewMockTenantRepository(ctrl))
+	service := newService(NewMockTenantRepository(ctrl))
 
 	_, err := service.StartTenantRegistration(context.Background(), application.StartTenantRegistrationInput{ContractPlan: "standard"})
 	if !errors.Is(err, application.ErrTenantNameRequired) {
@@ -413,5 +440,137 @@ func TestStartTenantRegistrationValidatesInput(t *testing.T) {
 	_, err = service.StartTenantRegistration(context.Background(), application.StartTenantRegistrationInput{Name: "Acme"})
 	if !errors.Is(err, application.ErrTenantContractPlanRequired) {
 		t.Errorf("StartTenantRegistration() error = %v, want %v", err, application.ErrTenantContractPlanRequired)
+	}
+}
+
+func TestClaimTenantOwnership(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+
+	token, hash, err := domain.NewOwnershipClaimToken()
+	if err != nil {
+		t.Fatalf("NewOwnershipClaimToken() error = %v", err)
+	}
+
+	pending := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStatePendingOwner, false)
+	claim := domain.OwnershipClaim{TokenHash: hash, ExpiresAt: now.Add(time.Hour)}
+	ctrl := gomock.NewController(t)
+	repo := NewMockTenantRepository(ctrl)
+	memberships := &membershipRecorder{}
+
+	var marked domain.Tenant
+
+	gomock.InOrder(
+		repo.EXPECT().FindTenantByPublicIDForUpdate(gomock.Any(), pending.PublicID()).Return(pending, claim, nil),
+		repo.EXPECT().MarkTenantOwned(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, tenant domain.Tenant) error {
+			marked = tenant
+
+			if memberships.calls != 1 {
+				t.Error("MarkTenantOwned() called before the owner membership was recorded")
+			}
+
+			return nil
+		}),
+	)
+	service := application.NewTenantService(repo, passthroughTransactor{}, memberships, application.WithClock(func() time.Time { return now }))
+
+	ctx := tenantctx.WithSubject(context.Background(), "user-1")
+
+	owned, err := service.ClaimTenantOwnership(ctx, application.ClaimTenantOwnershipInput{TenantPublicID: pending.PublicID(), ClaimToken: token})
+	if err != nil {
+		t.Fatalf("ClaimTenantOwnership() error = %v", err)
+	}
+
+	if got, want := owned.OwnershipState(), domain.TenantOwnershipStateOwned; got != want {
+		t.Errorf("OwnershipState() = %v, want %v", got, want)
+	}
+
+	if got, want := marked, owned; got != want {
+		t.Errorf("marked tenant = %#v, want %#v", got, want)
+	}
+
+	if memberships.tenantID != pending.ID() || memberships.userID != "user-1" {
+		t.Errorf("owner membership = (%q, %q), want (%q, %q)", memberships.tenantID, memberships.userID, pending.ID(), "user-1")
+	}
+}
+
+func TestClaimTenantOwnershipRejections(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+
+	token, hash, err := domain.NewOwnershipClaimToken()
+	if err != nil {
+		t.Fatalf("NewOwnershipClaimToken() error = %v", err)
+	}
+
+	pending := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStatePendingOwner, false)
+	owned := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, false)
+	live := domain.OwnershipClaim{TokenHash: hash, ExpiresAt: now.Add(time.Hour)}
+	subject := tenantctx.WithSubject(context.Background(), "user-1")
+
+	tests := []struct {
+		name   string
+		ctx    context.Context
+		tenant domain.Tenant
+		claim  domain.OwnershipClaim
+		token  string
+		lookup bool
+		want   error
+	}{
+		{name: "wrong token", ctx: subject, tenant: pending, claim: live, token: token + "x", lookup: true, want: application.ErrOwnershipClaimRejected},
+		{name: "expired claim", ctx: subject, tenant: pending, claim: domain.OwnershipClaim{TokenHash: hash, ExpiresAt: now}, token: token, lookup: true, want: application.ErrOwnershipClaimRejected},
+		{name: "already owned", ctx: subject, tenant: owned, claim: domain.OwnershipClaim{}, token: token, lookup: true, want: application.ErrOwnershipClaimRejected},
+		{name: "no subject", ctx: context.Background(), tenant: pending, claim: live, token: token, lookup: false, want: tenantctx.ErrSubjectMissing},
+		{name: "no token", ctx: subject, tenant: pending, claim: live, token: "", lookup: false, want: application.ErrOwnershipClaimTokenRequired},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctrl := gomock.NewController(t)
+			repo := NewMockTenantRepository(ctrl)
+			memberships := &membershipRecorder{}
+
+			if tt.lookup {
+				repo.EXPECT().FindTenantByPublicIDForUpdate(gomock.Any(), pending.PublicID()).Return(tt.tenant, tt.claim, nil)
+			}
+
+			service := application.NewTenantService(repo, passthroughTransactor{}, memberships, application.WithClock(func() time.Time { return now }))
+
+			_, err := service.ClaimTenantOwnership(tt.ctx, application.ClaimTenantOwnershipInput{TenantPublicID: pending.PublicID(), ClaimToken: tt.token})
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("ClaimTenantOwnership() error = %v, want %v", err, tt.want)
+			}
+
+			if memberships.calls != 0 {
+				t.Errorf("owner membership recorded %d times on a rejected claim, want 0", memberships.calls)
+			}
+		})
+	}
+}
+
+func TestClaimTenantOwnershipDoesNotMarkOwnedWhenMembershipFails(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+
+	token, hash, err := domain.NewOwnershipClaimToken()
+	if err != nil {
+		t.Fatalf("NewOwnershipClaimToken() error = %v", err)
+	}
+
+	pending := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStatePendingOwner, false)
+	ctrl := gomock.NewController(t)
+	repo := NewMockTenantRepository(ctrl)
+	repo.EXPECT().FindTenantByPublicIDForUpdate(gomock.Any(), pending.PublicID()).Return(pending, domain.OwnershipClaim{TokenHash: hash, ExpiresAt: now.Add(time.Hour)}, nil)
+	// MarkTenantOwned must not be called: the transaction fails before it.
+	service := application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{err: application.ErrOwnerMembershipUnavailable}, application.WithClock(func() time.Time { return now }))
+
+	_, err = service.ClaimTenantOwnership(tenantctx.WithSubject(context.Background(), "user-1"), application.ClaimTenantOwnershipInput{TenantPublicID: pending.PublicID(), ClaimToken: token})
+	if !errors.Is(err, application.ErrOwnerMembershipUnavailable) {
+		t.Fatalf("ClaimTenantOwnership() error = %v, want %v", err, application.ErrOwnerMembershipUnavailable)
 	}
 }

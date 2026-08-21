@@ -182,6 +182,22 @@ func (mr *MockTenantRepositoryMockRecorder) FindTenantByPublicID(arg0, arg1 any)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindTenantByPublicID", reflect.TypeOf((*MockTenantRepository)(nil).FindTenantByPublicID), arg0, arg1)
 }
 
+// FindTenantByPublicIDForUpdate mocks base method.
+func (m *MockTenantRepository) FindTenantByPublicIDForUpdate(arg0 context.Context, arg1 string) (domain.Tenant, domain.OwnershipClaim, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FindTenantByPublicIDForUpdate", arg0, arg1)
+	ret0, _ := ret[0].(domain.Tenant)
+	ret1, _ := ret[1].(domain.OwnershipClaim)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// FindTenantByPublicIDForUpdate indicates an expected call of FindTenantByPublicIDForUpdate.
+func (mr *MockTenantRepositoryMockRecorder) FindTenantByPublicIDForUpdate(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindTenantByPublicIDForUpdate", reflect.TypeOf((*MockTenantRepository)(nil).FindTenantByPublicIDForUpdate), arg0, arg1)
+}
+
 // ListEventsByTenantID mocks base method.
 func (m *MockTenantRepository) ListEventsByTenantID(arg0 context.Context, arg1 string) ([]domain.Event, error) {
 	m.ctrl.T.Helper()
@@ -195,6 +211,20 @@ func (m *MockTenantRepository) ListEventsByTenantID(arg0 context.Context, arg1 s
 func (mr *MockTenantRepositoryMockRecorder) ListEventsByTenantID(arg0, arg1 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListEventsByTenantID", reflect.TypeOf((*MockTenantRepository)(nil).ListEventsByTenantID), arg0, arg1)
+}
+
+// MarkTenantOwned mocks base method.
+func (m *MockTenantRepository) MarkTenantOwned(arg0 context.Context, arg1 domain.Tenant) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MarkTenantOwned", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// MarkTenantOwned indicates an expected call of MarkTenantOwned.
+func (mr *MockTenantRepositoryMockRecorder) MarkTenantOwned(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkTenantOwned", reflect.TypeOf((*MockTenantRepository)(nil).MarkTenantOwned), arg0, arg1)
 }
 
 // UpdateEvent mocks base method.

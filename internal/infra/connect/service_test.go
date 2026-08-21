@@ -4,6 +4,7 @@ package connect
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	connectrpc "connectrpc.com/connect"
@@ -13,6 +14,39 @@ import (
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 	"go.uber.org/mock/gomock"
 )
+
+// passthroughTransactor runs the unit of work directly for mock-backed tests.
+type passthroughTransactor struct{}
+
+func (passthroughTransactor) WithinTransaction(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
+// membershipRecorder stands in for the relation model's membership store.
+type membershipRecorder struct {
+	mu       sync.Mutex
+	err      error
+	tenantID string
+	userID   string
+	calls    int
+}
+
+func (r *membershipRecorder) AddOwner(_ context.Context, tenantID, userID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.calls++
+	r.tenantID, r.userID = tenantID, userID
+
+	return r.err
+}
+
+func (r *membershipRecorder) owner() (string, string, int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return r.tenantID, r.userID, r.calls
+}
 
 func TestEventStatusConversions(t *testing.T) {
 	t.Parallel()
@@ -153,5 +187,5 @@ func newReadService(t *testing.T) (*Service, domain.Tenant, []domain.Event) {
 	repository.EXPECT().ListEventsByTenantID(gomock.Any(), tenant.ID()).Return(events, nil).AnyTimes()
 	repository.EXPECT().UpdateEvent(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
-	return NewService(application.NewTenantService(repository)), tenant, events
+	return NewService(application.NewTenantService(repository, passthroughTransactor{}, &membershipRecorder{})), tenant, events
 }
