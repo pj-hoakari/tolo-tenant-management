@@ -2,9 +2,11 @@ package connect
 
 import (
 	"context"
+	"errors"
 	"net/http/httptest"
 	"regexp"
 	"testing"
+	"time"
 
 	connectrpc "connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -14,28 +16,32 @@ import (
 	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/repository"
 )
 
 var publicIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
 
 type transportFixture struct {
-	repository *db.PostgresTenantRepository
-	jwks       *jwksRegistry
-	client     tenantv1connect.TenantServiceClient
+	repository  *db.PostgresTenantRepository
+	memberships *membershipRecorder
+	jwks        *jwksRegistry
+	client      tenantv1connect.TenantServiceClient
 }
 
-func newTransportFixture(t *testing.T) transportFixture {
+func newTransportFixture(t *testing.T, options ...application.Option) transportFixture {
 	t.Helper()
 
 	repository := newIntegrationTenantRepository(t)
-	handler, jwks := newDynamicTestHandler(t, application.NewTenantService(repository))
+	memberships := &membershipRecorder{}
+	handler, jwks := newDynamicTestHandler(t, application.NewTenantService(repository, repository, memberships, options...))
 	httpServer := httptest.NewServer(handler)
 	t.Cleanup(httpServer.Close)
 
 	return transportFixture{
-		repository: repository,
-		jwks:       jwks,
-		client:     tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL),
+		repository:  repository,
+		memberships: memberships,
+		jwks:        jwks,
+		client:      tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL),
 	}
 }
 
@@ -44,7 +50,7 @@ func newTransportFixture(t *testing.T) transportFixture {
 func (f transportFixture) createTenant(t *testing.T, publicID, name string) domain.Tenant {
 	t.Helper()
 
-	tenant := domain.NewTenant(uuid.Must(uuid.NewV7()).String(), publicID, name, "standard", false)
+	tenant := domain.NewTenant(uuid.Must(uuid.NewV7()).String(), publicID, name, "standard", domain.TenantOwnershipStateOwned, false)
 	if err := f.repository.CreateTenant(context.Background(), tenant); err != nil {
 		t.Fatalf("CreateTenant(%q) error = %v", name, err)
 	}
@@ -66,47 +72,235 @@ func (f transportFixture) createEvent(t *testing.T, token string, tenantPublicID
 	return res.Msg.GetEvent()
 }
 
-func TestStartTenantRegistrationAcceptsUnauthenticatedRequests(t *testing.T) {
+var claimTokenPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
+
+func TestStartTenantRegistrationOverTransport(t *testing.T) {
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	fixture := newTransportFixture(t, application.WithClock(func() time.Time { return now }))
+
+	// The public RPC is served without a bearer token.
+	res, err := fixture.client.StartTenantRegistration(context.Background(), connectrpc.NewRequest(&tenantv1.StartTenantRegistrationRequest{Name: "Acme", ContractPlan: "standard"}))
+	if err != nil {
+		t.Fatalf("StartTenantRegistration() error = %v", err)
+	}
+
+	tenant := res.Msg.GetTenant()
+	if got, want := tenant.GetOwnershipState(), tenantv1.TenantOwnershipState_TENANT_OWNERSHIP_STATE_PENDING_OWNER; got != want {
+		t.Errorf("Tenant.OwnershipState = %v, want %v", got, want)
+	}
+
+	if got := tenant.GetTenantId(); !publicIDPattern.MatchString(got) {
+		t.Errorf("Tenant.TenantId = %q, want 16-character hex", got)
+	}
+
+	if got := res.Msg.GetOwnershipClaimToken(); !claimTokenPattern.MatchString(got) {
+		t.Errorf("OwnershipClaimToken = %q, want 43-character base64url", got)
+	}
+
+	if got, want := res.Msg.GetExpiresAt().AsTime(), now.Add(application.DefaultOwnershipClaimTTL); !got.Equal(want) {
+		t.Errorf("ExpiresAt = %v, want %v", got, want)
+	}
+
+	t.Run("rejects duplicate names while the registration is pending", func(t *testing.T) {
+		_, err := fixture.client.StartTenantRegistration(context.Background(), connectrpc.NewRequest(&tenantv1.StartTenantRegistrationRequest{Name: "Acme", ContractPlan: "standard"}))
+		if got, want := connectrpc.CodeOf(err), connectrpc.CodeAlreadyExists; got != want {
+			t.Fatalf("StartTenantRegistration() error code = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("rejects missing required fields", func(t *testing.T) {
+		_, err := fixture.client.StartTenantRegistration(context.Background(), connectrpc.NewRequest(&tenantv1.StartTenantRegistrationRequest{Name: "Acme"}))
+		if got, want := connectrpc.CodeOf(err), connectrpc.CodeInvalidArgument; got != want {
+			t.Fatalf("StartTenantRegistration() error code = %v, want %v", got, want)
+		}
+	})
+}
+
+func TestPendingOwnerTenantRejectsTenantScopedCalls(t *testing.T) {
 	fixture := newTransportFixture(t)
 
-	// The public RPC must pass both the authz verifier and the tenant ID
-	// interceptor without a bearer token. The use case itself is not
-	// implemented yet, so the handler stub answers.
-	_, err := fixture.client.StartTenantRegistration(context.Background(), connectrpc.NewRequest(&tenantv1.StartTenantRegistrationRequest{Name: "Acme", ContractPlan: "standard"}))
-	if got, want := connectrpc.CodeOf(err), connectrpc.CodeUnimplemented; got != want {
-		t.Fatalf("StartTenantRegistration() error code = %v, want %v", got, want)
+	res, err := fixture.client.StartTenantRegistration(context.Background(), connectrpc.NewRequest(&tenantv1.StartTenantRegistrationRequest{Name: "Acme", ContractPlan: "standard"}))
+	if err != nil {
+		t.Fatalf("StartTenantRegistration() error = %v", err)
+	}
+
+	tenantID := res.Msg.GetTenant().GetTenantId()
+	token := mintTenantAccessToken(t, fixture.jwks, tenantID)
+
+	createReq := connectrpc.NewRequest(&tenantv1.CreateEventRequest{TenantId: tenantID, Name: "Festival"})
+	createReq.Header().Set("Authorization", token)
+
+	_, err = fixture.client.CreateEvent(context.Background(), createReq)
+	if got, want := connectrpc.CodeOf(err), connectrpc.CodeFailedPrecondition; got != want {
+		t.Errorf("CreateEvent() error code = %v, want %v", got, want)
+	}
+
+	listReq := connectrpc.NewRequest(&tenantv1.ListEventsRequest{TenantId: tenantID})
+	listReq.Header().Set("Authorization", token)
+
+	_, err = fixture.client.ListEvents(context.Background(), listReq)
+	if got, want := connectrpc.CodeOf(err), connectrpc.CodeFailedPrecondition; got != want {
+		t.Errorf("ListEvents() error code = %v, want %v", got, want)
 	}
 }
 
-func TestClaimTenantOwnershipRequiresRegistrationToken(t *testing.T) {
+func TestStartTenantRegistrationOverTransportReleasesExpiredNames(t *testing.T) {
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	fixture := newTransportFixture(t, application.WithClock(func() time.Time { return now }), application.WithOwnershipClaimTTL(time.Hour))
+
+	first, err := fixture.client.StartTenantRegistration(context.Background(), connectrpc.NewRequest(&tenantv1.StartTenantRegistrationRequest{Name: "Acme", ContractPlan: "standard"}))
+	if err != nil {
+		t.Fatalf("first StartTenantRegistration() error = %v", err)
+	}
+
+	// Once the first registration expires, the next registration sweeps it
+	// and the name is free again.
+	now = now.Add(2 * time.Hour)
+
+	second, err := fixture.client.StartTenantRegistration(context.Background(), connectrpc.NewRequest(&tenantv1.StartTenantRegistrationRequest{Name: "Acme", ContractPlan: "standard"}))
+	if err != nil {
+		t.Fatalf("second StartTenantRegistration() error = %v", err)
+	}
+
+	if first.Msg.GetTenant().GetTenantId() == second.Msg.GetTenant().GetTenantId() {
+		t.Error("second registration reused the expired tenant instead of creating a new one")
+	}
+
+	if _, err := fixture.repository.FindTenantByPublicID(context.Background(), first.Msg.GetTenant().GetTenantId()); !errors.Is(err, repository.ErrTenantNotFound) {
+		t.Errorf("expired tenant lookup error = %v, want %v", err, repository.ErrTenantNotFound)
+	}
+}
+
+func (f transportFixture) startRegistration(t *testing.T, name string) *tenantv1.StartTenantRegistrationResponse {
+	t.Helper()
+
+	res, err := f.client.StartTenantRegistration(context.Background(), connectrpc.NewRequest(&tenantv1.StartTenantRegistrationRequest{Name: name, ContractPlan: "standard"}))
+	if err != nil {
+		t.Fatalf("StartTenantRegistration(%q) error = %v", name, err)
+	}
+
+	return res.Msg
+}
+
+func (f transportFixture) claim(t *testing.T, token, tenantID, claimToken string) (*tenantv1.Tenant, error) {
+	t.Helper()
+
+	req := connectrpc.NewRequest(&tenantv1.ClaimTenantOwnershipRequest{TenantId: tenantID, OwnershipClaimToken: claimToken})
+	if token != "" {
+		req.Header().Set("Authorization", token)
+	}
+
+	res, err := f.client.ClaimTenantOwnership(context.Background(), req)
+	if err != nil {
+		return nil, err
+	}
+
+	return res.Msg.GetTenant(), nil
+}
+
+func TestClaimTenantOwnershipOverTransport(t *testing.T) {
 	fixture := newTransportFixture(t)
+	registration := fixture.startRegistration(t, "Acme")
+	tenantID := registration.GetTenant().GetTenantId()
 
-	t.Run("rejects missing bearer token", func(t *testing.T) {
-		_, err := fixture.client.ClaimTenantOwnership(context.Background(), connectrpc.NewRequest(&tenantv1.ClaimTenantOwnershipRequest{}))
+	owned, err := fixture.claim(t, internalJWTs(t).registration, tenantID, registration.GetOwnershipClaimToken())
+	if err != nil {
+		t.Fatalf("ClaimTenantOwnership() error = %v", err)
+	}
+
+	if got, want := owned.GetOwnershipState(), tenantv1.TenantOwnershipState_TENANT_OWNERSHIP_STATE_OWNED; got != want {
+		t.Errorf("Tenant.OwnershipState = %v, want %v", got, want)
+	}
+
+	stored, err := fixture.repository.FindTenantByPublicID(context.Background(), tenantID)
+	if err != nil {
+		t.Fatalf("FindTenantByPublicID() error = %v", err)
+	}
+
+	// The owner membership is recorded for the claiming subject and the
+	// tenant's internal ID.
+	if gotTenant, gotUser, calls := fixture.memberships.owner(); gotTenant != stored.ID() || gotUser != "test-subject" || calls != 1 {
+		t.Errorf("owner membership = (%q, %q) x%d, want (%q, %q) x1", gotTenant, gotUser, calls, stored.ID(), "test-subject")
+	}
+
+	t.Run("the owned tenant accepts tenant-scoped calls", func(t *testing.T) {
+		fixture.createEvent(t, mintTenantAccessToken(t, fixture.jwks, tenantID), tenantID, "Festival")
+	})
+
+	t.Run("the claim token is consumed", func(t *testing.T) {
+		_, err := fixture.claim(t, internalJWTs(t).registration, tenantID, registration.GetOwnershipClaimToken())
 		if got, want := connectrpc.CodeOf(err), connectrpc.CodeUnauthenticated; got != want {
-			t.Fatalf("ClaimTenantOwnership() error code = %v, want %v", got, want)
+			t.Fatalf("second ClaimTenantOwnership() error code = %v, want %v", got, want)
 		}
 	})
+}
 
-	t.Run("rejects tenant_access token", func(t *testing.T) {
-		req := connectrpc.NewRequest(&tenantv1.ClaimTenantOwnershipRequest{})
-		req.Header().Set("Authorization", internalJWTs(t).tenantAccess)
+func TestClaimTenantOwnershipOverTransportRejections(t *testing.T) {
+	fixture := newTransportFixture(t)
+	registration := fixture.startRegistration(t, "Acme")
+	tenantID := registration.GetTenant().GetTenantId()
+	claimToken := registration.GetOwnershipClaimToken()
 
-		_, err := fixture.client.ClaimTenantOwnership(context.Background(), req)
-		if got, want := connectrpc.CodeOf(err), connectrpc.CodeUnauthenticated; got != want {
-			t.Fatalf("ClaimTenantOwnership() error code = %v, want %v", got, want)
-		}
-	})
+	tests := []struct {
+		name       string
+		token      string
+		tenantID   string
+		claimToken string
+		want       connectrpc.Code
+	}{
+		{name: "missing bearer token", token: "", tenantID: tenantID, claimToken: claimToken, want: connectrpc.CodeUnauthenticated},
+		{name: "tenant_access token", token: internalJWTs(t).tenantAccess, tenantID: tenantID, claimToken: claimToken, want: connectrpc.CodeUnauthenticated},
+		{name: "wrong claim token", token: internalJWTs(t).registration, tenantID: tenantID, claimToken: claimToken + "x", want: connectrpc.CodeUnauthenticated},
+		{name: "unknown tenant", token: internalJWTs(t).registration, tenantID: "0000000000000000", claimToken: claimToken, want: connectrpc.CodeNotFound},
+		{name: "missing claim token", token: internalJWTs(t).registration, tenantID: tenantID, claimToken: "", want: connectrpc.CodeInvalidArgument},
+	}
 
-	t.Run("accepts registration token", func(t *testing.T) {
-		req := connectrpc.NewRequest(&tenantv1.ClaimTenantOwnershipRequest{})
-		req.Header().Set("Authorization", internalJWTs(t).registration)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := fixture.claim(t, tt.token, tt.tenantID, tt.claimToken)
+			if got := connectrpc.CodeOf(err); got != tt.want {
+				t.Fatalf("ClaimTenantOwnership() error code = %v, want %v", got, tt.want)
+			}
+		})
+	}
 
-		_, err := fixture.client.ClaimTenantOwnership(context.Background(), req)
-		if got, want := connectrpc.CodeOf(err), connectrpc.CodeUnimplemented; got != want {
-			t.Fatalf("ClaimTenantOwnership() error code = %v, want %v", got, want)
-		}
-	})
+	// None of the rejections consumed the token: the valid claim still works.
+	if _, err := fixture.claim(t, internalJWTs(t).registration, tenantID, claimToken); err != nil {
+		t.Fatalf("ClaimTenantOwnership() after rejections error = %v", err)
+	}
+}
+
+func TestClaimTenantOwnershipOverTransportRollsBackWhenMembershipFails(t *testing.T) {
+	fixture := newTransportFixture(t)
+	registration := fixture.startRegistration(t, "Acme")
+	tenantID := registration.GetTenant().GetTenantId()
+
+	fixture.memberships.mu.Lock()
+	fixture.memberships.err = application.ErrOwnerMembershipUnavailable
+	fixture.memberships.mu.Unlock()
+
+	_, err := fixture.claim(t, internalJWTs(t).registration, tenantID, registration.GetOwnershipClaimToken())
+	if got, want := connectrpc.CodeOf(err), connectrpc.CodeUnavailable; got != want {
+		t.Fatalf("ClaimTenantOwnership() error code = %v, want %v", got, want)
+	}
+
+	stored, err := fixture.repository.FindTenantByPublicID(context.Background(), tenantID)
+	if err != nil {
+		t.Fatalf("FindTenantByPublicID() error = %v", err)
+	}
+
+	if got, want := stored.OwnershipState(), domain.TenantOwnershipStatePendingOwner; got != want {
+		t.Fatalf("OwnershipState() after failed claim = %v, want %v", got, want)
+	}
+
+	// Once the membership store is back, the same token completes the claim.
+	fixture.memberships.mu.Lock()
+	fixture.memberships.err = nil
+	fixture.memberships.mu.Unlock()
+
+	if _, err := fixture.claim(t, internalJWTs(t).registration, tenantID, registration.GetOwnershipClaimToken()); err != nil {
+		t.Fatalf("ClaimTenantOwnership() after recovery error = %v", err)
+	}
 }
 
 func TestCreateEventOverTransport(t *testing.T) {

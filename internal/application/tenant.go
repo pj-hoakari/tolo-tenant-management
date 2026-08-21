@@ -4,6 +4,8 @@ package application
 import (
 	"context"
 	"errors"
+	"fmt"
+	"time"
 
 	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/repository"
@@ -11,12 +13,42 @@ import (
 )
 
 var (
-	ErrTenantIDRequired    = errors.New("tenant ID is required")
-	ErrEventNameRequired   = errors.New("event name is required")
-	ErrEventIDRequired     = errors.New("event ID is required")
-	ErrEventTypeRequired   = errors.New("event type is required")
-	ErrEventStatusRequired = errors.New("event status is required")
+	ErrTenantNameRequired         = errors.New("tenant name is required")
+	ErrTenantContractPlanRequired = errors.New("tenant contract plan is required")
+	ErrTenantIDRequired           = errors.New("tenant ID is required")
+	ErrEventNameRequired          = errors.New("event name is required")
+	ErrEventIDRequired            = errors.New("event ID is required")
+	ErrEventTypeRequired          = errors.New("event type is required")
+	ErrEventStatusRequired        = errors.New("event status is required")
+	// ErrTenantPendingOwner rejects business operations on a tenant whose
+	// owner has not claimed it yet.
+	ErrTenantPendingOwner = errors.New("tenant is pending an owner")
+	// ErrOwnershipClaimTokenRequired rejects a claim without a token.
+	ErrOwnershipClaimTokenRequired = errors.New("ownership claim token is required")
+	// ErrOwnershipClaimRejected covers every way a claim can fail to match:
+	// the tenant is not pending, the token is wrong, expired, or already used.
+	// The reasons are deliberately not distinguished.
+	ErrOwnershipClaimRejected = errors.New("ownership claim rejected")
 )
+
+// DefaultOwnershipClaimTTL is how long a pending_owner tenant waits for
+// ClaimTenantOwnership before it expires and its name is released.
+const DefaultOwnershipClaimTTL = time.Hour
+
+// StartTenantRegistrationInput contains the values accepted by the
+// StartTenantRegistration use case.
+type StartTenantRegistrationInput struct {
+	Name         string
+	ContractPlan string
+}
+
+// TenantRegistration is the outcome of StartTenantRegistration. ClaimToken is
+// the plaintext one-time token; it is returned here and nowhere else.
+type TenantRegistration struct {
+	Tenant     domain.Tenant
+	ClaimToken string
+	ExpiresAt  time.Time
+}
 
 // CreateEventInput contains the values accepted by the CreateEvent use case.
 // TenantPublicID is the target tenant taken from the request; it is
@@ -37,6 +69,25 @@ type TransitionEventStatusInput struct {
 type AssignEventTypeInput struct {
 	EventPublicID string
 	Type          domain.EventType
+}
+
+// StartTenantRegistrationUseCase creates a pending_owner tenant without
+// authentication.
+type StartTenantRegistrationUseCase interface {
+	StartTenantRegistration(context.Context, StartTenantRegistrationInput) (TenantRegistration, error)
+}
+
+// ClaimTenantOwnershipInput contains the values accepted by the
+// ClaimTenantOwnership use case. The claiming user is the authenticated
+// subject carried in the context.
+type ClaimTenantOwnershipInput struct {
+	TenantPublicID string
+	ClaimToken     string
+}
+
+// ClaimTenantOwnershipUseCase turns a pending_owner tenant into an owned one.
+type ClaimTenantOwnershipUseCase interface {
+	ClaimTenantOwnership(context.Context, ClaimTenantOwnershipInput) (domain.Tenant, error)
 }
 
 // CreateEventUseCase creates an event for a tenant.
@@ -67,6 +118,8 @@ type ListEventsUseCase interface {
 // TenantUseCases groups the tenant operations exposed by the Connect
 // transport.
 type TenantUseCases interface {
+	StartTenantRegistrationUseCase
+	ClaimTenantOwnershipUseCase
 	CreateEventUseCase
 	AssignEventTypeUseCase
 	TransitionEventStatusUseCase
@@ -76,16 +129,144 @@ type TenantUseCases interface {
 
 // TenantService implements tenant use cases.
 type TenantService struct {
-	tenantRepository repository.TenantRepository
+	tenantRepository  repository.TenantRepository
+	transactor        repository.Transactor
+	memberships       MembershipWriter
+	now               func() time.Time
+	ownershipClaimTTL time.Duration
 }
 
-func NewTenantService(tenantRepository repository.TenantRepository) *TenantService {
-	return &TenantService{tenantRepository: tenantRepository}
+// Option configures a TenantService.
+type Option func(*TenantService)
+
+// WithClock replaces the wall clock, so tests can move time.
+func WithClock(now func() time.Time) Option {
+	return func(s *TenantService) { s.now = now }
+}
+
+// WithOwnershipClaimTTL sets how long a pending_owner tenant can be claimed.
+func WithOwnershipClaimTTL(ttl time.Duration) Option {
+	return func(s *TenantService) { s.ownershipClaimTTL = ttl }
+}
+
+func NewTenantService(tenantRepository repository.TenantRepository, transactor repository.Transactor, memberships MembershipWriter, options ...Option) *TenantService {
+	service := &TenantService{
+		tenantRepository:  tenantRepository,
+		transactor:        transactor,
+		memberships:       memberships,
+		now:               time.Now,
+		ownershipClaimTTL: DefaultOwnershipClaimTTL,
+	}
+
+	for _, option := range options {
+		option(service)
+	}
+
+	return service
+}
+
+// StartTenantRegistration creates a pending_owner tenant and hands out the
+// one-time claim token. Expired pending tenants are swept first, so a name
+// held by an abandoned registration becomes available again.
+func (s *TenantService) StartTenantRegistration(ctx context.Context, input StartTenantRegistrationInput) (TenantRegistration, error) {
+	if input.Name == "" {
+		return TenantRegistration{}, ErrTenantNameRequired
+	}
+
+	if input.ContractPlan == "" {
+		return TenantRegistration{}, ErrTenantContractPlanRequired
+	}
+
+	now := s.now()
+
+	if _, err := s.tenantRepository.DeleteExpiredPendingTenants(ctx, now); err != nil {
+		return TenantRegistration{}, fmt.Errorf("sweep expired pending tenants: %w", err)
+	}
+
+	tenantID, err := newUUIDv7()
+	if err != nil {
+		return TenantRegistration{}, err
+	}
+
+	publicID, err := newPublicID()
+	if err != nil {
+		return TenantRegistration{}, err
+	}
+
+	claimToken, tokenHash, err := domain.NewOwnershipClaimToken()
+	if err != nil {
+		return TenantRegistration{}, err
+	}
+
+	tenant := domain.NewTenant(tenantID, publicID, input.Name, input.ContractPlan, domain.TenantOwnershipStatePendingOwner, false)
+	claim := domain.OwnershipClaim{TokenHash: tokenHash, ExpiresAt: now.Add(s.ownershipClaimTTL)}
+
+	if err := s.tenantRepository.CreatePendingTenant(ctx, tenant, claim); err != nil {
+		return TenantRegistration{}, err
+	}
+
+	return TenantRegistration{Tenant: tenant, ClaimToken: claimToken, ExpiresAt: claim.ExpiresAt}, nil
+}
+
+// ClaimTenantOwnership verifies the one-time claim token and, in one
+// transaction, records the authenticated subject as owner, moves the tenant to
+// owned, and consumes the token. TenantRegistered is established by the commit
+// of this transaction.
+func (s *TenantService) ClaimTenantOwnership(ctx context.Context, input ClaimTenantOwnershipInput) (domain.Tenant, error) {
+	if input.TenantPublicID == "" {
+		return domain.Tenant{}, ErrTenantIDRequired
+	}
+
+	if input.ClaimToken == "" {
+		return domain.Tenant{}, ErrOwnershipClaimTokenRequired
+	}
+
+	subject, ok := tenantctx.SubjectFromContext(ctx)
+	if !ok {
+		return domain.Tenant{}, tenantctx.ErrSubjectMissing
+	}
+
+	var owned domain.Tenant
+
+	err := s.transactor.WithinTransaction(ctx, func(ctx context.Context) error {
+		tenant, claim, err := s.tenantRepository.FindTenantByPublicIDForUpdate(ctx, input.TenantPublicID)
+		if err != nil {
+			return err
+		}
+
+		// Evaluate every check without short-circuiting, so the response time
+		// does not reveal whether the tenant is still pending or the claim has
+		// expired; only the combined verdict is observable.
+		tokenMatches := claim.TokenHash.Matches(input.ClaimToken)
+		pending := tenant.OwnershipState() == domain.TenantOwnershipStatePendingOwner
+		expired := claim.Expired(s.now())
+
+		if !pending || expired || !tokenMatches {
+			return ErrOwnershipClaimRejected
+		}
+
+		owned, err = tenant.ClaimOwnership()
+		if err != nil {
+			return err
+		}
+
+		if err := s.memberships.AddOwner(ctx, tenant.ID(), subject); err != nil {
+			return fmt.Errorf("add owner membership: %w", err)
+		}
+
+		return s.tenantRepository.MarkTenantOwned(ctx, owned)
+	})
+	if err != nil {
+		return domain.Tenant{}, err
+	}
+
+	return owned, nil
 }
 
 // resolveTenant loads the tenant named in the request after verifying that it
 // is the tenant the caller is authenticated for. The request carries the
-// target explicitly; the claim is only used to confirm it.
+// target explicitly; the claim is only used to confirm it. A pending_owner
+// tenant accepts no business operation until its owner has claimed it.
 func (s *TenantService) resolveTenant(ctx context.Context, tenantPublicID string) (domain.Tenant, error) {
 	if tenantPublicID == "" {
 		return domain.Tenant{}, ErrTenantIDRequired
@@ -95,7 +276,16 @@ func (s *TenantService) resolveTenant(ctx context.Context, tenantPublicID string
 		return domain.Tenant{}, err
 	}
 
-	return s.tenantRepository.FindTenantByPublicID(ctx, tenantPublicID)
+	tenant, err := s.tenantRepository.FindTenantByPublicID(ctx, tenantPublicID)
+	if err != nil {
+		return domain.Tenant{}, err
+	}
+
+	if !tenant.Owned() {
+		return domain.Tenant{}, ErrTenantPendingOwner
+	}
+
+	return tenant, nil
 }
 
 // resolveEvent loads the event named in the request and verifies that it

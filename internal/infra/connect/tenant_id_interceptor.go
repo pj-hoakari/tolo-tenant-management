@@ -17,21 +17,23 @@ const (
 	internalTokenUseRegistration internalTokenUse = "registration"
 )
 
-// tenantClaimPolicy states whether a procedure needs the tenant_id claim of
-// the internal JWT to establish its tenant context.
-type tenantClaimPolicy int
+// claimPolicy states which facts a procedure takes from the internal JWT to
+// establish its request context.
+type claimPolicy int
 
 const (
-	// tenantClaimRequired: the procedure acts inside one tenant, so the claim
-	// must be present and becomes the authenticated tenant for the call.
-	tenantClaimRequired tenantClaimPolicy = iota
-	// tenantClaimOptional: the procedure may be called without tenant context
-	// (machine-origin service tokens). When the claim is present it is still
-	// honoured as the authenticated tenant.
-	tenantClaimOptional
-	// tenantClaimNone: the procedure is served without a tenant-bearing
-	// credential, so no tenant context is extracted.
-	tenantClaimNone
+	// claimPolicyNone: the procedure is unauthenticated; nothing is extracted.
+	claimPolicyNone claimPolicy = iota
+	// claimPolicySubjectOnly: the credential carries no tenant context by
+	// design (registration); only the subject is extracted.
+	claimPolicySubjectOnly
+	// claimPolicyTenantOptional: the procedure may be called without tenant
+	// context (machine-origin service tokens). When the tenant_id claim is
+	// present it is still honoured as the authenticated tenant.
+	claimPolicyTenantOptional
+	// claimPolicyTenantRequired: the procedure acts inside one tenant, so the
+	// tenant_id claim must be present and becomes the authenticated tenant.
+	claimPolicyTenantRequired
 )
 
 // TenantPublicIDFromContext returns the tenant's 16-character hexadecimal
@@ -43,8 +45,8 @@ func TenantPublicIDFromContext(ctx context.Context) (string, bool) {
 func newTenantPublicIDInterceptor(validator JWTValidator) connectrpc.Interceptor {
 	return connectrpc.UnaryInterceptorFunc(func(next connectrpc.UnaryFunc) connectrpc.UnaryFunc {
 		return func(ctx context.Context, req connectrpc.AnyRequest) (connectrpc.AnyResponse, error) {
-			policy := tenantClaimPolicyFor(req.Spec().Procedure)
-			if policy == tenantClaimNone {
+			policy := claimPolicyFor(req.Spec().Procedure)
+			if policy == claimPolicyNone {
 				return next(ctx, req)
 			}
 
@@ -53,9 +55,15 @@ func newTenantPublicIDInterceptor(validator JWTValidator) connectrpc.Interceptor
 				return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, nil)
 			}
 
+			ctx = tenantctx.WithSubject(ctx, strings.TrimSpace(claims.Subject))
+
+			if policy == claimPolicySubjectOnly {
+				return next(ctx, req)
+			}
+
 			tenantPublicID := strings.TrimSpace(claims.TenantPublicID)
 			if tenantPublicID == "" {
-				if policy == tenantClaimRequired {
+				if policy == claimPolicyTenantRequired {
 					return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, nil)
 				}
 
@@ -91,19 +99,20 @@ func hasScope(scope, requiredScope string) bool {
 	return false
 }
 
-// tenantClaimPolicyFor derives the tenant-context requirement of a procedure
-// from the service specification (tenant_management_spec.md「参照系 RPC と
-// テナント境界」). GetEvent enforces the boundary from a user-origin service
-// token; GetObservationSettings does not, because it may be reached from
-// machine-origin chains without tenant context.
-func tenantClaimPolicyFor(procedure string) tenantClaimPolicy {
+// claimPolicyFor derives the request-context requirement of a procedure from
+// the service specification (tenant_management_spec.md「参照系 RPC と
+// テナント境界」「オンボーディング」). GetEvent enforces the boundary from a
+// user-origin service token; GetObservationSettings does not, because it may
+// be reached from machine-origin chains without tenant context.
+func claimPolicyFor(procedure string) claimPolicy {
 	switch procedure {
-	case tenantv1connect.TenantServiceStartTenantRegistrationProcedure,
-		tenantv1connect.TenantServiceClaimTenantOwnershipProcedure:
-		return tenantClaimNone
+	case tenantv1connect.TenantServiceStartTenantRegistrationProcedure:
+		return claimPolicyNone
+	case tenantv1connect.TenantServiceClaimTenantOwnershipProcedure:
+		return claimPolicySubjectOnly
 	case tenantv1connect.TenantServiceGetObservationSettingsProcedure:
-		return tenantClaimOptional
+		return claimPolicyTenantOptional
 	default:
-		return tenantClaimRequired
+		return claimPolicyTenantRequired
 	}
 }

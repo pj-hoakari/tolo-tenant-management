@@ -111,6 +111,21 @@ proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16
 JWKS は `INTERNAL_JWKS_URL` から取得する。未設定時は Gateway コンテナのエンドポイント `http://gateway:8080/.well-known/jwks.json` を使う。取得した鍵は 5 分間キャッシュし、未知の `kid` を受信した場合は直ちに再取得する。
 `iss`／`aud` の期待値は `INTERNAL_JWT_ISSUER`（既定 `service-gateway`。Service Gateway の発行者識別子に合わせる）と `INTERNAL_JWT_AUDIENCE`（既定 `tolo-tenant-management`）で設定する。
 
+### テナントのオンボーディング
+
+テナントは未認証の仮登録と、認証済みユーザーによる所有権取得の二段階で作成する（`docs/tenant_management_spec.md` の「オンボーディング」）。
+
+1. `StartTenantRegistration`（未認証）が `pending_owner` のテナントを作成し、所有権取得トークンの平文をこの応答でのみ返す。永続化するのは SHA-256 ハッシュだけで、トークンの有効期限は既定 1 時間（`application.DefaultOwnershipClaimTTL`）
+2. `ClaimTenantOwnership`（`registration` トークン、scope `tenant.claim`）が、対象が期限内の `pending_owner` であることとトークンのハッシュ一致を検証し、内部 JWT の `sub` をオーナーとして所属させ、`owned` へ遷移させ、トークンを消費する。これらは 1 つの DB トランザクションで確定する
+3. 以降は `tenantId` 指定で再認可した `tenant_access` でテナント配下を操作する
+
+`pending_owner` のテナントは `ClaimTenantOwnership` 以外のテナント配下の RPC（`CreateEvent`、`ListEvents` など）を `failed_precondition` で拒否する。
+期限切れの `pending_owner` は次の `StartTenantRegistration` の際に物理削除し、その名前を解放する。
+トークンの不正・期限切れ・使用済みはいずれも `unauthenticated` で、理由は区別しない。
+
+オーナー所属の書き込みは `application.MembershipWriter` ポートを通じて関係参照側（RelationAdminService の実装）が担う。
+関係参照が未実装の間は `UnavailableMembershipWriter` を配線しており、`ClaimTenantOwnership` は `unavailable` を返してフェイルクローズする（オーナー不在の `owned` テナントを作らない）。
+
 ### テスト用内部 JWT の生成
 
 `cmd/jwtgen` は ES256 の鍵ペアを生成し、内部 JWT と対応する公開 JWKS を JSON で出力する。

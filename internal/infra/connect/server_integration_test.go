@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -115,7 +116,7 @@ func setupIntegrationDatabase() {
 		postgres.WithDatabase("tenant_management"),
 		postgres.WithUsername("tenant_management"),
 		postgres.WithPassword("tenant_management"),
-		postgres.WithInitScripts(integrationMigrationPath()),
+		postgres.WithInitScripts(integrationMigrationPaths()...),
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").
 				WithOccurrence(2).
@@ -136,11 +137,18 @@ func setupIntegrationDatabase() {
 	integrationDB, integrationSetupErr = sqlx.ConnectContext(ctx, "pgx", databaseURL)
 }
 
-func integrationMigrationPath() string {
+func integrationMigrationPaths() []string {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
 		panic("locate integration test source file")
 	}
 
-	return filepath.Join(filepath.Dir(filename), "..", "..", "..", "migrations", "000001_init.up.sql")
+	paths, err := filepath.Glob(filepath.Join(filepath.Dir(filename), "..", "..", "..", "migrations", "*.up.sql"))
+	if err != nil || len(paths) == 0 {
+		panic("locate migration files")
+	}
+
+	sort.Strings(paths)
+
+	return paths
 }

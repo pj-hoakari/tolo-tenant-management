@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	connectrpc "connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	tenantv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1"
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1/tenantv1connect"
@@ -44,12 +45,58 @@ func NewService(tenantService application.TenantUseCases) *Service {
 	}
 }
 
-func (s *Service) StartTenantRegistration(context.Context, *connectrpc.Request[tenantv1.StartTenantRegistrationRequest]) (*connectrpc.Response[tenantv1.StartTenantRegistrationResponse], error) {
-	return nil, connectrpc.NewError(connectrpc.CodeUnimplemented, errNotImplemented)
+func (s *Service) StartTenantRegistration(ctx context.Context, req *connectrpc.Request[tenantv1.StartTenantRegistrationRequest]) (*connectrpc.Response[tenantv1.StartTenantRegistrationResponse], error) {
+	registration, err := s.tenantService.StartTenantRegistration(ctx, application.StartTenantRegistrationInput{
+		Name:         req.Msg.GetName(),
+		ContractPlan: req.Msg.GetContractPlan(),
+	})
+	if err != nil {
+		if errors.Is(err, application.ErrTenantNameRequired) || errors.Is(err, application.ErrTenantContractPlanRequired) {
+			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
+		}
+
+		if errors.Is(err, repository.ErrTenantNameAlreadyExists) || errors.Is(err, repository.ErrTenantPublicIDExists) {
+			return nil, connectrpc.NewError(connectrpc.CodeAlreadyExists, err)
+		}
+
+		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
+	}
+
+	// The plaintext claim token appears in this response only; it is never
+	// persisted, logged, or echoed in errors.
+	return connectrpc.NewResponse(&tenantv1.StartTenantRegistrationResponse{
+		Tenant:              tenantProto(registration.Tenant),
+		OwnershipClaimToken: registration.ClaimToken,
+		ExpiresAt:           timestamppb.New(registration.ExpiresAt),
+	}), nil
 }
 
-func (s *Service) ClaimTenantOwnership(context.Context, *connectrpc.Request[tenantv1.ClaimTenantOwnershipRequest]) (*connectrpc.Response[tenantv1.ClaimTenantOwnershipResponse], error) {
-	return nil, connectrpc.NewError(connectrpc.CodeUnimplemented, errNotImplemented)
+func (s *Service) ClaimTenantOwnership(ctx context.Context, req *connectrpc.Request[tenantv1.ClaimTenantOwnershipRequest]) (*connectrpc.Response[tenantv1.ClaimTenantOwnershipResponse], error) {
+	tenant, err := s.tenantService.ClaimTenantOwnership(ctx, application.ClaimTenantOwnershipInput{
+		TenantPublicID: req.Msg.GetTenantId(),
+		ClaimToken:     req.Msg.GetOwnershipClaimToken(),
+	})
+	if err != nil {
+		if errors.Is(err, application.ErrTenantIDRequired) || errors.Is(err, application.ErrOwnershipClaimTokenRequired) {
+			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
+		}
+
+		if errors.Is(err, repository.ErrTenantNotFound) {
+			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
+		}
+
+		if errors.Is(err, application.ErrOwnershipClaimRejected) || errors.Is(err, tenantctx.ErrSubjectMissing) {
+			return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, err)
+		}
+
+		if errors.Is(err, application.ErrOwnerMembershipUnavailable) {
+			return nil, connectrpc.NewError(connectrpc.CodeUnavailable, err)
+		}
+
+		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
+	}
+
+	return connectrpc.NewResponse(&tenantv1.ClaimTenantOwnershipResponse{Tenant: tenantProto(tenant)}), nil
 }
 
 func (s *Service) ChangeTenantContract(context.Context, *connectrpc.Request[tenantv1.ChangeTenantContractRequest]) (*connectrpc.Response[tenantv1.ChangeTenantContractResponse], error) {
@@ -75,7 +122,7 @@ func (s *Service) CreateEvent(ctx context.Context, req *connectrpc.Request[tenan
 			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
 		}
 
-		if errors.Is(err, repository.ErrTenantArchived) {
+		if errors.Is(err, repository.ErrTenantArchived) || errors.Is(err, application.ErrTenantPendingOwner) {
 			return nil, connectrpc.NewError(connectrpc.CodeFailedPrecondition, err)
 		}
 
@@ -209,6 +256,29 @@ func (s *Service) TransitionEventStatus(ctx context.Context, req *connectrpc.Req
 	return connectrpc.NewResponse(&tenantv1.TransitionEventStatusResponse{Event: eventProto(event)}), nil
 }
 
+func tenantProto(tenant domain.Tenant) *tenantv1.Tenant {
+	return &tenantv1.Tenant{
+		TenantId:       tenant.PublicID(),
+		Name:           tenant.Name(),
+		ContractPlan:   tenant.ContractPlan(),
+		Archived:       tenant.Archived(),
+		OwnershipState: tenantOwnershipStateProto(tenant.OwnershipState()),
+	}
+}
+
+func tenantOwnershipStateProto(state domain.TenantOwnershipState) tenantv1.TenantOwnershipState {
+	switch state {
+	case domain.TenantOwnershipStateUnspecified:
+		return tenantv1.TenantOwnershipState_TENANT_OWNERSHIP_STATE_UNSPECIFIED
+	case domain.TenantOwnershipStatePendingOwner:
+		return tenantv1.TenantOwnershipState_TENANT_OWNERSHIP_STATE_PENDING_OWNER
+	case domain.TenantOwnershipStateOwned:
+		return tenantv1.TenantOwnershipState_TENANT_OWNERSHIP_STATE_OWNED
+	default:
+		return tenantv1.TenantOwnershipState_TENANT_OWNERSHIP_STATE_UNSPECIFIED
+	}
+}
+
 // eventProto maps an event to its wire representation. Only public IDs are
 // exposed; the internal primary keys never leave the service.
 func eventProto(event domain.Event) *tenantv1.Event {
@@ -259,6 +329,10 @@ func (s *Service) ListEvents(ctx context.Context, req *connectrpc.Request[tenant
 
 		if errors.Is(err, repository.ErrTenantNotFound) {
 			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
+		}
+
+		if errors.Is(err, application.ErrTenantPendingOwner) {
+			return nil, connectrpc.NewError(connectrpc.CodeFailedPrecondition, err)
 		}
 
 		if code, ok := tenantContextErrorCode(err); ok {
