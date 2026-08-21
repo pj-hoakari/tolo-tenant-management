@@ -151,5 +151,5 @@ func newReadService(t *testing.T) (*Service, domain.Tenant, []domain.Event) {
 	repository.EXPECT().ListEventsByTenantID(gomock.Any(), tenant.ID()).Return(events, nil).AnyTimes()
 	repository.EXPECT().UpdateEvent(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
-	return NewService(application.NewTenantService(repository, nil)), tenant, events
+	return NewService(application.NewTenantService(repository)), tenant, events
 }

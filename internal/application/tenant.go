@@ -4,7 +4,6 @@ package application
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/repository"
@@ -12,20 +11,11 @@ import (
 )
 
 var (
-	ErrTenantNameRequired         = errors.New("tenant name is required")
-	ErrTenantContractPlanRequired = errors.New("tenant contract plan is required")
-	ErrEventNameRequired          = errors.New("event name is required")
-	ErrEventIDRequired            = errors.New("event ID is required")
-	ErrEventTypeRequired          = errors.New("event type is required")
-	ErrEventStatusRequired        = errors.New("event status is required")
+	ErrEventNameRequired   = errors.New("event name is required")
+	ErrEventIDRequired     = errors.New("event ID is required")
+	ErrEventTypeRequired   = errors.New("event type is required")
+	ErrEventStatusRequired = errors.New("event status is required")
 )
-
-// RegisterTenantInput contains the values accepted by the RegisterTenant use
-// case.
-type RegisterTenantInput struct {
-	Name         string
-	ContractPlan string
-}
 
 // CreateEventInput contains the values accepted by the CreateEvent use case.
 type CreateEventInput struct {
@@ -43,11 +33,6 @@ type TransitionEventStatusInput struct {
 type AssignEventTypeInput struct {
 	EventPublicID string
 	Type          domain.EventType
-}
-
-// RegisterTenantUseCase registers a tenant.
-type RegisterTenantUseCase interface {
-	RegisterTenant(context.Context, RegisterTenantInput) (domain.Tenant, error)
 }
 
 // CreateEventUseCase creates an event for a tenant.
@@ -78,7 +63,6 @@ type ListEventsUseCase interface {
 // TenantUseCases groups the tenant operations exposed by the Connect
 // transport.
 type TenantUseCases interface {
-	RegisterTenantUseCase
 	CreateEventUseCase
 	AssignEventTypeUseCase
 	TransitionEventStatusUseCase
@@ -88,53 +72,11 @@ type TenantUseCases interface {
 
 // TenantService implements tenant use cases.
 type TenantService struct {
-	tenantRepository  repository.TenantRepository
-	tenantMemberships TenantMembershipService
+	tenantRepository repository.TenantRepository
 }
 
-func NewTenantService(tenantRepository repository.TenantRepository, tenantMemberships TenantMembershipService) *TenantService {
-	return &TenantService{
-		tenantRepository:  tenantRepository,
-		tenantMemberships: tenantMemberships,
-	}
-}
-
-func (s *TenantService) RegisterTenant(ctx context.Context, input RegisterTenantInput) (domain.Tenant, error) {
-	if input.Name == "" {
-		return domain.Tenant{}, ErrTenantNameRequired
-	}
-
-	if input.ContractPlan == "" {
-		return domain.Tenant{}, ErrTenantContractPlanRequired
-	}
-
-	tenantID, err := newUUIDv7()
-	if err != nil {
-		return domain.Tenant{}, err
-	}
-
-	publicID, err := newPublicID()
-	if err != nil {
-		return domain.Tenant{}, err
-	}
-
-	tenant := domain.NewTenant(tenantID, publicID, input.Name, input.ContractPlan, false)
-	if err := s.tenantRepository.CreateTenant(ctx, tenant); err != nil {
-		return domain.Tenant{}, err
-	}
-
-	if err := s.tenantMemberships.AddTenantMember(ctx, AddTenantMemberInput{
-		TenantID: tenant.ID(),
-		Role:     TenantOwnerRole,
-	}); err != nil {
-		if deleteErr := s.tenantRepository.DeleteTenant(ctx, tenant.ID()); deleteErr != nil {
-			return domain.Tenant{}, fmt.Errorf("add tenant owner: %w (compensating delete tenant: %v)", err, deleteErr)
-		}
-
-		return domain.Tenant{}, fmt.Errorf("add tenant owner: %w", err)
-	}
-
-	return tenant, nil
+func NewTenantService(tenantRepository repository.TenantRepository) *TenantService {
+	return &TenantService{tenantRepository: tenantRepository}
 }
 
 func (s *TenantService) CreateEvent(ctx context.Context, input CreateEventInput) (domain.Event, error) {

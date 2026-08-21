@@ -69,20 +69,6 @@ func (mr *MockTenantRepositoryMockRecorder) CreateTenant(arg0, arg1 any) *gomock
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateTenant", reflect.TypeOf((*MockTenantRepository)(nil).CreateTenant), arg0, arg1)
 }
 
-// DeleteTenant mocks base method.
-func (m *MockTenantRepository) DeleteTenant(arg0 context.Context, arg1 string) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteTenant", arg0, arg1)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// DeleteTenant indicates an expected call of DeleteTenant.
-func (mr *MockTenantRepositoryMockRecorder) DeleteTenant(arg0, arg1 any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteTenant", reflect.TypeOf((*MockTenantRepository)(nil).DeleteTenant), arg0, arg1)
-}
-
 // FindEventByPublicID mocks base method.
 func (m *MockTenantRepository) FindEventByPublicID(arg0 context.Context, arg1 string) (domain.Event, error) {
 	m.ctrl.T.Helper()

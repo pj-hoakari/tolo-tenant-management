@@ -92,12 +92,8 @@ func TestPostgresTenantRepositoryTenants(t *testing.T) {
 		})
 	}
 
-	if err := repository.DeleteTenant(ctx, tenant.ID()); err != nil {
-		t.Fatalf("DeleteTenant() error = %v", err)
-	}
-
-	if _, err := repository.FindTenantByID(ctx, tenant.ID()); !errors.Is(err, repositorypkg.ErrTenantNotFound) {
-		t.Errorf("FindTenantByID() error = %v, want %v", err, repositorypkg.ErrTenantNotFound)
+	if _, err := repository.FindTenantByPublicID(ctx, "tenant-999"); !errors.Is(err, repositorypkg.ErrTenantNotFound) {
+		t.Errorf("FindTenantByPublicID() error = %v, want %v", err, repositorypkg.ErrTenantNotFound)
 	}
 }
 

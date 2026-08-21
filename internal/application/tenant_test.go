@@ -14,68 +14,6 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-var errRelationUnavailable = errors.New("relation unavailable")
-
-type successfulMembershipService struct{}
-
-func (successfulMembershipService) AddTenantMember(context.Context, application.AddTenantMemberInput) error {
-	return nil
-}
-
-type failingMembershipService struct{}
-
-func (failingMembershipService) AddTenantMember(context.Context, application.AddTenantMemberInput) error {
-	return errRelationUnavailable
-}
-
-func TestRegisterTenantCompensatesWhenOwnerMembershipFails(t *testing.T) {
-	t.Parallel()
-
-	ctrl := gomock.NewController(t)
-	repository := NewMockTenantRepository(ctrl)
-
-	var createdTenant domain.Tenant
-
-	repository.EXPECT().CreateTenant(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, tenant domain.Tenant) error {
-		createdTenant = tenant
-
-		return nil
-	})
-	repository.EXPECT().DeleteTenant(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, tenantID string) error {
-		if got, want := tenantID, createdTenant.ID(); got != want {
-			t.Errorf("deleted tenant ID = %q, want %q", got, want)
-		}
-
-		return nil
-	})
-	service := application.NewTenantService(repository, failingMembershipService{})
-
-	_, err := service.RegisterTenant(context.Background(), application.RegisterTenantInput{
-		Name:         "Acme",
-		ContractPlan: "standard",
-	})
-	if !errors.Is(err, errRelationUnavailable) {
-		t.Fatalf("RegisterTenant() error = %v, want wrapping %v", err, errRelationUnavailable)
-	}
-}
-
-func TestRegisterTenantValidatesInput(t *testing.T) {
-	t.Parallel()
-
-	ctrl := gomock.NewController(t)
-	service := application.NewTenantService(NewMockTenantRepository(ctrl), successfulMembershipService{})
-
-	_, err := service.RegisterTenant(context.Background(), application.RegisterTenantInput{ContractPlan: "standard"})
-	if !errors.Is(err, application.ErrTenantNameRequired) {
-		t.Errorf("RegisterTenant() error = %v, want %v", err, application.ErrTenantNameRequired)
-	}
-
-	_, err = service.RegisterTenant(context.Background(), application.RegisterTenantInput{Name: "Acme"})
-	if !errors.Is(err, application.ErrTenantContractPlanRequired) {
-		t.Errorf("RegisterTenant() error = %v, want %v", err, application.ErrTenantContractPlanRequired)
-	}
-}
-
 func TestCreateEvent(t *testing.T) {
 	t.Parallel()
 
@@ -91,7 +29,7 @@ func TestCreateEvent(t *testing.T) {
 
 		return nil
 	})
-	service := application.NewTenantService(repo, successfulMembershipService{})
+	service := application.NewTenantService(repo)
 
 	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
 
@@ -126,7 +64,7 @@ func TestCreateEventRejectsMissingContextTenant(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	repo := NewMockTenantRepository(ctrl)
 	// A tenant-scoped operation cannot proceed without a verified JWT tenant.
-	service := application.NewTenantService(repo, successfulMembershipService{})
+	service := application.NewTenantService(repo)
 
 	_, err := service.CreateEvent(context.Background(), application.CreateEventInput{
 		Name: "Festival",
@@ -144,7 +82,7 @@ func TestTransitionEventStatusRejectsMismatchedContextTenant(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	repo := NewMockTenantRepository(ctrl)
 	repo.EXPECT().FindEventByPublicID(gomock.Any(), event.PublicID()).Return(event, nil)
-	service := application.NewTenantService(repo, successfulMembershipService{})
+	service := application.NewTenantService(repo)
 
 	ctx := tenantctx.WithTenantPublicID(context.Background(), "other-tenant-public-id")
 
@@ -172,7 +110,7 @@ func TestTransitionEventStatus(t *testing.T) {
 
 		return nil
 	})
-	service := application.NewTenantService(repo, successfulMembershipService{})
+	service := application.NewTenantService(repo)
 
 	ctx := tenantctx.WithTenantPublicID(context.Background(), event.TenantPublicID())
 
@@ -208,7 +146,7 @@ func TestAssignEventType(t *testing.T) {
 
 		return nil
 	})
-	service := application.NewTenantService(repository, successfulMembershipService{})
+	service := application.NewTenantService(repository)
 
 	ctx := tenantctx.WithTenantPublicID(context.Background(), event.TenantPublicID())
 
@@ -236,7 +174,7 @@ func TestGetEvent(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	repository := NewMockTenantRepository(ctrl)
 	repository.EXPECT().FindEventByPublicID(gomock.Any(), event.PublicID()).Return(event, nil)
-	service := application.NewTenantService(repository, successfulMembershipService{})
+	service := application.NewTenantService(repository)
 
 	found, err := service.GetEvent(context.Background(), event.PublicID())
 	if err != nil {
@@ -260,7 +198,7 @@ func TestListEvents(t *testing.T) {
 	repository := NewMockTenantRepository(ctrl)
 	repository.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(tenant, nil)
 	repository.EXPECT().ListEventsByTenantID(gomock.Any(), tenant.ID()).Return(events, nil)
-	service := application.NewTenantService(repository, successfulMembershipService{})
+	service := application.NewTenantService(repository)
 
 	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
 

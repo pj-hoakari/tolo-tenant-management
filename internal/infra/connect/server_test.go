@@ -13,7 +13,6 @@ import (
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1/tenantv1connect"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
-	"github.com/pj-hoakari/tolo-tenant-management/internal/infra"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
 )
 
@@ -34,7 +33,7 @@ func createTenant(t *testing.T, repository *db.PostgresTenantRepository, publicI
 
 func TestCreateEventOverTransport(t *testing.T) {
 	tenantRepository := newIntegrationTenantRepository(t)
-	tenantService := application.NewTenantService(tenantRepository, infra.NewRelationService())
+	tenantService := application.NewTenantService(tenantRepository)
 	handler, jwks := newDynamicTestHandler(t, tenantService)
 	httpServer := httptest.NewServer(handler)
 	t.Cleanup(httpServer.Close)
@@ -78,7 +77,7 @@ func TestCreateEventOverTransport(t *testing.T) {
 }
 
 func TestCreateEventOverTransportRejectsUnknownTenant(t *testing.T) {
-	tenantService := application.NewTenantService(newIntegrationTenantRepository(t), infra.NewRelationService())
+	tenantService := application.NewTenantService(newIntegrationTenantRepository(t))
 	handler, jwks := newDynamicTestHandler(t, tenantService)
 	httpServer := httptest.NewServer(handler)
 	t.Cleanup(httpServer.Close)
@@ -97,7 +96,7 @@ func TestCreateEventOverTransportRejectsUnknownTenant(t *testing.T) {
 }
 
 func TestCreateEventOverTransportRejectsForeignTenant(t *testing.T) {
-	tenantService := application.NewTenantService(newIntegrationTenantRepository(t), infra.NewRelationService())
+	tenantService := application.NewTenantService(newIntegrationTenantRepository(t))
 	handler, jwks := newDynamicTestHandler(t, tenantService)
 	httpServer := httptest.NewServer(handler)
 	t.Cleanup(httpServer.Close)
@@ -121,7 +120,7 @@ func TestCreateEventOverTransportRejectsForeignTenant(t *testing.T) {
 
 func TestTransitionEventStatusOverTransport(t *testing.T) {
 	tenantRepository := newIntegrationTenantRepository(t)
-	tenantService := application.NewTenantService(tenantRepository, infra.NewRelationService())
+	tenantService := application.NewTenantService(tenantRepository)
 	handler, jwks := newDynamicTestHandler(t, tenantService)
 	httpServer := httptest.NewServer(handler)
 	t.Cleanup(httpServer.Close)
@@ -185,7 +184,7 @@ func TestTransitionEventStatusOverTransport(t *testing.T) {
 }
 
 func TestTransitionEventStatusOverTransportRejectsInvalidRequest(t *testing.T) {
-	tenantService := application.NewTenantService(newIntegrationTenantRepository(t), infra.NewRelationService())
+	tenantService := application.NewTenantService(newIntegrationTenantRepository(t))
 	httpServer := httptest.NewServer(newTestHandler(t, tenantService))
 	t.Cleanup(httpServer.Close)
 	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)

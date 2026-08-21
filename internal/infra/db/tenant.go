@@ -35,12 +35,6 @@ func (r *PostgresTenantRepository) CreateTenant(ctx context.Context, tenant doma
 	return nil
 }
 
-func (r *PostgresTenantRepository) DeleteTenant(ctx context.Context, tenantID string) error {
-	_, err := r.db.ExecContext(ctx, `DELETE FROM tenants WHERE id = $1`, tenantID)
-
-	return err
-}
-
 func (r *PostgresTenantRepository) FindTenantByID(ctx context.Context, tenantID string) (domain.Tenant, error) {
 	return r.findTenant(ctx, `SELECT id, public_id, name, contract_plan, archived FROM tenants WHERE id = $1`, tenantID)
 }

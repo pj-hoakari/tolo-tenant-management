@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
-	"github.com/pj-hoakari/tolo-tenant-management/internal/infra"
 	connectinfra "github.com/pj-hoakari/tolo-tenant-management/internal/infra/connect"
 	dbinfra "github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/jwks"
@@ -63,12 +62,9 @@ func run() error {
 		}
 	}()
 
-	registerTenant := application.NewTenantService(
-		dbinfra.NewPostgresTenantRepository(db),
-		infra.NewRelationService(),
-	)
+	tenantService := application.NewTenantService(dbinfra.NewPostgresTenantRepository(db))
 
-	handler, err := connectinfra.NewHandlerWithJWKSURL(registerTenant, jwksURL)
+	handler, err := connectinfra.NewHandlerWithJWKSURL(tenantService, jwksURL)
 	if err != nil {
 		return fmt.Errorf("build handler: %w", err)
 	}

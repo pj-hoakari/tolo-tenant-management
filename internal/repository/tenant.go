@@ -25,7 +25,6 @@ var (
 // and the domain model.
 type TenantRepository interface {
 	CreateTenant(context.Context, domain.Tenant) error
-	DeleteTenant(context.Context, string) error
 	FindTenantByID(context.Context, string) (domain.Tenant, error)
 	FindTenantByPublicID(context.Context, string) (domain.Tenant, error)
 	CreateEvent(context.Context, domain.Event) error
