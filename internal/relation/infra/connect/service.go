@@ -11,6 +11,7 @@ import (
 	relationv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/relation/v1"
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/relation/v1/relationv1connect"
 	tenantconnect "github.com/pj-hoakari/tolo-tenant-management/internal/infra/connect"
+	infradb "github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/repository"
@@ -128,7 +129,9 @@ func (s *Service) ListMemberships(ctx context.Context, req *connectrpc.Request[r
 // role are invalid arguments; unknown tenants, events, and memberships are not
 // found; relation model violations and frozen (archived / pending) targets are
 // failed preconditions. A caller whose current membership no longer permits
-// the write is denied, and one without a subject is unauthenticated.
+// the write is denied, and one without a subject is unauthenticated. A
+// transaction PostgreSQL aborted is reported as aborted, which tells the
+// client the call can be retried as it stands.
 func connectError(err error) error {
 	switch {
 	case errors.Is(err, application.ErrTenantIDRequired),
@@ -160,6 +163,8 @@ func connectError(err error) error {
 	case errors.Is(err, tenantctx.ErrMissing),
 		errors.Is(err, tenantctx.ErrSubjectMissing):
 		return connectrpc.NewError(connectrpc.CodeUnauthenticated, err)
+	case errors.Is(err, infradb.ErrTransactionAborted):
+		return connectrpc.NewError(connectrpc.CodeAborted, err)
 	default:
 		return connectrpc.NewError(connectrpc.CodeInternal, err)
 	}

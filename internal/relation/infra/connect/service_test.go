@@ -3,6 +3,7 @@ package connect
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -31,6 +32,9 @@ import (
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/application"
 	relationdomain "github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	relationdb "github.com/pj-hoakari/tolo-tenant-management/internal/relation/infra/db"
+	relationrepository "github.com/pj-hoakari/tolo-tenant-management/internal/relation/repository"
+	tenantrepository "github.com/pj-hoakari/tolo-tenant-management/internal/repository"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
 
 var testDB *sqlx.DB
@@ -468,6 +472,39 @@ func (f fixture) listMemberships(t *testing.T, token, tenantPublicID string) []*
 	}
 
 	return res.Msg.GetMemberships()
+}
+
+// TestConnectError pins the code every sentinel error is answered with,
+// including the ones the transport cannot reach from a test.
+func TestConnectError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		err  error
+		want connectrpc.Code
+	}{
+		{err: application.ErrTenantIDRequired, want: connectrpc.CodeInvalidArgument},
+		{err: relationdomain.ErrRoleReserved, want: connectrpc.CodeInvalidArgument},
+		{err: relationrepository.ErrMembershipNotFound, want: connectrpc.CodeNotFound},
+		{err: relationrepository.ErrMembershipAlreadyExists, want: connectrpc.CodeFailedPrecondition},
+		{err: tenantrepository.ErrTenantArchived, want: connectrpc.CodeFailedPrecondition},
+		{err: application.ErrPermissionDenied, want: connectrpc.CodePermissionDenied},
+		{err: tenantctx.ErrMismatch, want: connectrpc.CodePermissionDenied},
+		{err: tenantctx.ErrSubjectMissing, want: connectrpc.CodeUnauthenticated},
+		{err: tenantctx.ErrMissing, want: connectrpc.CodeUnauthenticated},
+		{err: fmt.Errorf("revoke: %w", infradb.ErrTransactionAborted), want: connectrpc.CodeAborted},
+		{err: errors.New("something else"), want: connectrpc.CodeInternal},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.err.Error(), func(t *testing.T) {
+			t.Parallel()
+
+			if got := connectrpc.CodeOf(connectError(tt.err)); got != tt.want {
+				t.Errorf("connectError(%v) code = %v, want %v", tt.err, got, tt.want)
+			}
+		})
+	}
 }
 
 // membershipOf returns the listed membership of userID, or nil.

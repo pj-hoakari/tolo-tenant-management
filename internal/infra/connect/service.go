@@ -11,6 +11,7 @@ import (
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1/tenantv1connect"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/repository"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
@@ -87,6 +88,11 @@ func (s *Service) ClaimTenantOwnership(ctx context.Context, req *connectrpc.Requ
 
 		if errors.Is(err, application.ErrOwnershipClaimRejected) || errors.Is(err, tenantctx.ErrSubjectMissing) {
 			return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, err)
+		}
+
+		// The claim runs in a transaction; an aborted one can be retried.
+		if errors.Is(err, db.ErrTransactionAborted) {
+			return nil, connectrpc.NewError(connectrpc.CodeAborted, err)
 		}
 
 		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)

@@ -5,8 +5,23 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"
 )
+
+// SQLSTATEs with which PostgreSQL reports that it aborted the transaction
+// itself rather than the statement failing on its own terms.
+const (
+	sqlStateSerializationFailure = "40001"
+	sqlStateDeadlockDetected     = "40P01"
+)
+
+// ErrTransactionAborted means PostgreSQL aborted the transaction because of a
+// deadlock or a serialization failure. No work of the transaction was kept and
+// nothing is wrong with the request itself, so the operation can be retried.
+// It is joined to the error that failed, which stays available to errors.Is
+// and errors.As.
+var ErrTransactionAborted = errors.New("transaction aborted; retry")
 
 type transactionKey struct{}
 
@@ -27,6 +42,10 @@ func RunInTransaction(ctx context.Context, pool *sqlx.DB, fn func(context.Contex
 	}
 
 	if err := fn(context.WithValue(ctx, transactionKey{}, tx)); err != nil {
+		if isTransactionAbort(err) {
+			err = errors.Join(err, ErrTransactionAborted)
+		}
+
 		if rollbackErr := tx.Rollback(); rollbackErr != nil {
 			return errors.Join(err, fmt.Errorf("rollback transaction: %w", rollbackErr))
 		}
@@ -45,6 +64,18 @@ func RunInTransaction(ctx context.Context, pool *sqlx.DB, fn func(context.Contex
 // repository holds. See RunInTransaction.
 func (r *PostgresTenantRepository) WithinTransaction(ctx context.Context, fn func(context.Context) error) error {
 	return RunInTransaction(ctx, r.db, fn)
+}
+
+// isTransactionAbort reports whether err carries a PostgreSQL error with which
+// the server aborted the transaction, so that the caller can be told to retry
+// instead of being handed an opaque failure.
+func isTransactionAbort(err error) bool {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return false
+	}
+
+	return pgErr.Code == sqlStateSerializationFailure || pgErr.Code == sqlStateDeadlockDetected
 }
 
 func transactionFromContext(ctx context.Context) (*sqlx.Tx, bool) {
