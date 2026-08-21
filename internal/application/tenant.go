@@ -20,6 +20,9 @@ var (
 	ErrEventIDRequired            = errors.New("event ID is required")
 	ErrEventTypeRequired          = errors.New("event type is required")
 	ErrEventStatusRequired        = errors.New("event status is required")
+	// ErrTenantPendingOwner rejects business operations on a tenant whose
+	// owner has not claimed it yet.
+	ErrTenantPendingOwner = errors.New("tenant is pending an owner")
 )
 
 // DefaultOwnershipClaimTTL is how long a pending_owner tenant waits for
@@ -183,7 +186,8 @@ func (s *TenantService) StartTenantRegistration(ctx context.Context, input Start
 
 // resolveTenant loads the tenant named in the request after verifying that it
 // is the tenant the caller is authenticated for. The request carries the
-// target explicitly; the claim is only used to confirm it.
+// target explicitly; the claim is only used to confirm it. A pending_owner
+// tenant accepts no business operation until its owner has claimed it.
 func (s *TenantService) resolveTenant(ctx context.Context, tenantPublicID string) (domain.Tenant, error) {
 	if tenantPublicID == "" {
 		return domain.Tenant{}, ErrTenantIDRequired
@@ -193,7 +197,16 @@ func (s *TenantService) resolveTenant(ctx context.Context, tenantPublicID string
 		return domain.Tenant{}, err
 	}
 
-	return s.tenantRepository.FindTenantByPublicID(ctx, tenantPublicID)
+	tenant, err := s.tenantRepository.FindTenantByPublicID(ctx, tenantPublicID)
+	if err != nil {
+		return domain.Tenant{}, err
+	}
+
+	if !tenant.Owned() {
+		return domain.Tenant{}, ErrTenantPendingOwner
+	}
+
+	return tenant, nil
 }
 
 // resolveEvent loads the event named in the request and verifies that it

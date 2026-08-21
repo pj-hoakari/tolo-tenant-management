@@ -113,6 +113,34 @@ func TestStartTenantRegistrationOverTransport(t *testing.T) {
 	})
 }
 
+func TestPendingOwnerTenantRejectsTenantScopedCalls(t *testing.T) {
+	fixture := newTransportFixture(t)
+
+	res, err := fixture.client.StartTenantRegistration(context.Background(), connectrpc.NewRequest(&tenantv1.StartTenantRegistrationRequest{Name: "Acme", ContractPlan: "standard"}))
+	if err != nil {
+		t.Fatalf("StartTenantRegistration() error = %v", err)
+	}
+
+	tenantID := res.Msg.GetTenant().GetTenantId()
+	token := mintTenantAccessToken(t, fixture.jwks, tenantID)
+
+	createReq := connectrpc.NewRequest(&tenantv1.CreateEventRequest{TenantId: tenantID, Name: "Festival"})
+	createReq.Header().Set("Authorization", token)
+
+	_, err = fixture.client.CreateEvent(context.Background(), createReq)
+	if got, want := connectrpc.CodeOf(err), connectrpc.CodeFailedPrecondition; got != want {
+		t.Errorf("CreateEvent() error code = %v, want %v", got, want)
+	}
+
+	listReq := connectrpc.NewRequest(&tenantv1.ListEventsRequest{TenantId: tenantID})
+	listReq.Header().Set("Authorization", token)
+
+	_, err = fixture.client.ListEvents(context.Background(), listReq)
+	if got, want := connectrpc.CodeOf(err), connectrpc.CodeFailedPrecondition; got != want {
+		t.Errorf("ListEvents() error code = %v, want %v", got, want)
+	}
+}
+
 func TestStartTenantRegistrationOverTransportReleasesExpiredNames(t *testing.T) {
 	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
 	fixture := newTransportFixture(t, application.WithClock(func() time.Time { return now }), application.WithOwnershipClaimTTL(time.Hour))

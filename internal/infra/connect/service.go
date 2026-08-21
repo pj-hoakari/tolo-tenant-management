@@ -98,7 +98,7 @@ func (s *Service) CreateEvent(ctx context.Context, req *connectrpc.Request[tenan
 			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
 		}
 
-		if errors.Is(err, repository.ErrTenantArchived) {
+		if errors.Is(err, repository.ErrTenantArchived) || errors.Is(err, application.ErrTenantPendingOwner) {
 			return nil, connectrpc.NewError(connectrpc.CodeFailedPrecondition, err)
 		}
 
@@ -305,6 +305,10 @@ func (s *Service) ListEvents(ctx context.Context, req *connectrpc.Request[tenant
 
 		if errors.Is(err, repository.ErrTenantNotFound) {
 			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
+		}
+
+		if errors.Is(err, application.ErrTenantPendingOwner) {
+			return nil, connectrpc.NewError(connectrpc.CodeFailedPrecondition, err)
 		}
 
 		if code, ok := tenantContextErrorCode(err); ok {

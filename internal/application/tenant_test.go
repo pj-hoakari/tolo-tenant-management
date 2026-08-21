@@ -96,6 +96,23 @@ func TestCreateEventRequiresTenantID(t *testing.T) {
 	}
 }
 
+func TestCreateEventRejectsPendingOwnerTenant(t *testing.T) {
+	t.Parallel()
+
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStatePendingOwner, false)
+	ctrl := gomock.NewController(t)
+	repo := NewMockTenantRepository(ctrl)
+	repo.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(tenant, nil)
+	service := application.NewTenantService(repo)
+
+	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
+
+	_, err := service.CreateEvent(ctx, application.CreateEventInput{TenantPublicID: tenant.PublicID(), Name: "Festival"})
+	if !errors.Is(err, application.ErrTenantPendingOwner) {
+		t.Fatalf("CreateEvent() error = %v, want %v", err, application.ErrTenantPendingOwner)
+	}
+}
+
 func TestCreateEventRejectsMissingContextTenant(t *testing.T) {
 	t.Parallel()
 
