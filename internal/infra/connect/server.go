@@ -31,15 +31,20 @@ func DefaultJWTSettings() JWTSettings {
 	}
 }
 
-func NewHandler(tenantService application.TenantUseCases) (http.Handler, error) {
-	return NewHandlerWithJWTSettings(tenantService, DefaultJWTSettings())
+// Mount registers one more Connect service on the mux. The validator and the
+// interceptors are the ones TenantService runs with, so every service in the
+// process verifies credentials and establishes request context the same way.
+type Mount func(mux *http.ServeMux, validator JWTValidator, interceptors ...connectrpc.Interceptor)
+
+func NewHandler(tenantService application.TenantUseCases, mounts ...Mount) (http.Handler, error) {
+	return NewHandlerWithJWTSettings(tenantService, DefaultJWTSettings(), mounts...)
 }
 
-func NewHandlerWithJWTSettings(tenantService application.TenantUseCases, settings JWTSettings) (http.Handler, error) {
-	return NewHandlerWithValidator(tenantService, jwks.NewJWKSValidator(settings.JWKSURL, settings.Issuer, settings.Audience))
+func NewHandlerWithJWTSettings(tenantService application.TenantUseCases, settings JWTSettings, mounts ...Mount) (http.Handler, error) {
+	return NewHandlerWithValidator(tenantService, jwks.NewJWKSValidator(settings.JWKSURL, settings.Issuer, settings.Audience), mounts...)
 }
 
-func NewHandlerWithValidator(tenantService application.TenantUseCases, validator JWTValidator) (http.Handler, error) {
+func NewHandlerWithValidator(tenantService application.TenantUseCases, validator JWTValidator, mounts ...Mount) (http.Handler, error) {
 	// The caller sits behind the Service Gateway, so an incoming trace context is
 	// trusted and continued instead of being demoted to a span link.
 	tracing, err := otelconnect.NewInterceptor(otelconnect.WithTrustRemote())
@@ -47,15 +52,21 @@ func NewHandlerWithValidator(tenantService application.TenantUseCases, validator
 		return nil, fmt.Errorf("create tracing interceptor: %w", err)
 	}
 
+	interceptors := []connectrpc.Interceptor{tracing, NewClaimInterceptor(validator)}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealthz)
 
 	path, handler := tenantv1connect.NewTenantServiceHandlerWithAuthz(
 		NewService(tenantService),
 		newTenantAuthzVerifier(validator),
-		connectrpc.WithInterceptors(tracing, newTenantPublicIDInterceptor(validator)),
+		connectrpc.WithInterceptors(interceptors...),
 	)
 	mux.Handle(path, handler)
+
+	for _, mount := range mounts {
+		mount(mux, validator, interceptors...)
+	}
 
 	return mux, nil
 }
