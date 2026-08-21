@@ -66,6 +66,49 @@ func (f transportFixture) createEvent(t *testing.T, token string, tenantPublicID
 	return res.Msg.GetEvent()
 }
 
+func TestStartTenantRegistrationAcceptsUnauthenticatedRequests(t *testing.T) {
+	fixture := newTransportFixture(t)
+
+	// The public RPC must pass both the authz verifier and the tenant ID
+	// interceptor without a bearer token. The use case itself is not
+	// implemented yet, so the handler stub answers.
+	_, err := fixture.client.StartTenantRegistration(context.Background(), connectrpc.NewRequest(&tenantv1.StartTenantRegistrationRequest{Name: "Acme", ContractPlan: "standard"}))
+	if got, want := connectrpc.CodeOf(err), connectrpc.CodeUnimplemented; got != want {
+		t.Fatalf("StartTenantRegistration() error code = %v, want %v", got, want)
+	}
+}
+
+func TestClaimTenantOwnershipRequiresRegistrationToken(t *testing.T) {
+	fixture := newTransportFixture(t)
+
+	t.Run("rejects missing bearer token", func(t *testing.T) {
+		_, err := fixture.client.ClaimTenantOwnership(context.Background(), connectrpc.NewRequest(&tenantv1.ClaimTenantOwnershipRequest{}))
+		if got, want := connectrpc.CodeOf(err), connectrpc.CodeUnauthenticated; got != want {
+			t.Fatalf("ClaimTenantOwnership() error code = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("rejects tenant_access token", func(t *testing.T) {
+		req := connectrpc.NewRequest(&tenantv1.ClaimTenantOwnershipRequest{})
+		req.Header().Set("Authorization", internalJWTs(t).tenantAccess)
+
+		_, err := fixture.client.ClaimTenantOwnership(context.Background(), req)
+		if got, want := connectrpc.CodeOf(err), connectrpc.CodeUnauthenticated; got != want {
+			t.Fatalf("ClaimTenantOwnership() error code = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("accepts registration token", func(t *testing.T) {
+		req := connectrpc.NewRequest(&tenantv1.ClaimTenantOwnershipRequest{})
+		req.Header().Set("Authorization", internalJWTs(t).registration)
+
+		_, err := fixture.client.ClaimTenantOwnership(context.Background(), req)
+		if got, want := connectrpc.CodeOf(err), connectrpc.CodeUnimplemented; got != want {
+			t.Fatalf("ClaimTenantOwnership() error code = %v, want %v", got, want)
+		}
+	})
+}
+
 func TestCreateEventOverTransport(t *testing.T) {
 	fixture := newTransportFixture(t)
 	tenant := fixture.createTenant(t, "0123456789abcdef", "Event Host")
@@ -179,6 +222,51 @@ func TestListEventsOverTransport(t *testing.T) {
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodePermissionDenied; got != want {
 		t.Fatalf("ListEvents(foreign tenant) error code = %v, want %v", got, want)
 	}
+}
+
+func TestGetEventOverTransport(t *testing.T) {
+	fixture := newTransportFixture(t)
+	tenant := fixture.createTenant(t, "0123456789abcdef", "Get Host")
+	token := mintTenantAccessToken(t, fixture.jwks, tenant.PublicID())
+	created := fixture.createEvent(t, token, tenant.PublicID(), "Festival")
+
+	t.Run("rejects tenant_access token", func(t *testing.T) {
+		req := connectrpc.NewRequest(&tenantv1.GetEventRequest{EventId: created.GetEventId()})
+		req.Header().Set("Authorization", token)
+
+		_, err := fixture.client.GetEvent(context.Background(), req)
+		if got, want := connectrpc.CodeOf(err), connectrpc.CodeUnauthenticated; got != want {
+			t.Fatalf("GetEvent() error code = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("returns the event by public ID", func(t *testing.T) {
+		req := connectrpc.NewRequest(&tenantv1.GetEventRequest{EventId: created.GetEventId()})
+		req.Header().Set("Authorization", internalJWTs(t).service)
+
+		res, err := fixture.client.GetEvent(context.Background(), req)
+		if err != nil {
+			t.Fatalf("GetEvent() error = %v", err)
+		}
+
+		if got, want := res.Msg.GetEvent().GetEventId(), created.GetEventId(); got != want {
+			t.Errorf("Event.EventId = %q, want %q", got, want)
+		}
+
+		if got, want := res.Msg.GetEvent().GetTenantId(), tenant.PublicID(); got != want {
+			t.Errorf("Event.TenantId = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("reports unknown public IDs as not found", func(t *testing.T) {
+		req := connectrpc.NewRequest(&tenantv1.GetEventRequest{EventId: "0000000000000000"})
+		req.Header().Set("Authorization", internalJWTs(t).service)
+
+		_, err := fixture.client.GetEvent(context.Background(), req)
+		if got, want := connectrpc.CodeOf(err), connectrpc.CodeNotFound; got != want {
+			t.Fatalf("GetEvent() error code = %v, want %v", got, want)
+		}
+	})
 }
 
 func TestTransitionEventStatusOverTransport(t *testing.T) {

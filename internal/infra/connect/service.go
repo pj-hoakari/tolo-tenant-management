@@ -44,6 +44,14 @@ func NewService(tenantService application.TenantUseCases) *Service {
 	}
 }
 
+func (s *Service) StartTenantRegistration(context.Context, *connectrpc.Request[tenantv1.StartTenantRegistrationRequest]) (*connectrpc.Response[tenantv1.StartTenantRegistrationResponse], error) {
+	return nil, connectrpc.NewError(connectrpc.CodeUnimplemented, errNotImplemented)
+}
+
+func (s *Service) ClaimTenantOwnership(context.Context, *connectrpc.Request[tenantv1.ClaimTenantOwnershipRequest]) (*connectrpc.Response[tenantv1.ClaimTenantOwnershipResponse], error) {
+	return nil, connectrpc.NewError(connectrpc.CodeUnimplemented, errNotImplemented)
+}
+
 func (s *Service) ChangeTenantContract(context.Context, *connectrpc.Request[tenantv1.ChangeTenantContractRequest]) (*connectrpc.Response[tenantv1.ChangeTenantContractResponse], error) {
 	return nil, connectrpc.NewError(connectrpc.CodeUnimplemented, errNotImplemented)
 }
@@ -232,6 +240,14 @@ func (s *Service) GetEvent(ctx context.Context, req *connectrpc.Request[tenantv1
 	}
 
 	return connectrpc.NewResponse(&tenantv1.GetEventResponse{Event: eventProto(event)}), nil
+}
+
+func (s *Service) GetObservationSettings(context.Context, *connectrpc.Request[tenantv1.GetObservationSettingsRequest]) (*connectrpc.Response[tenantv1.GetObservationSettingsResponse], error) {
+	return nil, connectrpc.NewError(connectrpc.CodeUnimplemented, errNotImplemented)
+}
+
+func (s *Service) UpdateObservationSettings(context.Context, *connectrpc.Request[tenantv1.UpdateObservationSettingsRequest]) (*connectrpc.Response[tenantv1.UpdateObservationSettingsResponse], error) {
+	return nil, connectrpc.NewError(connectrpc.CodeUnimplemented, errNotImplemented)
 }
 
 func (s *Service) ListEvents(ctx context.Context, req *connectrpc.Request[tenantv1.ListEventsRequest]) (*connectrpc.Response[tenantv1.ListEventsResponse], error) {
