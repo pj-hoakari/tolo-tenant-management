@@ -8,15 +8,17 @@ import (
 	"os"
 	"time"
 
+	"github.com/pj-hoakari/tolo-tenant-management/internal/jwks"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/jwtgen"
 )
 
 func main() {
-	issuer := flag.String("issuer", "api-gateway", "internal JWT issuer")
-	audience := flag.String("audience", "tolo-tenant-management", "internal JWT audience")
-	tokenUse := flag.String("token-use", "tenant_access", "token use: tenant_access, service, or registration")
-	tenantPublicID := flag.String("tenant-public-id", "", "tenant public ID (16-character hex; required for tenant_access)")
-	scope := flag.String("scope", "events.read", "space-delimited scopes")
+	issuer := flag.String("issuer", jwks.DefaultInternalJWTIssuer, "internal JWT issuer (the Service Gateway's issuer identifier)")
+	audience := flag.String("audience", jwks.DefaultInternalJWTAudience, "internal JWT audience")
+	tokenUse := flag.String("token-use", jwtgen.TokenUseTenantAccess, "token use: tenant_access, service, or registration")
+	tenantPublicID := flag.String("tenant-public-id", "", "tenant public ID (16-character hex; required for tenant_access, optional for a user-origin service token)")
+	scope := flag.String("scope", "", "space-delimited scopes (required for tenant_access, registration, and a user-origin service token)")
+	originSub := flag.String("origin-sub", "", "origin user ID; turns a service token into a user-origin re-issue")
 	kid := flag.String("kid", "test-key", "JWK key ID")
 	ttl := flag.Duration("ttl", 2*time.Minute, "token lifetime")
 
@@ -24,7 +26,7 @@ func main() {
 
 	output, err := jwtgen.Generate(jwtgen.Config{
 		Issuer: *issuer, Audience: *audience, TokenUse: *tokenUse,
-		TenantPublicID: *tenantPublicID, Scope: *scope, KeyID: *kid, TTL: *ttl,
+		TenantPublicID: *tenantPublicID, Scope: *scope, OriginSub: *originSub, KeyID: *kid, TTL: *ttl,
 	})
 	if err != nil {
 		log.Print("jwtgen: ", err)

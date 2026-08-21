@@ -198,14 +198,15 @@ func (s *TenantService) AssignEventType(ctx context.Context, input AssignEventTy
 	return updatedEvent, nil
 }
 
-// GetEvent serves the service-to-service referential-integrity read. The
-// tenant boundary for this read is enforced by the transport layer.
+// GetEvent serves the service-to-service referential-integrity read. It
+// enforces the tenant boundary: the caller's tenant context (from the service
+// token's tenant_id claim) must match the event's tenant.
 func (s *TenantService) GetEvent(ctx context.Context, eventPublicID string) (domain.Event, error) {
 	if eventPublicID == "" {
 		return domain.Event{}, ErrEventIDRequired
 	}
 
-	return s.tenantRepository.FindEventByPublicID(ctx, eventPublicID)
+	return s.resolveEvent(ctx, eventPublicID)
 }
 
 func (s *TenantService) ListEvents(ctx context.Context, tenantPublicID string) ([]domain.Event, error) {

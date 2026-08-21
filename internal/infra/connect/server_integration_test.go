@@ -13,10 +13,16 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/jwks"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/jwtgen"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
+)
+
+const (
+	internalJWTIssuer   = jwks.DefaultInternalJWTIssuer
+	internalJWTAudience = jwks.DefaultInternalJWTAudience
 )
 
 type testInternalJWTs struct {

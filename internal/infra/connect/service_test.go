@@ -82,7 +82,9 @@ func TestGetEvent(t *testing.T) {
 
 	service, _, events := newReadService(t)
 
-	response, err := service.GetEvent(context.Background(), connectrpc.NewRequest(&tenantv1.GetEventRequest{EventId: events[0].PublicID()}))
+	ctx := tenantctx.WithTenantPublicID(context.Background(), events[0].TenantPublicID())
+
+	response, err := service.GetEvent(ctx, connectrpc.NewRequest(&tenantv1.GetEventRequest{EventId: events[0].PublicID()}))
 	if err != nil {
 		t.Fatalf("GetEvent() error = %v", err)
 	}

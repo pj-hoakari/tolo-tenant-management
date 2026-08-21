@@ -35,7 +35,11 @@ func run() error {
 	defer stop()
 
 	addr := getenv("SERVER_ADDR", defaultAddr)
-	jwksURL := getenv("INTERNAL_JWKS_URL", jwks.DefaultInternalJWKSURL)
+	jwtSettings := connectinfra.JWTSettings{
+		JWKSURL:  getenv("INTERNAL_JWKS_URL", jwks.DefaultInternalJWKSURL),
+		Issuer:   getenv("INTERNAL_JWT_ISSUER", jwks.DefaultInternalJWTIssuer),
+		Audience: getenv("INTERNAL_JWT_AUDIENCE", jwks.DefaultInternalJWTAudience),
+	}
 
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
@@ -64,7 +68,7 @@ func run() error {
 
 	tenantService := application.NewTenantService(dbinfra.NewPostgresTenantRepository(db))
 
-	handler, err := connectinfra.NewHandlerWithJWKSURL(tenantService, jwksURL)
+	handler, err := connectinfra.NewHandlerWithJWTSettings(tenantService, jwtSettings)
 	if err != nil {
 		return fmt.Errorf("build handler: %w", err)
 	}

@@ -51,12 +51,40 @@ func newDynamicTestHandler(t *testing.T, service application.TenantUseCases) (ht
 	}))
 	t.Cleanup(server.Close)
 
-	handler, err := NewHandlerWithJWKSURL(service, server.URL)
+	settings := DefaultJWTSettings()
+	settings.JWKSURL = server.URL
+
+	handler, err := NewHandlerWithJWTSettings(service, settings)
 	if err != nil {
-		t.Fatalf("NewHandlerWithJWKSURL() error = %v", err)
+		t.Fatalf("NewHandlerWithJWTSettings() error = %v", err)
 	}
 
 	return handler, registry
+}
+
+// mintServiceToken issues a user-origin service internal JWT whose tenant_id
+// claim is tenantPublicID, as the Service Gateway re-issues it for a call made
+// on behalf of a user inside that tenant.
+func mintServiceToken(t *testing.T, registry *jwksRegistry, tenantPublicID string) string {
+	t.Helper()
+
+	output, err := jwtgen.Generate(jwtgen.Config{
+		Issuer:         internalJWTIssuer,
+		Audience:       internalJWTAudience,
+		TokenUse:       jwtgen.TokenUseService,
+		TenantPublicID: tenantPublicID,
+		Scope:          "events.read",
+		OriginSub:      "user-" + tenantPublicID,
+		KeyID:          "service-key-" + tenantPublicID,
+		TTL:            time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("generate service token: %v", err)
+	}
+
+	registry.add(output.JWKS.Keys...)
+
+	return "Bearer " + output.Token
 }
 
 // mintTenantAccessToken issues a tenant_access internal JWT whose tenant_id

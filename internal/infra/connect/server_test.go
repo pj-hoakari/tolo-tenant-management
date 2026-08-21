@@ -227,22 +227,13 @@ func TestListEventsOverTransport(t *testing.T) {
 func TestGetEventOverTransport(t *testing.T) {
 	fixture := newTransportFixture(t)
 	tenant := fixture.createTenant(t, "0123456789abcdef", "Get Host")
+	other := fixture.createTenant(t, "fedcba9876543210", "Other Tenant")
 	token := mintTenantAccessToken(t, fixture.jwks, tenant.PublicID())
 	created := fixture.createEvent(t, token, tenant.PublicID(), "Festival")
 
-	t.Run("rejects tenant_access token", func(t *testing.T) {
+	t.Run("returns the event to a service token of its tenant", func(t *testing.T) {
 		req := connectrpc.NewRequest(&tenantv1.GetEventRequest{EventId: created.GetEventId()})
-		req.Header().Set("Authorization", token)
-
-		_, err := fixture.client.GetEvent(context.Background(), req)
-		if got, want := connectrpc.CodeOf(err), connectrpc.CodeUnauthenticated; got != want {
-			t.Fatalf("GetEvent() error code = %v, want %v", got, want)
-		}
-	})
-
-	t.Run("returns the event by public ID", func(t *testing.T) {
-		req := connectrpc.NewRequest(&tenantv1.GetEventRequest{EventId: created.GetEventId()})
-		req.Header().Set("Authorization", internalJWTs(t).service)
+		req.Header().Set("Authorization", mintServiceToken(t, fixture.jwks, tenant.PublicID()))
 
 		res, err := fixture.client.GetEvent(context.Background(), req)
 		if err != nil {
@@ -258,15 +249,44 @@ func TestGetEventOverTransport(t *testing.T) {
 		}
 	})
 
-	t.Run("reports unknown public IDs as not found", func(t *testing.T) {
-		req := connectrpc.NewRequest(&tenantv1.GetEventRequest{EventId: "0000000000000000"})
-		req.Header().Set("Authorization", internalJWTs(t).service)
+	tests := []struct {
+		name    string
+		eventID string
+		token   string
+		want    connectrpc.Code
+	}{
+		{name: "rejects tenant_access token", eventID: created.GetEventId(), token: token, want: connectrpc.CodeUnauthenticated},
+		{name: "rejects service token without tenant context", eventID: created.GetEventId(), token: internalJWTs(t).service, want: connectrpc.CodeUnauthenticated},
+		{name: "rejects service token of another tenant", eventID: created.GetEventId(), token: mintServiceToken(t, fixture.jwks, other.PublicID()), want: connectrpc.CodePermissionDenied},
+		{name: "reports unknown public IDs as not found", eventID: "0000000000000000", token: mintServiceToken(t, fixture.jwks, tenant.PublicID()), want: connectrpc.CodeNotFound},
+	}
 
-		_, err := fixture.client.GetEvent(context.Background(), req)
-		if got, want := connectrpc.CodeOf(err), connectrpc.CodeNotFound; got != want {
-			t.Fatalf("GetEvent() error code = %v, want %v", got, want)
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := connectrpc.NewRequest(&tenantv1.GetEventRequest{EventId: tt.eventID})
+			req.Header().Set("Authorization", tt.token)
+
+			_, err := fixture.client.GetEvent(context.Background(), req)
+			if got := connectrpc.CodeOf(err); got != tt.want {
+				t.Fatalf("GetEvent() error code = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetObservationSettingsOverTransportAcceptsMachineOriginServiceToken(t *testing.T) {
+	fixture := newTransportFixture(t)
+
+	// The boundary is not enforced for this read, so a service token without
+	// tenant context passes authentication and reaches the (still
+	// unimplemented) handler.
+	req := connectrpc.NewRequest(&tenantv1.GetObservationSettingsRequest{EventId: "0000000000000000"})
+	req.Header().Set("Authorization", internalJWTs(t).service)
+
+	_, err := fixture.client.GetObservationSettings(context.Background(), req)
+	if got, want := connectrpc.CodeOf(err), connectrpc.CodeUnimplemented; got != want {
+		t.Fatalf("GetObservationSettings() error code = %v, want %v", got, want)
+	}
 }
 
 func TestTransitionEventStatusOverTransport(t *testing.T) {

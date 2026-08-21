@@ -6,19 +6,37 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
+const (
+	TokenUseTenantAccess = "tenant_access"
+	TokenUseService      = "service"
+	TokenUseRegistration = "registration"
+)
+
+// Config describes the internal JWT to mint.
+//
+// The claim set follows the origin of the token (internal_jwt.md):
+//   - tenant_access and registration are entrance conversions and carry scope
+//     and src_jti. tenant_access additionally carries tenant_id.
+//   - service with OriginSub is a user-origin re-issue: it carries scope,
+//     src_jti, origin_sub, and optionally tenant_id copied from the context.
+//   - service without OriginSub is a machine-origin issue: it carries none of
+//     scope, src_jti, origin_sub, or tenant_id.
 type Config struct {
 	Issuer         string
 	Audience       string
 	TokenUse       string
 	TenantPublicID string
 	Scope          string
+	OriginSub      string
 	KeyID          string
 	TTL            time.Duration
 }
@@ -45,25 +63,23 @@ type JWK struct {
 type claims struct {
 	jwt.RegisteredClaims
 	TokenUse  string `json:"token_use"`
-	Scope     string `json:"scope"`
 	ClientID  string `json:"client_id"`
-	SourceJTI string `json:"src_jti"`
-	// TenantPublicID is serialized as tenant_id for compatibility with the
-	// internal JWT claim contract. It is a 16-character hexadecimal public ID.
+	Txn       string `json:"txn"`
+	Scope     string `json:"scope,omitempty"`
+	SourceJTI string `json:"src_jti,omitempty"`
+	OriginSub string `json:"origin_sub,omitempty"`
+	// TenantPublicID is serialized as tenant_id. It is the tenant's
+	// 16-character hexadecimal public ID.
 	TenantPublicID string `json:"tenant_id,omitempty"`
 }
 
 func Generate(config Config) (Output, error) {
 	if config.TTL <= 0 {
-		return Output{}, fmt.Errorf("ttl must be positive")
+		return Output{}, errors.New("ttl must be positive")
 	}
 
-	if config.TokenUse != "tenant_access" && config.TokenUse != "service" && config.TokenUse != "registration" {
-		return Output{}, fmt.Errorf("unsupported token use %q", config.TokenUse)
-	}
-
-	if config.TokenUse == "tenant_access" && strings.TrimSpace(config.TenantPublicID) == "" {
-		return Output{}, fmt.Errorf("tenant-public-id is required for tenant_access")
+	if err := validateConfig(config); err != nil {
+		return Output{}, err
 	}
 
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -71,8 +87,13 @@ func Generate(config Config) (Output, error) {
 		return Output{}, fmt.Errorf("generate key: %w", err)
 	}
 
+	txn, err := uuid.NewV7()
+	if err != nil {
+		return Output{}, fmt.Errorf("generate txn: %w", err)
+	}
+
 	now := time.Now()
-	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims{
+	tokenClaims := claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    config.Issuer,
 			Subject:   "test-subject",
@@ -83,11 +104,22 @@ func Generate(config Config) (Output, error) {
 			ID:        "test-jti",
 		},
 		TokenUse:       config.TokenUse,
-		Scope:          config.Scope,
 		ClientID:       "test-client",
-		SourceJTI:      "test-source-jti",
-		TenantPublicID: config.TenantPublicID,
-	})
+		Txn:            txn.String(),
+		Scope:          "",
+		SourceJTI:      "",
+		OriginSub:      "",
+		TenantPublicID: "",
+	}
+
+	if config.TokenUse != TokenUseService || config.OriginSub != "" {
+		tokenClaims.Scope = config.Scope
+		tokenClaims.SourceJTI = "test-source-jti"
+		tokenClaims.OriginSub = config.OriginSub
+		tokenClaims.TenantPublicID = config.TenantPublicID
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodES256, tokenClaims)
 	token.Header["kid"] = config.KeyID
 
 	signed, err := token.SignedString(privateKey)
@@ -116,4 +148,53 @@ func Generate(config Config) (Output, error) {
 			Y:         base64.RawURLEncoding.EncodeToString(publicKey[33:]),
 		}}},
 	}, nil
+}
+
+func validateConfig(config Config) error {
+	hasTenant := strings.TrimSpace(config.TenantPublicID) != ""
+	hasScope := strings.TrimSpace(config.Scope) != ""
+	hasOriginSub := strings.TrimSpace(config.OriginSub) != ""
+
+	switch config.TokenUse {
+	case TokenUseTenantAccess:
+		if !hasTenant {
+			return errors.New("tenant-public-id is required for tenant_access")
+		}
+
+		if !hasScope {
+			return errors.New("scope is required for tenant_access")
+		}
+
+		if hasOriginSub {
+			return errors.New("origin-sub is only valid for service")
+		}
+	case TokenUseRegistration:
+		if hasTenant {
+			return errors.New("registration must not carry tenant-public-id")
+		}
+
+		if !hasScope {
+			return errors.New("scope is required for registration")
+		}
+
+		if hasOriginSub {
+			return errors.New("origin-sub is only valid for service")
+		}
+	case TokenUseService:
+		if hasOriginSub {
+			if !hasScope {
+				return errors.New("scope is required for a user-origin service token")
+			}
+
+			return nil
+		}
+
+		if hasScope || hasTenant {
+			return errors.New("a machine-origin service token carries neither scope nor tenant-public-id; set origin-sub for a user-origin token")
+		}
+	default:
+		return fmt.Errorf("unsupported token use %q", config.TokenUse)
+	}
+
+	return nil
 }
