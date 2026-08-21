@@ -567,10 +567,11 @@ func TestClaimTenantOwnershipDoesNotMarkOwnedWhenMembershipFails(t *testing.T) {
 	repo := NewMockTenantRepository(ctrl)
 	repo.EXPECT().FindTenantByPublicIDForUpdate(gomock.Any(), pending.PublicID()).Return(pending, domain.OwnershipClaim{TokenHash: hash, ExpiresAt: now.Add(time.Hour)}, nil)
 	// MarkTenantOwned must not be called: the transaction fails before it.
-	service := application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{err: application.ErrOwnerMembershipUnavailable}, application.WithClock(func() time.Time { return now }))
+	errStore := errors.New("membership store down")
+	service := application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{err: errStore}, application.WithClock(func() time.Time { return now }))
 
 	_, err = service.ClaimTenantOwnership(tenantctx.WithSubject(context.Background(), "user-1"), application.ClaimTenantOwnershipInput{TenantPublicID: pending.PublicID(), ClaimToken: token})
-	if !errors.Is(err, application.ErrOwnerMembershipUnavailable) {
-		t.Fatalf("ClaimTenantOwnership() error = %v, want %v", err, application.ErrOwnerMembershipUnavailable)
+	if !errors.Is(err, errStore) {
+		t.Fatalf("ClaimTenantOwnership() error = %v, want %v", err, errStore)
 	}
 }

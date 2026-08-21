@@ -15,6 +15,7 @@ import (
 	connectinfra "github.com/pj-hoakari/tolo-tenant-management/internal/infra/connect"
 	dbinfra "github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/jwks"
+	relationdb "github.com/pj-hoakari/tolo-tenant-management/internal/relation/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/telemetry"
 )
 
@@ -67,9 +68,10 @@ func run() error {
 	}()
 
 	tenantRepository := dbinfra.NewPostgresTenantRepository(db)
-	// The relation model (memberships) is not implemented yet, so ownership
-	// claims fail closed instead of producing owned tenants without an owner.
-	tenantService := application.NewTenantService(tenantRepository, tenantRepository, application.UnavailableMembershipWriter{})
+	// The membership repository shares the pool, so the owner membership of
+	// ClaimTenantOwnership commits in the tenant repository's transaction.
+	membershipRepository := relationdb.NewPostgresMembershipRepository(db)
+	tenantService := application.NewTenantService(tenantRepository, tenantRepository, membershipRepository)
 
 	handler, err := connectinfra.NewHandlerWithJWTSettings(tenantService, jwtSettings)
 	if err != nil {

@@ -89,10 +89,6 @@ func (s *Service) ClaimTenantOwnership(ctx context.Context, req *connectrpc.Requ
 			return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, err)
 		}
 
-		if errors.Is(err, application.ErrOwnerMembershipUnavailable) {
-			return nil, connectrpc.NewError(connectrpc.CodeUnavailable, err)
-		}
-
 		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
 	}
 
