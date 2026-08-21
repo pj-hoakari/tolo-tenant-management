@@ -281,7 +281,7 @@ func TestPostgresTenantRepositoryRejectsForeignTenantOnReconstitution(t *testing
 func newTestRepository(t *testing.T) *PostgresTenantRepository {
 	t.Helper()
 
-	if _, err := testDB.Exec(`TRUNCATE events, tenants`); err != nil {
+	if _, err := testDB.Exec(`TRUNCATE events, tenants CASCADE`); err != nil {
 		t.Fatalf("truncate test database: %v", err)
 	}
 

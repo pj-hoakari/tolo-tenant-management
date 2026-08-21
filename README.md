@@ -123,8 +123,17 @@ JWKS は `INTERNAL_JWKS_URL` から取得する。未設定時は Gateway コン
 期限切れの `pending_owner` は次の `StartTenantRegistration` の際に物理削除し、その名前を解放する。
 トークンの不正・期限切れ・使用済みはいずれも `unauthenticated` で、理由は区別しない。
 
-オーナー所属の書き込みは `application.MembershipWriter` ポートを通じて関係参照側（RelationAdminService の実装）が担う。
-関係参照が未実装の間は `UnavailableMembershipWriter` を配線しており、`ClaimTenantOwnership` は `unavailable` を返してフェイルクローズする（オーナー不在の `owned` テナントを作らない）。
+オーナー所属の書き込みは `application.MembershipWriter` ポートを通じて関係参照側（`internal/relation`）が担う。
+`internal/relation/infra/db` の所属リポジトリがこのポートを実装し、テナント側と同じ接続プールと context 上のトランザクションを共有するため、オーナー所属と `owned` への遷移は同時に確定する。
+
+### 関係参照（所属とロール）
+
+所属とロールの真実の源は `internal/relation` 配下に置き、テナント側（`internal/domain`、`internal/application`）とはパッケージを分ける。
+テナント側から関係参照側への参照は `MembershipWriter` ポートに限り、逆方向の参照は作らない。
+
+- スキーマ: `tenant_memberships`（テナント×ユーザーで一意）と `event_roles`。`event∈tenant` は `events (id, tenant_id)` への複合外部キー、`event-role⇒tenant-role` は `tenant_memberships` への外部キーで担保し、所属の削除はイベントロールへ連鎖する
+- ロール: `owner`／`staff`。`admin` は予約値で付与できない
+- リポジトリは内部 ID で所属を扱い、公開 ID は読み出し時に結合して付与する。RPC（RelationAdminService）は別の作業単位で実装する
 
 ### テスト用内部 JWT の生成
 

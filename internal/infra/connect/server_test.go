@@ -16,6 +16,8 @@ import (
 	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
+	relationdomain "github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
+	relationdb "github.com/pj-hoakari/tolo-tenant-management/internal/relation/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/repository"
 )
 
@@ -235,6 +237,43 @@ func TestClaimTenantOwnershipOverTransport(t *testing.T) {
 	})
 }
 
+// TestClaimTenantOwnershipRecordsOwnerMembership wires the real membership
+// repository, as the server does, and checks that claiming ownership leaves an
+// owner membership for the claiming subject.
+func TestClaimTenantOwnershipRecordsOwnerMembership(t *testing.T) {
+	repository := newIntegrationTenantRepository(t)
+	memberships := relationdb.NewPostgresMembershipRepository(integrationDB)
+	handler, jwks := newDynamicTestHandler(t, application.NewTenantService(repository, repository, memberships))
+	httpServer := httptest.NewServer(handler)
+	t.Cleanup(httpServer.Close)
+	fixture := transportFixture{repository: repository, memberships: nil, jwks: jwks, client: tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)}
+
+	registration := fixture.startRegistration(t, "Acme")
+	tenantID := registration.GetTenant().GetTenantId()
+
+	if _, err := fixture.claim(t, internalJWTs(t).registration, tenantID, registration.GetOwnershipClaimToken()); err != nil {
+		t.Fatalf("ClaimTenantOwnership() error = %v", err)
+	}
+
+	stored, err := repository.FindTenantByPublicID(context.Background(), tenantID)
+	if err != nil {
+		t.Fatalf("FindTenantByPublicID() error = %v", err)
+	}
+
+	membership, err := memberships.FindMembership(context.Background(), stored.ID(), "test-subject")
+	if err != nil {
+		t.Fatalf("FindMembership() error = %v", err)
+	}
+
+	if got, want := membership.TenantRole(), relationdomain.RoleOwner; got != want {
+		t.Errorf("TenantRole() = %v, want %v", got, want)
+	}
+
+	if got, want := membership.TenantPublicID(), tenantID; got != want {
+		t.Errorf("TenantPublicID() = %q, want %q", got, want)
+	}
+}
+
 func TestClaimTenantOwnershipOverTransportRejections(t *testing.T) {
 	fixture := newTransportFixture(t)
 	registration := fixture.startRegistration(t, "Acme")
@@ -276,11 +315,11 @@ func TestClaimTenantOwnershipOverTransportRollsBackWhenMembershipFails(t *testin
 	tenantID := registration.GetTenant().GetTenantId()
 
 	fixture.memberships.mu.Lock()
-	fixture.memberships.err = application.ErrOwnerMembershipUnavailable
+	fixture.memberships.err = errors.New("membership store down")
 	fixture.memberships.mu.Unlock()
 
 	_, err := fixture.claim(t, internalJWTs(t).registration, tenantID, registration.GetOwnershipClaimToken())
-	if got, want := connectrpc.CodeOf(err), connectrpc.CodeUnavailable; got != want {
+	if got, want := connectrpc.CodeOf(err), connectrpc.CodeInternal; got != want {
 		t.Fatalf("ClaimTenantOwnership() error code = %v, want %v", got, want)
 	}
 
