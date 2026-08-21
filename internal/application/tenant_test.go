@@ -250,13 +250,45 @@ func TestGetEvent(t *testing.T) {
 	repository.EXPECT().FindEventByPublicID(gomock.Any(), event.PublicID()).Return(event, nil)
 	service := application.NewTenantService(repository)
 
-	found, err := service.GetEvent(context.Background(), event.PublicID())
+	ctx := tenantctx.WithTenantPublicID(context.Background(), event.TenantPublicID())
+
+	found, err := service.GetEvent(ctx, event.PublicID())
 	if err != nil {
 		t.Fatalf("GetEvent() error = %v", err)
 	}
 
 	if got, want := found, event; got != want {
 		t.Errorf("GetEvent() = %#v, want %#v", got, want)
+	}
+}
+
+func TestGetEventEnforcesTenantBoundary(t *testing.T) {
+	t.Parallel()
+
+	event := domain.NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", domain.EventTypeShortTerm, domain.EventStatusDraft)
+
+	tests := []struct {
+		name string
+		ctx  context.Context
+		want error
+	}{
+		{name: "other tenant", ctx: tenantctx.WithTenantPublicID(context.Background(), "other-tenant-public-id"), want: tenantctx.ErrMismatch},
+		{name: "no tenant context", ctx: context.Background(), want: tenantctx.ErrMissing},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctrl := gomock.NewController(t)
+			repository := NewMockTenantRepository(ctrl)
+			repository.EXPECT().FindEventByPublicID(gomock.Any(), event.PublicID()).Return(event, nil)
+			service := application.NewTenantService(repository)
+
+			if _, err := service.GetEvent(tt.ctx, event.PublicID()); !errors.Is(err, tt.want) {
+				t.Fatalf("GetEvent() error = %v, want %v", err, tt.want)
+			}
+		})
 	}
 }
 

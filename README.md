@@ -104,6 +104,10 @@ proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16
 不一致は `permission_denied`、`tenant_id` の欠落は `invalid_argument` を返す。
 イベントを対象にする RPC（`AssignEventType`、`TransitionEventStatus`）は、読み込んだイベントの所属テナントをクレームと突合する。
 
+サービス間の参照系 RPC は境界の扱いが異なる。
+`GetEvent` はテナント文脈を持つ `service` トークン（ユーザー起点。`tenant_id` クレームあり）を要求し、クレームがなければ `unauthenticated`、イベントの所属テナントと不一致なら `permission_denied` を返す。
+`GetObservationSettings` はテナント文脈のない `service` トークン（マシン起点）も受け付け、クレームがある場合だけ突合する。
+
 JWKS は `INTERNAL_JWKS_URL` から取得する。未設定時は Gateway コンテナのエンドポイント `http://gateway:8080/.well-known/jwks.json` を使う。取得した鍵は 5 分間キャッシュし、未知の `kid` を受信した場合は直ちに再取得する。
 
 ### テスト用内部 JWT の生成

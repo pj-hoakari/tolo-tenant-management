@@ -6,25 +6,25 @@ import (
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1/tenantv1connect"
 )
 
-func TestTenantIDNotRequired(t *testing.T) {
+func TestTenantClaimPolicyFor(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		procedure string
-		want      bool
+		want      tenantClaimPolicy
 	}{
-		{procedure: tenantv1connect.TenantServiceStartTenantRegistrationProcedure, want: true},
-		{procedure: tenantv1connect.TenantServiceClaimTenantOwnershipProcedure, want: true},
-		{procedure: tenantv1connect.TenantServiceGetEventProcedure, want: true},
-		{procedure: tenantv1connect.TenantServiceGetObservationSettingsProcedure, want: true},
-		{procedure: tenantv1connect.TenantServiceCreateEventProcedure, want: false},
-		{procedure: tenantv1connect.TenantServiceUpdateObservationSettingsProcedure, want: false},
-		{procedure: tenantv1connect.TenantServiceListEventsProcedure, want: false},
+		{procedure: tenantv1connect.TenantServiceStartTenantRegistrationProcedure, want: tenantClaimNone},
+		{procedure: tenantv1connect.TenantServiceClaimTenantOwnershipProcedure, want: tenantClaimNone},
+		{procedure: tenantv1connect.TenantServiceGetEventProcedure, want: tenantClaimRequired},
+		{procedure: tenantv1connect.TenantServiceGetObservationSettingsProcedure, want: tenantClaimOptional},
+		{procedure: tenantv1connect.TenantServiceCreateEventProcedure, want: tenantClaimRequired},
+		{procedure: tenantv1connect.TenantServiceUpdateObservationSettingsProcedure, want: tenantClaimRequired},
+		{procedure: tenantv1connect.TenantServiceListEventsProcedure, want: tenantClaimRequired},
 	}
 	for _, tt := range tests {
 		t.Run(tt.procedure, func(t *testing.T) {
-			if got := tenantIDNotRequired(tt.procedure); got != tt.want {
-				t.Errorf("tenantIDNotRequired(%q) = %t, want %t", tt.procedure, got, tt.want)
+			if got := tenantClaimPolicyFor(tt.procedure); got != tt.want {
+				t.Errorf("tenantClaimPolicyFor(%q) = %d, want %d", tt.procedure, got, tt.want)
 			}
 		})
 	}

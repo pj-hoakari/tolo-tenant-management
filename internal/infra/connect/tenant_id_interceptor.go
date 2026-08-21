@@ -22,6 +22,23 @@ const (
 	internalTokenUseRegistration internalTokenUse = "registration"
 )
 
+// tenantClaimPolicy states whether a procedure needs the tenant_id claim of
+// the internal JWT to establish its tenant context.
+type tenantClaimPolicy int
+
+const (
+	// tenantClaimRequired: the procedure acts inside one tenant, so the claim
+	// must be present and becomes the authenticated tenant for the call.
+	tenantClaimRequired tenantClaimPolicy = iota
+	// tenantClaimOptional: the procedure may be called without tenant context
+	// (machine-origin service tokens). When the claim is present it is still
+	// honoured as the authenticated tenant.
+	tenantClaimOptional
+	// tenantClaimNone: the procedure is served without a tenant-bearing
+	// credential, so no tenant context is extracted.
+	tenantClaimNone
+)
+
 // TenantPublicIDFromContext returns the tenant's 16-character hexadecimal
 // public ID verified by the transport interceptor.
 func TenantPublicIDFromContext(ctx context.Context) (string, bool) {
@@ -31,15 +48,23 @@ func TenantPublicIDFromContext(ctx context.Context) (string, bool) {
 func newTenantPublicIDInterceptor(validator JWTValidator) connectrpc.Interceptor {
 	return connectrpc.UnaryInterceptorFunc(func(next connectrpc.UnaryFunc) connectrpc.UnaryFunc {
 		return func(ctx context.Context, req connectrpc.AnyRequest) (connectrpc.AnyResponse, error) {
-			if tenantIDNotRequired(req.Spec().Procedure) {
+			policy := tenantClaimPolicyFor(req.Spec().Procedure)
+			if policy == tenantClaimNone {
 				return next(ctx, req)
 			}
 
 			claims, err := validator.Claims(ctx, req.Header().Get("Authorization"))
-
-			tenantPublicID, ok := tenantPublicIDFromClaims(claims)
-			if err != nil || !ok {
+			if err != nil {
 				return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, nil)
+			}
+
+			tenantPublicID := strings.TrimSpace(claims.TenantPublicID)
+			if tenantPublicID == "" {
+				if policy == tenantClaimRequired {
+					return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, nil)
+				}
+
+				return next(ctx, req)
 			}
 
 			return next(tenantctx.WithTenantPublicID(ctx, tenantPublicID), req)
@@ -71,16 +96,19 @@ func hasScope(scope, requiredScope string) bool {
 	return false
 }
 
-// tenantIDNotRequired lists the procedures that are not served under a
-// tenant_access credential and therefore carry no tenant_id claim to extract.
-func tenantIDNotRequired(procedure string) bool {
+// tenantClaimPolicyFor derives the tenant-context requirement of a procedure
+// from the service specification (tenant_management_spec.md「参照系 RPC と
+// テナント境界」). GetEvent enforces the boundary from a user-origin service
+// token; GetObservationSettings does not, because it may be reached from
+// machine-origin chains without tenant context.
+func tenantClaimPolicyFor(procedure string) tenantClaimPolicy {
 	switch procedure {
 	case tenantv1connect.TenantServiceStartTenantRegistrationProcedure,
-		tenantv1connect.TenantServiceClaimTenantOwnershipProcedure,
-		tenantv1connect.TenantServiceGetEventProcedure,
-		tenantv1connect.TenantServiceGetObservationSettingsProcedure:
-		return true
+		tenantv1connect.TenantServiceClaimTenantOwnershipProcedure:
+		return tenantClaimNone
+	case tenantv1connect.TenantServiceGetObservationSettingsProcedure:
+		return tenantClaimOptional
 	default:
-		return false
+		return tenantClaimRequired
 	}
 }
