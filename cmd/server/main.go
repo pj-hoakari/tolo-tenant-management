@@ -15,6 +15,8 @@ import (
 	connectinfra "github.com/pj-hoakari/tolo-tenant-management/internal/infra/connect"
 	dbinfra "github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/jwks"
+	relationapplication "github.com/pj-hoakari/tolo-tenant-management/internal/relation/application"
+	relationconnect "github.com/pj-hoakari/tolo-tenant-management/internal/relation/infra/connect"
 	relationdb "github.com/pj-hoakari/tolo-tenant-management/internal/relation/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/telemetry"
 )
@@ -72,8 +74,9 @@ func run() error {
 	// ClaimTenantOwnership commits in the tenant repository's transaction.
 	membershipRepository := relationdb.NewPostgresMembershipRepository(db)
 	tenantService := application.NewTenantService(tenantRepository, tenantRepository, membershipRepository)
+	relationService := relationapplication.NewRelationService(tenantRepository, membershipRepository)
 
-	handler, err := connectinfra.NewHandlerWithJWTSettings(tenantService, jwtSettings)
+	handler, err := connectinfra.NewHandlerWithJWTSettings(tenantService, jwtSettings, relationconnect.Mount(relationService))
 	if err != nil {
 		return fmt.Errorf("build handler: %w", err)
 	}
