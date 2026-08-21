@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
 	repositorypkg "github.com/pj-hoakari/tolo-tenant-management/internal/repository"
@@ -354,6 +355,56 @@ func TestPostgresTenantRepositoryWithinTransaction(t *testing.T) {
 
 	if _, err := repository.FindTenantByID(ctx, committed.ID()); err != nil {
 		t.Errorf("FindTenantByID() after commit error = %v, want nil", err)
+	}
+}
+
+func TestIsTransactionAbort(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "deadlock", err: fmt.Errorf("create tenant: %w", &pgconn.PgError{Code: sqlStateDeadlockDetected}), want: true},
+		{name: "serialization failure", err: &pgconn.PgError{Code: sqlStateSerializationFailure}, want: true},
+		{name: "other PostgreSQL error", err: fmt.Errorf("create tenant: %w", &pgconn.PgError{Code: "23505"}), want: false},
+		{name: "plain error", err: errors.New("abort"), want: false},
+		{name: "no error", err: nil, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := isTransactionAbort(tt.err); got != tt.want {
+				t.Errorf("isTransactionAbort(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestRunInTransactionReportsAbort covers the retriable answer of a real
+// transaction whose work failed with a deadlock.
+func TestRunInTransactionReportsAbort(t *testing.T) {
+	ctx := context.Background()
+	deadlock := fmt.Errorf("revoke tenant membership: %w", &pgconn.PgError{Code: sqlStateDeadlockDetected})
+
+	err := RunInTransaction(ctx, testDB, func(context.Context) error {
+		return deadlock
+	})
+	if !errors.Is(err, ErrTransactionAborted) || !errors.Is(err, deadlock) {
+		t.Errorf("RunInTransaction() error = %v, want it to join %v and the original error", err, ErrTransactionAborted)
+	}
+
+	// An ordinary failure is not reported as retriable.
+	errAbort := errors.New("abort")
+
+	err = RunInTransaction(ctx, testDB, func(context.Context) error {
+		return errAbort
+	})
+	if !errors.Is(err, errAbort) || errors.Is(err, ErrTransactionAborted) {
+		t.Errorf("RunInTransaction() error = %v, want %v alone", err, errAbort)
 	}
 }
 

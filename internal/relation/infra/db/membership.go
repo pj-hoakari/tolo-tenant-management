@@ -19,6 +19,13 @@ import (
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
 
+// advisoryLockClassTenantMemberships namespaces this use of PostgreSQL
+// advisory locks. Advisory locks share one process-wide space, so the first of
+// the two keys names the use (serializing the membership writes of a tenant)
+// and the second the tenant; another use of advisory locks picks another
+// class and can never collide with this one.
+const advisoryLockClassTenantMemberships int32 = 1
+
 // PostgresMembershipRepository persists memberships and roles in PostgreSQL.
 type PostgresMembershipRepository struct {
 	db *sqlx.DB
@@ -32,6 +39,14 @@ func NewPostgresMembershipRepository(db *sqlx.DB) *PostgresMembershipRepository 
 
 func (r *PostgresMembershipRepository) executor(ctx context.Context) sqlx.ExtContext {
 	return infradb.Executor(ctx, r.db)
+}
+
+// WithinTransaction runs fn inside one database transaction of the pool the
+// repository shares with the tenant repository, so that a permission check and
+// the membership write it guards commit together. See
+// infradb.RunInTransaction.
+func (r *PostgresMembershipRepository) WithinTransaction(ctx context.Context, fn func(context.Context) error) error {
+	return infradb.RunInTransaction(ctx, r.db, fn)
 }
 
 // AddOwner implements the tenant side's MembershipWriter port: the claiming
@@ -140,6 +155,51 @@ func (r *PostgresMembershipRepository) FindMembership(ctx context.Context, tenan
 	}
 
 	return memberships[0], nil
+}
+
+// LockTenantMemberships serializes the membership writes of one tenant. The
+// advisory lock is held until the surrounding transaction ends, so two
+// administrators of the same tenant queue instead of locking each other's
+// membership rows in opposite orders and deadlocking. The tenant ID is hashed
+// into the lock's second key; two tenants whose hashes collide are only
+// serialized against each other, which is harmless.
+func (r *PostgresMembershipRepository) LockTenantMemberships(ctx context.Context, tenantID string) error {
+	_, err := r.executor(ctx).ExecContext(ctx, `
+		SELECT pg_advisory_xact_lock($1, hashtext($2))`,
+		advisoryLockClassTenantMemberships, tenantID)
+	if err != nil {
+		return fmt.Errorf("lock tenant memberships: %w", err)
+	}
+
+	return nil
+}
+
+// FindTenantRoleForShare loads the tenant role of userID and holds a share
+// lock on the membership row until the surrounding transaction ends, so a
+// concurrent revoke or role change cannot slip in between the check and the
+// write it guards.
+func (r *PostgresMembershipRepository) FindTenantRoleForShare(ctx context.Context, tenantID, userID string) (domain.Role, error) {
+	var role string
+
+	err := r.executor(ctx).QueryRowxContext(ctx, `
+		SELECT tenant_role FROM tenant_memberships
+		WHERE tenant_id = $1 AND user_id = $2
+		FOR SHARE`,
+		tenantID, userID).Scan(&role)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.RoleUnspecified, repository.ErrMembershipNotFound
+		}
+
+		return domain.RoleUnspecified, fmt.Errorf("find tenant role: %w", err)
+	}
+
+	parsed, err := domain.ParseRole(role)
+	if err != nil {
+		return domain.RoleUnspecified, fmt.Errorf("parse tenant role: %w", err)
+	}
+
+	return parsed, nil
 }
 
 func (r *PostgresMembershipRepository) ListMembershipsByTenant(ctx context.Context, tenantID string) ([]domain.Membership, error) {

@@ -74,7 +74,10 @@ func run() error {
 	// ClaimTenantOwnership commits in the tenant repository's transaction.
 	membershipRepository := relationdb.NewPostgresMembershipRepository(db)
 	tenantService := application.NewTenantService(tenantRepository, tenantRepository, membershipRepository)
-	relationService := relationapplication.NewRelationService(tenantRepository, membershipRepository)
+	// The membership repository is also the transactor of the relation use
+	// cases, so the caller's current-permission check and the write it guards
+	// run in one transaction.
+	relationService := relationapplication.NewRelationService(tenantRepository, membershipRepository, membershipRepository)
 
 	handler, err := connectinfra.NewHandlerWithJWTSettings(tenantService, jwtSettings, relationconnect.Mount(relationService))
 	if err != nil {

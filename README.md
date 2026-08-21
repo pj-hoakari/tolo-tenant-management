@@ -145,6 +145,12 @@ JWKS は `INTERNAL_JWKS_URL` から取得する。未設定時は Gateway コン
 | AddTenantMember、ChangeTenantRole、GrantEventRole、RevokeRole | `tenant.write` | 重複所属・所属のないイベントロール・アーカイブ済みまたは `pending_owner` のテナント／イベントは `failed_precondition`、`ROLE_ADMIN` は `invalid_argument`、存在しない所属・テナント・イベントは `not_found` |
 | ListMemberships | `tenant.read` | `tenant_id` 指定はそのテナントの全所属、`user_id` 指定は認証テナント内のそのユーザーの所属のみ（他テナントの所属は返さない）。アーカイブ済みテナントも参照できる |
 
+書き込み4 RPC は、JWT の scope 検証に加えて、呼び出し元自身の現在の所属とロールを書き込みと同じ DB トランザクション内で読み直す（`internal/relation/application/authorizer.go`）。
+確認時に呼び出し元の所属行を `FOR SHARE` でロックするため、確認から書き込みの確定までの間に剥奪や降格が割り込むことはない。
+同じトランザクションの冒頭でテナント単位のアドバイザリロック（`pg_advisory_xact_lock`）を取得し、同一テナントの所属書き込みを直列化するため、複数の管理者が互いを同時に剥奪・降格してもデッドロックしない。
+所属が存在しない場合、または現在のロールが `tenant.write` を発行できない場合は `permission_denied` を返す。
+ListMemberships は読み取りのため再確認せず、トークンの scope のみに依存する。
+
 ### テスト用内部 JWT の生成
 
 `cmd/jwtgen` は ES256 の鍵ペアを生成し、内部 JWT と対応する公開 JWKS を JSON で出力する。

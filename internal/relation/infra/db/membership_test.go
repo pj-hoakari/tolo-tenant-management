@@ -337,6 +337,150 @@ func TestAddOwnerJoinsTheCallerTransaction(t *testing.T) {
 	}
 }
 
+func TestFindTenantRoleForShare(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	if _, err := f.memberships.AddTenantMember(ctx, f.tenantA.ID(), "user-1", domain.RoleOwner); err != nil {
+		t.Fatalf("AddTenantMember() error = %v", err)
+	}
+
+	role, err := f.memberships.FindTenantRoleForShare(ctx, f.tenantA.ID(), "user-1")
+	if err != nil || role != domain.RoleOwner {
+		t.Fatalf("FindTenantRoleForShare() = %v, %v, want %v", role, err, domain.RoleOwner)
+	}
+
+	if _, err := f.memberships.FindTenantRoleForShare(ctx, f.tenantA.ID(), "user-9"); !errors.Is(err, repository.ErrMembershipNotFound) {
+		t.Errorf("FindTenantRoleForShare(unknown member) error = %v, want %v", err, repository.ErrMembershipNotFound)
+	}
+
+	// The membership is looked up in the named tenant only.
+	if _, err := f.memberships.FindTenantRoleForShare(ctx, f.tenantB.ID(), "user-1"); !errors.Is(err, repository.ErrMembershipNotFound) {
+		t.Errorf("FindTenantRoleForShare(other tenant) error = %v, want %v", err, repository.ErrMembershipNotFound)
+	}
+}
+
+func TestFindTenantRoleForShareJoinsTheCallerTransaction(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	errAbort := errors.New("abort")
+
+	if _, err := f.memberships.AddTenantMember(ctx, f.tenantA.ID(), "user-1", domain.RoleOwner); err != nil {
+		t.Fatalf("AddTenantMember() error = %v", err)
+	}
+
+	err := f.memberships.WithinTransaction(ctx, func(ctx context.Context) error {
+		if _, err := f.memberships.ChangeTenantRole(ctx, f.tenantA.ID(), "user-1", domain.RoleStaff); err != nil {
+			return err
+		}
+
+		// The lookup runs in the same transaction, so it sees the change.
+		role, err := f.memberships.FindTenantRoleForShare(ctx, f.tenantA.ID(), "user-1")
+		if err != nil {
+			return err
+		}
+
+		if role != domain.RoleStaff {
+			t.Errorf("FindTenantRoleForShare() inside transaction = %v, want %v", role, domain.RoleStaff)
+		}
+
+		return errAbort
+	})
+	if !errors.Is(err, errAbort) {
+		t.Fatalf("WithinTransaction() error = %v, want %v", err, errAbort)
+	}
+
+	role, err := f.memberships.FindTenantRoleForShare(ctx, f.tenantA.ID(), "user-1")
+	if err != nil || role != domain.RoleOwner {
+		t.Errorf("FindTenantRoleForShare() after rollback = %v, %v, want %v", role, err, domain.RoleOwner)
+	}
+}
+
+// lockWaitTimeout is the generous bound on how long a lock that is expected to
+// be granted may take; it only guards against a test hanging forever.
+const lockWaitTimeout = 10 * time.Second
+
+// heldLock is a transaction holding a tenant's advisory lock: it closes held
+// once it has the lock, keeps it until release is closed, and reports the
+// outcome of its transaction on done.
+type heldLock struct {
+	held    chan struct{}
+	release chan struct{}
+	done    chan error
+}
+
+// takeLock starts a transaction that takes the tenant's advisory lock and
+// holds it until the returned heldLock is released.
+func takeLock(memberships *PostgresMembershipRepository, tenantID string) heldLock {
+	lock := heldLock{held: make(chan struct{}), release: make(chan struct{}), done: make(chan error, 1)}
+
+	go func() {
+		lock.done <- memberships.WithinTransaction(context.Background(), func(ctx context.Context) error {
+			if err := memberships.LockTenantMemberships(ctx, tenantID); err != nil {
+				return err
+			}
+
+			close(lock.held)
+			<-lock.release
+
+			return nil
+		})
+	}()
+
+	return lock
+}
+
+// awaitHeld fails the test unless the lock is granted within lockWaitTimeout.
+func (l heldLock) awaitHeld(t *testing.T, name string) {
+	t.Helper()
+
+	select {
+	case <-l.held:
+	case err := <-l.done:
+		t.Fatalf("%s ended before it held the lock: %v", name, err)
+	case <-time.After(lockWaitTimeout):
+		t.Fatalf("%s did not obtain the lock", name)
+	}
+}
+
+// finish releases the lock and fails the test unless the transaction commits.
+func (l heldLock) finish(t *testing.T, name string) {
+	t.Helper()
+
+	close(l.release)
+
+	if err := <-l.done; err != nil {
+		t.Fatalf("%s error = %v", name, err)
+	}
+}
+
+func TestLockTenantMembershipsSerializesWritesPerTenant(t *testing.T) {
+	f := newFixture(t)
+
+	first := takeLock(f.memberships, f.tenantA.ID())
+	first.awaitHeld(t, "first transaction")
+
+	// Another tenant's writes are not held up.
+	other := takeLock(f.memberships, f.tenantB.ID())
+	other.awaitHeld(t, "transaction of the other tenant")
+	other.finish(t, "transaction of the other tenant")
+
+	// The same tenant's next write waits for the first transaction to end.
+	second := takeLock(f.memberships, f.tenantA.ID())
+
+	select {
+	case <-second.held:
+		t.Fatal("the tenant's lock was granted twice at the same time")
+	case err := <-second.done:
+		t.Fatalf("second transaction ended early: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	first.finish(t, "first transaction")
+	second.awaitHeld(t, "second transaction")
+	second.finish(t, "second transaction")
+}
+
 func migrationPaths() []string {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {

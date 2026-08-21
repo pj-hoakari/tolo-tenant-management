@@ -3,6 +3,7 @@ package connect
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -29,7 +30,11 @@ import (
 	"github.com/pj-hoakari/tolo-tenant-management/internal/jwks"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/jwtgen"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/application"
+	relationdomain "github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	relationdb "github.com/pj-hoakari/tolo-tenant-management/internal/relation/infra/db"
+	relationrepository "github.com/pj-hoakari/tolo-tenant-management/internal/relation/repository"
+	tenantrepository "github.com/pj-hoakari/tolo-tenant-management/internal/repository"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
 
 var testDB *sqlx.DB
@@ -94,21 +99,26 @@ func (r *jwksRegistry) document() jwtgen.JWKS {
 	return jwtgen.JWKS{Keys: append([]jwtgen.JWK(nil), r.keys...)}
 }
 
+// callerSubject is the subject of every token minted by jwtgen, and therefore
+// the caller whose current membership the write RPCs re-check.
+const callerSubject = "test-subject"
+
 type fixture struct {
-	tenants *infradb.PostgresTenantRepository
-	jwks    *jwksRegistry
-	client  relationv1connect.RelationAdminServiceClient
-	tenantA tenantdomain.Tenant
-	tenantB tenantdomain.Tenant
-	eventA  tenantdomain.Event
-	eventB  tenantdomain.Event
-	tokenA  string
-	tokenB  string
+	tenants     *infradb.PostgresTenantRepository
+	memberships *relationdb.PostgresMembershipRepository
+	jwks        *jwksRegistry
+	client      relationv1connect.RelationAdminServiceClient
+	tenantA     tenantdomain.Tenant
+	tenantB     tenantdomain.Tenant
+	eventA      tenantdomain.Event
+	eventB      tenantdomain.Event
+	tokenA      string
+	tokenB      string
 }
 
 // newFixture resets the database, seeds two owned tenants with one event
-// each, and serves TenantService and RelationAdminService together as the
-// server does.
+// each and the caller as their owner, and serves TenantService and
+// RelationAdminService together as the server does.
 func newFixture(t *testing.T) fixture {
 	t.Helper()
 
@@ -136,7 +146,7 @@ func newFixture(t *testing.T) fixture {
 	handler, err := tenantconnect.NewHandlerWithJWTSettings(
 		tenantapplication.NewTenantService(tenants, tenants, memberships),
 		settings,
-		Mount(application.NewRelationService(tenants, memberships)),
+		Mount(application.NewRelationService(tenants, memberships, memberships)),
 	)
 	if err != nil {
 		t.Fatalf("NewHandlerWithJWTSettings() error = %v", err)
@@ -146,11 +156,12 @@ func newFixture(t *testing.T) fixture {
 	t.Cleanup(httpServer.Close)
 
 	f := fixture{
-		tenants: tenants,
-		jwks:    registry,
-		client:  relationv1connect.NewRelationAdminServiceClient(httpServer.Client(), httpServer.URL),
-		tenantA: tenantdomain.NewTenant("00000000-0000-0000-0000-0000000000a1", "aaaaaaaaaaaaaaa1", "Alpha", "standard", tenantdomain.TenantOwnershipStateOwned, false),
-		tenantB: tenantdomain.NewTenant("00000000-0000-0000-0000-0000000000b1", "bbbbbbbbbbbbbbb1", "Beta", "standard", tenantdomain.TenantOwnershipStateOwned, false),
+		tenants:     tenants,
+		memberships: memberships,
+		jwks:        registry,
+		client:      relationv1connect.NewRelationAdminServiceClient(httpServer.Client(), httpServer.URL),
+		tenantA:     tenantdomain.NewTenant("00000000-0000-0000-0000-0000000000a1", "aaaaaaaaaaaaaaa1", "Alpha", "standard", tenantdomain.TenantOwnershipStateOwned, false),
+		tenantB:     tenantdomain.NewTenant("00000000-0000-0000-0000-0000000000b1", "bbbbbbbbbbbbbbb1", "Beta", "standard", tenantdomain.TenantOwnershipStateOwned, false),
 	}
 	f.eventA = tenantdomain.NewEvent("00000000-0000-0000-0000-0000000000a2", "aaaaaaaaaaaaaaa2", f.tenantA.ID(), f.tenantA.PublicID(), "Alpha Festival", tenantdomain.EventTypeShortTerm, tenantdomain.EventStatusDraft)
 	f.eventB = tenantdomain.NewEvent("00000000-0000-0000-0000-0000000000b2", "bbbbbbbbbbbbbbb2", f.tenantB.ID(), f.tenantB.PublicID(), "Beta Festival", tenantdomain.EventTypeShortTerm, tenantdomain.EventStatusDraft)
@@ -164,6 +175,14 @@ func newFixture(t *testing.T) fixture {
 	for _, event := range []tenantdomain.Event{f.eventA, f.eventB} {
 		if err := tenants.CreateEvent(ctx, event); err != nil {
 			t.Fatalf("CreateEvent(%q) error = %v", event.Name(), err)
+		}
+	}
+
+	// The caller of the tests administers both tenants, because the write RPCs
+	// re-check the membership of the token's subject.
+	for _, tenant := range []tenantdomain.Tenant{f.tenantA, f.tenantB} {
+		if _, err := memberships.AddTenantMember(ctx, tenant.ID(), callerSubject, relationdomain.RoleOwner); err != nil {
+			t.Fatalf("AddTenantMember(owner of %q) error = %v", tenant.Name(), err)
 		}
 	}
 
@@ -343,8 +362,9 @@ func TestRolesOverTransport(t *testing.T) {
 		t.Fatalf("ListMemberships(tenant) error = %v", err)
 	}
 
-	if memberships := listed.Msg.GetMemberships(); len(memberships) != 1 || len(memberships[0].GetEventRoles()) != 1 {
-		t.Errorf("ListMemberships(tenant) = %v, want one membership with one event role", memberships)
+	// The caller's own owner membership is listed next to user-1's.
+	if listedMemberships := listed.Msg.GetMemberships(); len(listedMemberships) != 2 || len(membershipOf(listedMemberships, "user-1").GetEventRoles()) != 1 {
+		t.Errorf("ListMemberships(tenant) = %v, want the caller and user-1 with one event role", listedMemberships)
 	}
 
 	byUser, err := f.client.ListMemberships(ctx, authorized(f.tokenA, &relationv1.ListMembershipsRequest{Filter: &relationv1.ListMembershipsRequest_UserId{UserId: "user-1"}}))
@@ -382,9 +402,120 @@ func TestRolesOverTransport(t *testing.T) {
 	}
 
 	after, err := f.client.ListMemberships(ctx, authorized(f.tokenA, &relationv1.ListMembershipsRequest{Filter: &relationv1.ListMembershipsRequest_TenantId{TenantId: f.tenantA.PublicID()}}))
-	if err != nil || len(after.Msg.GetMemberships()) != 0 {
-		t.Errorf("ListMemberships after revoke = %v, %v, want empty", after, err)
+	if err != nil || len(after.Msg.GetMemberships()) != 1 || membershipOf(after.Msg.GetMemberships(), callerSubject) == nil {
+		t.Errorf("ListMemberships after revoke = %v, %v, want the caller's own membership only", after, err)
 	}
+}
+
+// TestCurrentPermissionOverTransport covers the re-check of the caller's own
+// membership: the tenant.write scope of the token does not by itself
+// administer a tenant.
+func TestCurrentPermissionOverTransport(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	staffTenant := tenantdomain.NewTenant("00000000-0000-0000-0000-0000000000c1", "ccccccccccccccc1", "Gamma", "standard", tenantdomain.TenantOwnershipStateOwned, false)
+	strangerTenant := tenantdomain.NewTenant("00000000-0000-0000-0000-0000000000d1", "ddddddddddddddd1", "Delta", "standard", tenantdomain.TenantOwnershipStateOwned, false)
+
+	for _, tenant := range []tenantdomain.Tenant{staffTenant, strangerTenant} {
+		if err := f.tenants.CreateTenant(ctx, tenant); err != nil {
+			t.Fatalf("CreateTenant(%q) error = %v", tenant.Name(), err)
+		}
+	}
+
+	// The caller is staff of one tenant and belongs to the other not at all.
+	if _, err := f.memberships.AddTenantMember(ctx, staffTenant.ID(), callerSubject, relationdomain.RoleStaff); err != nil {
+		t.Fatalf("AddTenantMember(staff) error = %v", err)
+	}
+
+	writeTests := []struct {
+		name   string
+		tenant tenantdomain.Tenant
+	}{
+		{name: "staff cannot administer the tenant", tenant: staffTenant},
+		{name: "a caller without membership cannot administer the tenant", tenant: strangerTenant},
+	}
+
+	for _, tt := range writeTests {
+		t.Run(tt.name, func(t *testing.T) {
+			token := f.mintToken(t, tt.tenant.PublicID(), "tenant.read tenant.write")
+
+			_, err := f.addMember(t, token, tt.tenant.PublicID(), "user-1", relationv1.Role_ROLE_STAFF)
+			if got, want := connectrpc.CodeOf(err), connectrpc.CodePermissionDenied; got != want {
+				t.Fatalf("AddTenantMember() error code = %v, want %v", got, want)
+			}
+		})
+	}
+
+	// Reads rely on the scope only, so even the caller who does not belong to
+	// the tenant lists its memberships. The lists also show that the refused
+	// writes above left nothing behind: the stranger tenant has no membership
+	// at all, and the staff tenant only the caller's own.
+	staffRead := f.listMemberships(t, f.mintToken(t, staffTenant.PublicID(), "tenant.read"), staffTenant.PublicID())
+	if len(staffRead) != 1 || membershipOf(staffRead, callerSubject) == nil {
+		t.Errorf("ListMemberships(staff tenant) = %v, want the caller's own membership only", staffRead)
+	}
+
+	strangerRead := f.listMemberships(t, f.mintToken(t, strangerTenant.PublicID(), "tenant.read"), strangerTenant.PublicID())
+	if len(strangerRead) != 0 {
+		t.Errorf("ListMemberships(non-member) = %v, want empty list", strangerRead)
+	}
+}
+
+// listMemberships lists the memberships of the tenant through the transport.
+func (f fixture) listMemberships(t *testing.T, token, tenantPublicID string) []*relationv1.Membership {
+	t.Helper()
+
+	res, err := f.client.ListMemberships(context.Background(), authorized(token, &relationv1.ListMembershipsRequest{Filter: &relationv1.ListMembershipsRequest_TenantId{TenantId: tenantPublicID}}))
+	if err != nil {
+		t.Fatalf("ListMemberships(%q) error = %v", tenantPublicID, err)
+	}
+
+	return res.Msg.GetMemberships()
+}
+
+// TestConnectError pins the code every sentinel error is answered with,
+// including the ones the transport cannot reach from a test.
+func TestConnectError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		err  error
+		want connectrpc.Code
+	}{
+		{err: application.ErrTenantIDRequired, want: connectrpc.CodeInvalidArgument},
+		{err: relationdomain.ErrRoleReserved, want: connectrpc.CodeInvalidArgument},
+		{err: relationrepository.ErrMembershipNotFound, want: connectrpc.CodeNotFound},
+		{err: relationrepository.ErrMembershipAlreadyExists, want: connectrpc.CodeFailedPrecondition},
+		{err: tenantrepository.ErrTenantArchived, want: connectrpc.CodeFailedPrecondition},
+		{err: application.ErrPermissionDenied, want: connectrpc.CodePermissionDenied},
+		{err: tenantctx.ErrMismatch, want: connectrpc.CodePermissionDenied},
+		{err: tenantctx.ErrSubjectMissing, want: connectrpc.CodeUnauthenticated},
+		{err: tenantctx.ErrMissing, want: connectrpc.CodeUnauthenticated},
+		{err: fmt.Errorf("revoke: %w", infradb.ErrTransactionAborted), want: connectrpc.CodeAborted},
+		{err: errors.New("something else"), want: connectrpc.CodeInternal},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.err.Error(), func(t *testing.T) {
+			t.Parallel()
+
+			if got := connectrpc.CodeOf(connectError(tt.err)); got != tt.want {
+				t.Errorf("connectError(%v) code = %v, want %v", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
+// membershipOf returns the listed membership of userID, or nil.
+func membershipOf(memberships []*relationv1.Membership, userID string) *relationv1.Membership {
+	for _, membership := range memberships {
+		if membership.GetUserId() == userID {
+			return membership
+		}
+	}
+
+	return nil
 }
 
 func migrationPaths() []string {

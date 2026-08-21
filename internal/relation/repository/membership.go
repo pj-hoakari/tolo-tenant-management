@@ -45,6 +45,18 @@ type MembershipRepository interface {
 	RevokeEventRole(ctx context.Context, eventID, userID string) error
 	// FindMembership loads the membership of userID in the tenant.
 	FindMembership(ctx context.Context, tenantID, userID string) (domain.Membership, error)
+	// LockTenantMemberships takes a transaction-scoped advisory lock keyed by
+	// the tenant, so that the membership writes of one tenant run one at a
+	// time and cannot lock each other's rows in opposite orders. It must be
+	// called inside a transaction: the lock is released when that transaction
+	// commits or rolls back, and outside one it would be released at once.
+	LockTenantMemberships(ctx context.Context, tenantID string) error
+	// FindTenantRoleForShare loads the user's tenant role and locks the
+	// membership row for the rest of the surrounding transaction, so that a
+	// concurrent revoke or role change waits until the caller's write commits.
+	// It returns ErrMembershipNotFound when the user does not belong to the
+	// tenant.
+	FindTenantRoleForShare(ctx context.Context, tenantID, userID string) (domain.Role, error)
 	// ListMembershipsByTenant lists every membership of the tenant.
 	ListMembershipsByTenant(ctx context.Context, tenantID string) ([]domain.Membership, error)
 	// ListMembershipsByUser lists the user's memberships across tenants.

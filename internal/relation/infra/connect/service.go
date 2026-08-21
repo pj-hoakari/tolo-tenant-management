@@ -11,6 +11,7 @@ import (
 	relationv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/relation/v1"
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/relation/v1/relationv1connect"
 	tenantconnect "github.com/pj-hoakari/tolo-tenant-management/internal/infra/connect"
+	infradb "github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/repository"
@@ -127,7 +128,10 @@ func (s *Service) ListMemberships(ctx context.Context, req *connectrpc.Request[r
 // (tenant_management_spec.md「エラー」). Missing identifiers and the reserved
 // role are invalid arguments; unknown tenants, events, and memberships are not
 // found; relation model violations and frozen (archived / pending) targets are
-// failed preconditions.
+// failed preconditions. A caller whose current membership no longer permits
+// the write is denied, and one without a subject is unauthenticated. A
+// transaction PostgreSQL aborted is reported as aborted, which tells the
+// client the call can be retried as it stands.
 func connectError(err error) error {
 	switch {
 	case errors.Is(err, application.ErrTenantIDRequired),
@@ -153,10 +157,14 @@ func connectError(err error) error {
 		errors.Is(err, repository.ErrMembershipAlreadyExists),
 		errors.Is(err, repository.ErrTenantMembershipRequired):
 		return connectrpc.NewError(connectrpc.CodeFailedPrecondition, err)
-	case errors.Is(err, tenantctx.ErrMismatch):
+	case errors.Is(err, tenantctx.ErrMismatch),
+		errors.Is(err, application.ErrPermissionDenied):
 		return connectrpc.NewError(connectrpc.CodePermissionDenied, err)
-	case errors.Is(err, tenantctx.ErrMissing):
+	case errors.Is(err, tenantctx.ErrMissing),
+		errors.Is(err, tenantctx.ErrSubjectMissing):
 		return connectrpc.NewError(connectrpc.CodeUnauthenticated, err)
+	case errors.Is(err, infradb.ErrTransactionAborted):
+		return connectrpc.NewError(connectrpc.CodeAborted, err)
 	default:
 		return connectrpc.NewError(connectrpc.CodeInternal, err)
 	}
