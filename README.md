@@ -78,6 +78,19 @@ Service Gateway が発行した内部 JWT を Authorization ヘッダーで受�
 Authorization: Bearer <Service Gateway 発行の内部 JWT>
 ```
 
+#### 受理するクレーム
+
+クレーム構造の正本は `docs/internal_jwt.md`。すべての内部 JWT に `sub`、`client_id`、`jti`、`iat`／`nbf`／`exp`、`token_use`、`txn` を要求し、`token_use` ごとに次を追加で要求する。
+`txn` と `origin_sub` は監査・トレース用で、認可判定には使わない。
+
+| `token_use` | 追加で要求するクレーム |
+|---|---|
+| `tenant_access` | `scope`、`src_jti`、`tenant_id` |
+| `event_access` | `scope`、`src_jti`、`tenant_id`、`event_id` |
+| `registration` | `scope`、`src_jti`（`tenant_id`／`event_id` を持たない） |
+| `service`（ユーザー起点） | `scope`、`src_jti`、`origin_sub`（`tenant_id`／`event_id` は文脈トークンから引き写された場合のみ） |
+| `service`（マシン起点） | なし（`scope`、`src_jti`、`origin_sub`、`tenant_id`、`event_id` のいずれも持たない） |
+
 #### 識別子とテナントの突合
 
 proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16 文字 hex）で、内部主キー（UUIDv7）は外に出ない。
@@ -101,7 +114,17 @@ JWKS は `INTERNAL_JWKS_URL` から取得する。未設定時は Gateway コン
 go run ./cmd/jwtgen -tenant-public-id 0123456789abcdef -scope events.read
 ```
 
-`tenant_access` では `-tenant-public-id`（ランダムな16文字hex）が必須。`-token-use service` または `-token-use registration` も指定できる。
+`-token-use` は `tenant_access`（既定）、`registration`、`service` を取る。`tenant_access` では `-tenant-public-id`（ランダムな16文字hex）と `-scope` が必須、`registration` では `-scope` が必須。
+`service` は既定でマシン起点（`scope`、`src_jti`、`tenant_id` を持たない）として生成し、`-origin-sub <user_id>` を指定するとユーザー起点（`scope`、`src_jti`、`origin_sub` を持ち、`-tenant-public-id` で `tenant_id` を付与できる）になる。
+いずれの場合も `txn` には UUIDv7 を自動で付与する。
+
+```bash
+# マシン起点の service トークン
+go run ./cmd/jwtgen -token-use service
+# ユーザー起点の service トークン（テナント文脈付き）
+go run ./cmd/jwtgen -token-use service -origin-sub user-1 -scope events.read -tenant-public-id 0123456789abcdef
+```
+
 出力された `jwks` を Service Gateway の JWKS スタブとして公開すると、出力された `token` を結合テストに利用できる。サービスのテストもこの CLI と同じ生成ロジックを使用する。
 
 ---

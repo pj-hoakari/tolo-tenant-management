@@ -33,16 +33,28 @@ type JWKSValidator struct {
 	expiry   time.Time
 }
 
+// InternalJWTClaims is the claim set of an internal JWT (internal_jwt.md).
+// Which optional claims must be present depends on token_use and on the
+// origin of the token; see validClaims.
 type InternalJWTClaims struct {
 	jwt.RegisteredClaims
-	TokenUse  string `json:"token_use"`
+	TokenUse string `json:"token_use"`
+	ClientID string `json:"client_id"`
+	// Txn correlates every hop of one processing chain. It is for audit and
+	// tracing only and must not feed authorization decisions.
+	Txn       string `json:"txn"`
 	Scope     string `json:"scope"`
-	ClientID  string `json:"client_id"`
 	SourceJTI string `json:"src_jti"`
+	// OriginSub is the user a user-origin service token was re-issued for. It
+	// is for audit only and must not feed authorization decisions.
+	OriginSub string `json:"origin_sub"`
 	// TenantPublicID is carried in the tenant_id JWT claim. Its value is the
 	// tenant's 16-character hexadecimal public ID, the same value the proto
 	// tenant_id fields carry; the internal UUIDv7 never appears in claims.
 	TenantPublicID string `json:"tenant_id"`
+	// EventPublicID is carried in the event_id JWT claim and is the event's
+	// 16-character hexadecimal public ID.
+	EventPublicID string `json:"event_id"`
 }
 
 type jwksDocument struct {
@@ -111,8 +123,65 @@ func (v *JWKSValidator) Claims(ctx context.Context, authorization string) (Inter
 	return claims, nil
 }
 
+const (
+	tokenUseTenantAccess = "tenant_access"
+	tokenUseEventAccess  = "event_access"
+	tokenUseService      = "service"
+	tokenUseRegistration = "registration"
+)
+
+// validClaims checks the claims every internal JWT must carry and the claims
+// each token_use adds (internal_jwt.md「起点別クレーム」「token_use と追加クレーム」).
 func validClaims(claims InternalJWTClaims) bool {
-	return strings.TrimSpace(claims.Subject) != "" && strings.TrimSpace(claims.ClientID) != "" && strings.TrimSpace(claims.SourceJTI) != "" && strings.TrimSpace(claims.ID) != "" && claims.IssuedAt != nil && claims.ExpiresAt != nil && claims.NotBefore != nil && strings.TrimSpace(claims.TokenUse) != ""
+	if !present(claims.Subject, claims.ClientID, claims.ID, claims.TokenUse, claims.Txn) ||
+		claims.IssuedAt == nil || claims.ExpiresAt == nil || claims.NotBefore == nil {
+		return false
+	}
+
+	switch claims.TokenUse {
+	case tokenUseTenantAccess:
+		return present(claims.Scope, claims.SourceJTI, claims.TenantPublicID)
+	case tokenUseEventAccess:
+		return present(claims.Scope, claims.SourceJTI, claims.TenantPublicID, claims.EventPublicID)
+	case tokenUseRegistration:
+		// The registration token carries no tenant context by design.
+		return present(claims.Scope, claims.SourceJTI) && absent(claims.TenantPublicID, claims.EventPublicID)
+	case tokenUseService:
+		return validServiceClaims(claims)
+	default:
+		return false
+	}
+}
+
+// validServiceClaims distinguishes the two origins of a service token. A
+// user-origin re-issue carries scope, src_jti, and origin_sub together and may
+// copy tenant_id / event_id from its context token. A machine-origin token
+// carries none of them; its authorization rests on the gateway's edge policy.
+func validServiceClaims(claims InternalJWTClaims) bool {
+	userOrigin := present(claims.Scope, claims.SourceJTI, claims.OriginSub)
+	machineOrigin := absent(claims.Scope, claims.SourceJTI, claims.OriginSub, claims.TenantPublicID, claims.EventPublicID)
+
+	return userOrigin || machineOrigin
+}
+
+func present(values ...string) bool {
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" {
+			return false
+		}
+	}
+
+	return true
+}
+
+func absent(values ...string) bool {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (v *JWKSValidator) key(ctx context.Context, kid string) (*ecdsa.PublicKey, error) {
