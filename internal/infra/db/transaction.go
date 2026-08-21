@@ -46,12 +46,17 @@ func transactionFromContext(ctx context.Context) (*sqlx.Tx, bool) {
 	return tx, ok
 }
 
-// executor returns the transaction carried by ctx, or the connection pool when
-// the call is not part of a transaction.
-func (r *PostgresTenantRepository) executor(ctx context.Context) sqlx.ExtContext {
+// Executor returns the transaction carried by ctx, or pool when the call is
+// not part of a transaction. Repositories of other models that share the pool
+// use it to join a transaction opened by WithinTransaction.
+func Executor(ctx context.Context, pool *sqlx.DB) sqlx.ExtContext {
 	if tx, ok := transactionFromContext(ctx); ok {
 		return tx
 	}
 
-	return r.db
+	return pool
+}
+
+func (r *PostgresTenantRepository) executor(ctx context.Context) sqlx.ExtContext {
+	return Executor(ctx, r.db)
 }
