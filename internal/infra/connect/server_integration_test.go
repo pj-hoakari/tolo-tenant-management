@@ -101,7 +101,7 @@ func newIntegrationTenantRepository(t *testing.T) *db.PostgresTenantRepository {
 	integrationDBMu.Lock()
 	t.Cleanup(integrationDBMu.Unlock)
 
-	if _, err := integrationDB.Exec(`TRUNCATE events, tenants`); err != nil {
+	if _, err := integrationDB.Exec(`TRUNCATE events, tenants CASCADE`); err != nil {
 		t.Fatalf("truncate PostgreSQL integration test database: %v", err)
 	}
 
