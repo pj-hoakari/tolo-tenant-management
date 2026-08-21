@@ -127,7 +127,8 @@ func (s *Service) ListMemberships(ctx context.Context, req *connectrpc.Request[r
 // (tenant_management_spec.md「エラー」). Missing identifiers and the reserved
 // role are invalid arguments; unknown tenants, events, and memberships are not
 // found; relation model violations and frozen (archived / pending) targets are
-// failed preconditions.
+// failed preconditions. A caller whose current membership no longer permits
+// the write is denied, and one without a subject is unauthenticated.
 func connectError(err error) error {
 	switch {
 	case errors.Is(err, application.ErrTenantIDRequired),
@@ -153,9 +154,11 @@ func connectError(err error) error {
 		errors.Is(err, repository.ErrMembershipAlreadyExists),
 		errors.Is(err, repository.ErrTenantMembershipRequired):
 		return connectrpc.NewError(connectrpc.CodeFailedPrecondition, err)
-	case errors.Is(err, tenantctx.ErrMismatch):
+	case errors.Is(err, tenantctx.ErrMismatch),
+		errors.Is(err, application.ErrPermissionDenied):
 		return connectrpc.NewError(connectrpc.CodePermissionDenied, err)
-	case errors.Is(err, tenantctx.ErrMissing):
+	case errors.Is(err, tenantctx.ErrMissing),
+		errors.Is(err, tenantctx.ErrSubjectMissing):
 		return connectrpc.NewError(connectrpc.CodeUnauthenticated, err)
 	default:
 		return connectrpc.NewError(connectrpc.CodeInternal, err)
