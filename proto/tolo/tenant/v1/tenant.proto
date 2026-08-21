@@ -3,15 +3,27 @@ syntax = "proto3";
 package tolo.tenant.v1;
 
 import "authz/v1/options.proto";
+import "google/protobuf/timestamp.proto";
 
+// TenantService is the source of truth for tenant and event identifiers.
+//
+// Every tenant_id / event_id field carries the public ID (a random
+// 16-character hexadecimal string). Internal primary keys never appear on the
+// wire. Tenant-scoped RPCs take the target tenant in the request and the
+// service cross-checks it against the tenant_id claim of the internal JWT.
 service TenantService {
-  // Self-signup requires the tenant.register permission. token_use=registration
-  // (the credential class) is enforced separately. The caller must not already
-  // belong to the tenant being created.
-  rpc RegisterTenant(RegisterTenantRequest) returns (RegisterTenantResponse) {
+  // StartTenantRegistration creates a pending_owner tenant without
+  // authentication and returns a one-time ownership claim token.
+  rpc StartTenantRegistration(StartTenantRegistrationRequest) returns (StartTenantRegistrationResponse) {
+    option (authz.v1.auth_policy) = { level: AUTH_LEVEL_PUBLIC };
+  }
+  // ClaimTenantOwnership turns a pending_owner tenant into an owned tenant
+  // and registers the authenticated user as its owner. It requires
+  // token_use=registration, which carries no tenant context.
+  rpc ClaimTenantOwnership(ClaimTenantOwnershipRequest) returns (ClaimTenantOwnershipResponse) {
     option (authz.v1.auth_policy) = {
       level: AUTH_LEVEL_AUTHENTICATED
-      required_scopes: "tenant.register"
+      required_scopes: "tenant.claim"
     };
   }
   rpc ChangeTenantContract(ChangeTenantContractRequest) returns (ChangeTenantContractResponse) {
@@ -44,8 +56,22 @@ service TenantService {
       required_scopes: "events.write"
     };
   }
+  // GetEvent is the referential-integrity read used by Graph Authoring. It
+  // requires token_use=service with tenant context.
   rpc GetEvent(GetEventRequest) returns (GetEventResponse) {
     option (authz.v1.auth_policy) = { level: AUTH_LEVEL_INTERNAL };
+  }
+  // GetObservationSettings supplies observation settings to Observation. It
+  // requires token_use=service and does not enforce the tenant boundary, so
+  // the response carries settings only.
+  rpc GetObservationSettings(GetObservationSettingsRequest) returns (GetObservationSettingsResponse) {
+    option (authz.v1.auth_policy) = { level: AUTH_LEVEL_INTERNAL };
+  }
+  rpc UpdateObservationSettings(UpdateObservationSettingsRequest) returns (UpdateObservationSettingsResponse) {
+    option (authz.v1.auth_policy) = {
+      level: AUTH_LEVEL_AUTHENTICATED
+      required_scopes: "events.write"
+    };
   }
   rpc ListEvents(ListEventsRequest) returns (ListEventsResponse) {
     option (authz.v1.auth_policy) = {
@@ -57,29 +83,34 @@ service TenantService {
 
 // Tenant is the customer-organization, billing, and onboarding boundary.
 message Tenant {
-  string tenant_id = 1;         // UUIDv7 internal ID
-  string name = 2;
-  string contract_plan = 3;
+  string tenant_id = 1;      // public ID (random 16-character hex)
+  string name = 2;           // unique
+  string contract_plan = 3;  // identifier only; billing details are out of scope
   bool archived = 4;
-  string tenant_public_id = 5;  // 16-character hex ID for URLs
+  TenantOwnershipState ownership_state = 5;
+}
+
+enum TenantOwnershipState {
+  TENANT_OWNERSHIP_STATE_UNSPECIFIED = 0;
+  // Created without authentication; not usable for business operations yet.
+  TENANT_OWNERSHIP_STATE_PENDING_OWNER = 1;
+  // An authenticated owner membership exists; the tenant is usable.
+  TENANT_OWNERSHIP_STATE_OWNED = 2;
 }
 
 // Event is an installation or occasion owned by exactly one tenant.
 message Event {
-  string event_id = 1;          // UUIDv7 internal ID
-  string tenant_id = 2;         // UUIDv7 internal tenant ID
+  string event_id = 1;   // public ID (random 16-character hex)
+  string tenant_id = 2;  // public ID of the owning tenant
   string name = 3;
   EventType type = 4;
   EventStatus status = 5;
-  ObservationSettings observation_settings = 6;
-  string event_public_id = 7;   // 16-character hex ID for URLs
-  string tenant_public_id = 8;  // 16-character hex ID for URLs
 }
 
 enum EventType {
   EVENT_TYPE_UNSPECIFIED = 0;
-  EVENT_TYPE_SHORT_TERM = 1;
-  EVENT_TYPE_LONG_TERM = 2;
+  EVENT_TYPE_SHORT_TERM = 1;  // short history; subject to observation fallback
+  EVENT_TYPE_LONG_TERM = 2;   // permanent installation
 }
 
 enum EventStatus {
@@ -88,30 +119,44 @@ enum EventStatus {
   EVENT_STATUS_OPEN = 2;
   EVENT_STATUS_LOCKED = 3;
   EVENT_STATUS_CLOSED = 4;
-  EVENT_STATUS_ARCHIVED = 5;
+  EVENT_STATUS_ARCHIVED = 5;  // soft delete
 }
 
+// ObservationSettings holds the values Observation reads for an event. It is
+// returned only by GetObservationSettings / UpdateObservationSettings.
 message ObservationSettings {
-  int32 history_window_days = 1;
+  int32 history_window_days = 1;  // window for historical percentiles; default 30
 }
 
-message RegisterTenantRequest {
+message StartTenantRegistrationRequest {
   string name = 1;
   string contract_plan = 2;
 }
-message RegisterTenantResponse { Tenant tenant = 1; }
+message StartTenantRegistrationResponse {
+  Tenant tenant = 1;                 // ownership_state is PENDING_OWNER
+  string ownership_claim_token = 2;  // one-time; never returned again
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+message ClaimTenantOwnershipRequest {
+  string tenant_id = 1;
+  string ownership_claim_token = 2;
+}
+message ClaimTenantOwnershipResponse { Tenant tenant = 1; }
 
 message ChangeTenantContractRequest {
-  string contract_plan = 1;
+  string tenant_id = 1;
+  string contract_plan = 2;
 }
 message ChangeTenantContractResponse { Tenant tenant = 1; }
 
-message ArchiveTenantRequest {}
+message ArchiveTenantRequest { string tenant_id = 1; }
 message ArchiveTenantResponse { Tenant tenant = 1; }
 
 message CreateEventRequest {
-  string name = 1;
-  EventType type = 2;
+  string tenant_id = 1;
+  string name = 2;
+  EventType type = 3;  // optional; left UNSPECIFIED when omitted
 }
 message CreateEventResponse { Event event = 1; }
 
@@ -123,12 +168,24 @@ message AssignEventTypeResponse { Event event = 1; }
 
 message TransitionEventStatusRequest {
   string event_id = 1;
-  EventStatus to = 2;
+  EventStatus to = 2;  // the server validates the transition table
 }
 message TransitionEventStatusResponse { Event event = 1; }
 
 message GetEventRequest { string event_id = 1; }
 message GetEventResponse { Event event = 1; }
 
-message ListEventsRequest {}
+message GetObservationSettingsRequest { string event_id = 1; }
+message GetObservationSettingsResponse { ObservationSettings settings = 1; }
+
+message UpdateObservationSettingsRequest {
+  string event_id = 1;
+  ObservationSettings settings = 2;
+}
+message UpdateObservationSettingsResponse { ObservationSettings settings = 1; }
+
+message ListEventsRequest {
+  string tenant_id = 1;
+  bool include_archived = 2;  // default false: archived events are omitted
+}
 message ListEventsResponse { repeated Event events = 1; }
