@@ -17,7 +17,7 @@ import (
 func TestCreateEvent(t *testing.T) {
 	t.Parallel()
 
-	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", false)
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, false)
 	ctrl := gomock.NewController(t)
 	repo := NewMockTenantRepository(ctrl)
 	repo.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(tenant, nil)
@@ -62,7 +62,7 @@ func TestCreateEvent(t *testing.T) {
 func TestCreateEventKeepsUnspecifiedType(t *testing.T) {
 	t.Parallel()
 
-	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", false)
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, false)
 	ctrl := gomock.NewController(t)
 	repo := NewMockTenantRepository(ctrl)
 	repo.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(tenant, nil)
@@ -295,7 +295,7 @@ func TestGetEventEnforcesTenantBoundary(t *testing.T) {
 func TestListEvents(t *testing.T) {
 	t.Parallel()
 
-	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", false)
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, false)
 	events := []domain.Event{
 		domain.NewEvent("event-1", "event-public-id-1", tenant.ID(), tenant.PublicID(), "Festival 1", domain.EventTypeShortTerm, domain.EventStatusDraft),
 		domain.NewEvent("event-2", "event-public-id-2", tenant.ID(), tenant.PublicID(), "Festival 2", domain.EventTypeLongTerm, domain.EventStatusDraft),

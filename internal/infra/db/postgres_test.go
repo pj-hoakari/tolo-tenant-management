@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"sort"
 	"testing"
 	"time"
 
@@ -30,7 +31,7 @@ func TestMain(m *testing.M) {
 		postgres.WithDatabase("tenant_management"),
 		postgres.WithUsername("tenant_management"),
 		postgres.WithPassword("tenant_management"),
-		postgres.WithInitScripts(migrationPath()),
+		postgres.WithInitScripts(migrationPaths()...),
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").
 				WithOccurrence(2).
@@ -201,7 +202,7 @@ func TestPostgresTenantRepositoryEventErrors(t *testing.T) {
 		t.Errorf("archived tenant create error = %v, want %v", err, repositorypkg.ErrTenantArchived)
 	}
 
-	missingTenant := domain.NewTenant("00000000-0000-0000-0000-000000000099", "tenant-099", "", "", false)
+	missingTenant := domain.NewTenant("00000000-0000-0000-0000-000000000099", "tenant-099", "", "", domain.TenantOwnershipStateOwned, false)
 	if err := repository.CreateEvent(ctx, newEvent("00000000-0000-0000-0000-000000000014", "event-004", missingTenant, "Missing tenant festival", domain.EventTypeShortTerm, domain.EventStatusDraft)); !errors.Is(err, repositorypkg.ErrTenantNotFound) {
 		t.Errorf("missing tenant create error = %v, want %v", err, repositorypkg.ErrTenantNotFound)
 	}
@@ -288,18 +289,25 @@ func newTestRepository(t *testing.T) *PostgresTenantRepository {
 }
 
 func newTenant(id, publicID, name string, archived bool) domain.Tenant {
-	return domain.NewTenant(id, publicID, name, "standard", archived)
+	return domain.NewTenant(id, publicID, name, "standard", domain.TenantOwnershipStateOwned, archived)
 }
 
 func newEvent(id, publicID string, tenant domain.Tenant, name string, eventType domain.EventType, status domain.EventStatus) domain.Event {
 	return domain.NewEvent(id, publicID, tenant.ID(), tenant.PublicID(), name, eventType, status)
 }
 
-func migrationPath() string {
+func migrationPaths() []string {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
 		panic("locate test source file")
 	}
 
-	return filepath.Join(filepath.Dir(filename), "..", "..", "..", "migrations", "000001_init.up.sql")
+	paths, err := filepath.Glob(filepath.Join(filepath.Dir(filename), "..", "..", "..", "migrations", "*.up.sql"))
+	if err != nil || len(paths) == 0 {
+		panic("locate migration files")
+	}
+
+	sort.Strings(paths)
+
+	return paths
 }

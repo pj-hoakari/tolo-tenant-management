@@ -44,7 +44,7 @@ func newTransportFixture(t *testing.T) transportFixture {
 func (f transportFixture) createTenant(t *testing.T, publicID, name string) domain.Tenant {
 	t.Helper()
 
-	tenant := domain.NewTenant(uuid.Must(uuid.NewV7()).String(), publicID, name, "standard", false)
+	tenant := domain.NewTenant(uuid.Must(uuid.NewV7()).String(), publicID, name, "standard", domain.TenantOwnershipStateOwned, false)
 	if err := f.repository.CreateTenant(context.Background(), tenant); err != nil {
 		t.Fatalf("CreateTenant(%q) error = %v", name, err)
 	}

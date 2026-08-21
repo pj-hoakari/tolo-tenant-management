@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"
@@ -25,9 +26,9 @@ func NewPostgresTenantRepository(db *sqlx.DB) *PostgresTenantRepository {
 
 func (r *PostgresTenantRepository) CreateTenant(ctx context.Context, tenant domain.Tenant) error {
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO tenants (id, public_id, name, contract_plan, archived)
-		VALUES ($1, $2, $3, $4, $5)`,
-		tenant.ID(), tenant.PublicID(), tenant.Name(), tenant.ContractPlan(), tenant.Archived())
+		INSERT INTO tenants (id, public_id, name, contract_plan, ownership_state, archived)
+		VALUES ($1, $2, $3, $4, $5, $6)`,
+		tenant.ID(), tenant.PublicID(), tenant.Name(), tenant.ContractPlan(), tenant.OwnershipState().String(), tenant.Archived())
 	if err != nil {
 		return mapTenantConstraintError(err)
 	}
@@ -36,19 +37,35 @@ func (r *PostgresTenantRepository) CreateTenant(ctx context.Context, tenant doma
 }
 
 func (r *PostgresTenantRepository) FindTenantByID(ctx context.Context, tenantID string) (domain.Tenant, error) {
-	return r.findTenant(ctx, `SELECT id, public_id, name, contract_plan, archived FROM tenants WHERE id = $1`, tenantID)
+	return r.findTenant(ctx, `SELECT id, public_id, name, contract_plan, ownership_state, archived FROM tenants WHERE id = $1`, tenantID)
 }
 
 func (r *PostgresTenantRepository) FindTenantByPublicID(ctx context.Context, publicID string) (domain.Tenant, error) {
-	return r.findTenant(ctx, `SELECT id, public_id, name, contract_plan, archived FROM tenants WHERE public_id = $1`, publicID)
+	return r.findTenant(ctx, `SELECT id, public_id, name, contract_plan, ownership_state, archived FROM tenants WHERE public_id = $1`, publicID)
 }
 
 type tenantRow struct {
-	ID           string `db:"id"`
-	PublicID     string `db:"public_id"`
-	Name         string `db:"name"`
-	ContractPlan string `db:"contract_plan"`
-	Archived     bool   `db:"archived"`
+	ID             string `db:"id"`
+	PublicID       string `db:"public_id"`
+	Name           string `db:"name"`
+	ContractPlan   string `db:"contract_plan"`
+	OwnershipState string `db:"ownership_state"`
+	Archived       bool   `db:"archived"`
+}
+
+func (r tenantRow) domain(ctx context.Context) (domain.Tenant, error) {
+	ownershipState, err := domain.ParseTenantOwnershipState(r.OwnershipState)
+	if err != nil {
+		return domain.Tenant{}, fmt.Errorf("parse tenant ownership state: %w", err)
+	}
+
+	// Defense in depth: never return a tenant that differs from the
+	// authenticated tenant carried in the context.
+	if err := tenantctx.VerifyOwnership(ctx, r.PublicID); err != nil {
+		return domain.Tenant{}, err
+	}
+
+	return domain.NewTenant(r.ID, r.PublicID, r.Name, r.ContractPlan, ownershipState, r.Archived), nil
 }
 
 func (r *PostgresTenantRepository) findTenant(ctx context.Context, query, value string) (domain.Tenant, error) {
@@ -61,13 +78,7 @@ func (r *PostgresTenantRepository) findTenant(ctx context.Context, query, value 
 		return domain.Tenant{}, err
 	}
 
-	// Defense in depth: never return a tenant that differs from the
-	// authenticated tenant carried in the context.
-	if err := tenantctx.VerifyOwnership(ctx, row.PublicID); err != nil {
-		return domain.Tenant{}, err
-	}
-
-	return domain.NewTenant(row.ID, row.PublicID, row.Name, row.ContractPlan, row.Archived), nil
+	return row.domain(ctx)
 }
 
 func mapTenantConstraintError(err error) error {
