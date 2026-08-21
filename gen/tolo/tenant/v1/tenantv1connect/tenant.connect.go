@@ -33,9 +33,12 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// TenantServiceRegisterTenantProcedure is the fully-qualified name of the TenantService's
-	// RegisterTenant RPC.
-	TenantServiceRegisterTenantProcedure = "/tolo.tenant.v1.TenantService/RegisterTenant"
+	// TenantServiceStartTenantRegistrationProcedure is the fully-qualified name of the TenantService's
+	// StartTenantRegistration RPC.
+	TenantServiceStartTenantRegistrationProcedure = "/tolo.tenant.v1.TenantService/StartTenantRegistration"
+	// TenantServiceClaimTenantOwnershipProcedure is the fully-qualified name of the TenantService's
+	// ClaimTenantOwnership RPC.
+	TenantServiceClaimTenantOwnershipProcedure = "/tolo.tenant.v1.TenantService/ClaimTenantOwnership"
 	// TenantServiceChangeTenantContractProcedure is the fully-qualified name of the TenantService's
 	// ChangeTenantContract RPC.
 	TenantServiceChangeTenantContractProcedure = "/tolo.tenant.v1.TenantService/ChangeTenantContract"
@@ -53,6 +56,12 @@ const (
 	TenantServiceTransitionEventStatusProcedure = "/tolo.tenant.v1.TenantService/TransitionEventStatus"
 	// TenantServiceGetEventProcedure is the fully-qualified name of the TenantService's GetEvent RPC.
 	TenantServiceGetEventProcedure = "/tolo.tenant.v1.TenantService/GetEvent"
+	// TenantServiceGetObservationSettingsProcedure is the fully-qualified name of the TenantService's
+	// GetObservationSettings RPC.
+	TenantServiceGetObservationSettingsProcedure = "/tolo.tenant.v1.TenantService/GetObservationSettings"
+	// TenantServiceUpdateObservationSettingsProcedure is the fully-qualified name of the
+	// TenantService's UpdateObservationSettings RPC.
+	TenantServiceUpdateObservationSettingsProcedure = "/tolo.tenant.v1.TenantService/UpdateObservationSettings"
 	// TenantServiceListEventsProcedure is the fully-qualified name of the TenantService's ListEvents
 	// RPC.
 	TenantServiceListEventsProcedure = "/tolo.tenant.v1.TenantService/ListEvents"
@@ -60,16 +69,26 @@ const (
 
 // TenantServiceClient is a client for the tolo.tenant.v1.TenantService service.
 type TenantServiceClient interface {
-	// Self-signup requires the tenant.register permission. token_use=registration
-	// (the credential class) is enforced separately. The caller must not already
-	// belong to the tenant being created.
-	RegisterTenant(context.Context, *connect.Request[v1.RegisterTenantRequest]) (*connect.Response[v1.RegisterTenantResponse], error)
+	// StartTenantRegistration creates a pending_owner tenant without
+	// authentication and returns a one-time ownership claim token.
+	StartTenantRegistration(context.Context, *connect.Request[v1.StartTenantRegistrationRequest]) (*connect.Response[v1.StartTenantRegistrationResponse], error)
+	// ClaimTenantOwnership turns a pending_owner tenant into an owned tenant
+	// and registers the authenticated user as its owner. It requires
+	// token_use=registration, which carries no tenant context.
+	ClaimTenantOwnership(context.Context, *connect.Request[v1.ClaimTenantOwnershipRequest]) (*connect.Response[v1.ClaimTenantOwnershipResponse], error)
 	ChangeTenantContract(context.Context, *connect.Request[v1.ChangeTenantContractRequest]) (*connect.Response[v1.ChangeTenantContractResponse], error)
 	ArchiveTenant(context.Context, *connect.Request[v1.ArchiveTenantRequest]) (*connect.Response[v1.ArchiveTenantResponse], error)
 	CreateEvent(context.Context, *connect.Request[v1.CreateEventRequest]) (*connect.Response[v1.CreateEventResponse], error)
 	AssignEventType(context.Context, *connect.Request[v1.AssignEventTypeRequest]) (*connect.Response[v1.AssignEventTypeResponse], error)
 	TransitionEventStatus(context.Context, *connect.Request[v1.TransitionEventStatusRequest]) (*connect.Response[v1.TransitionEventStatusResponse], error)
+	// GetEvent is the referential-integrity read used by Graph Authoring. It
+	// requires token_use=service with tenant context.
 	GetEvent(context.Context, *connect.Request[v1.GetEventRequest]) (*connect.Response[v1.GetEventResponse], error)
+	// GetObservationSettings supplies observation settings to Observation. It
+	// requires token_use=service and does not enforce the tenant boundary, so
+	// the response carries settings only.
+	GetObservationSettings(context.Context, *connect.Request[v1.GetObservationSettingsRequest]) (*connect.Response[v1.GetObservationSettingsResponse], error)
+	UpdateObservationSettings(context.Context, *connect.Request[v1.UpdateObservationSettingsRequest]) (*connect.Response[v1.UpdateObservationSettingsResponse], error)
 	ListEvents(context.Context, *connect.Request[v1.ListEventsRequest]) (*connect.Response[v1.ListEventsResponse], error)
 }
 
@@ -84,10 +103,16 @@ func NewTenantServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 	baseURL = strings.TrimRight(baseURL, "/")
 	tenantServiceMethods := v1.File_tolo_tenant_v1_tenant_proto.Services().ByName("TenantService").Methods()
 	return &tenantServiceClient{
-		registerTenant: connect.NewClient[v1.RegisterTenantRequest, v1.RegisterTenantResponse](
+		startTenantRegistration: connect.NewClient[v1.StartTenantRegistrationRequest, v1.StartTenantRegistrationResponse](
 			httpClient,
-			baseURL+TenantServiceRegisterTenantProcedure,
-			connect.WithSchema(tenantServiceMethods.ByName("RegisterTenant")),
+			baseURL+TenantServiceStartTenantRegistrationProcedure,
+			connect.WithSchema(tenantServiceMethods.ByName("StartTenantRegistration")),
+			connect.WithClientOptions(opts...),
+		),
+		claimTenantOwnership: connect.NewClient[v1.ClaimTenantOwnershipRequest, v1.ClaimTenantOwnershipResponse](
+			httpClient,
+			baseURL+TenantServiceClaimTenantOwnershipProcedure,
+			connect.WithSchema(tenantServiceMethods.ByName("ClaimTenantOwnership")),
 			connect.WithClientOptions(opts...),
 		),
 		changeTenantContract: connect.NewClient[v1.ChangeTenantContractRequest, v1.ChangeTenantContractResponse](
@@ -126,6 +151,18 @@ func NewTenantServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(tenantServiceMethods.ByName("GetEvent")),
 			connect.WithClientOptions(opts...),
 		),
+		getObservationSettings: connect.NewClient[v1.GetObservationSettingsRequest, v1.GetObservationSettingsResponse](
+			httpClient,
+			baseURL+TenantServiceGetObservationSettingsProcedure,
+			connect.WithSchema(tenantServiceMethods.ByName("GetObservationSettings")),
+			connect.WithClientOptions(opts...),
+		),
+		updateObservationSettings: connect.NewClient[v1.UpdateObservationSettingsRequest, v1.UpdateObservationSettingsResponse](
+			httpClient,
+			baseURL+TenantServiceUpdateObservationSettingsProcedure,
+			connect.WithSchema(tenantServiceMethods.ByName("UpdateObservationSettings")),
+			connect.WithClientOptions(opts...),
+		),
 		listEvents: connect.NewClient[v1.ListEventsRequest, v1.ListEventsResponse](
 			httpClient,
 			baseURL+TenantServiceListEventsProcedure,
@@ -137,19 +174,27 @@ func NewTenantServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 
 // tenantServiceClient implements TenantServiceClient.
 type tenantServiceClient struct {
-	registerTenant        *connect.Client[v1.RegisterTenantRequest, v1.RegisterTenantResponse]
-	changeTenantContract  *connect.Client[v1.ChangeTenantContractRequest, v1.ChangeTenantContractResponse]
-	archiveTenant         *connect.Client[v1.ArchiveTenantRequest, v1.ArchiveTenantResponse]
-	createEvent           *connect.Client[v1.CreateEventRequest, v1.CreateEventResponse]
-	assignEventType       *connect.Client[v1.AssignEventTypeRequest, v1.AssignEventTypeResponse]
-	transitionEventStatus *connect.Client[v1.TransitionEventStatusRequest, v1.TransitionEventStatusResponse]
-	getEvent              *connect.Client[v1.GetEventRequest, v1.GetEventResponse]
-	listEvents            *connect.Client[v1.ListEventsRequest, v1.ListEventsResponse]
+	startTenantRegistration   *connect.Client[v1.StartTenantRegistrationRequest, v1.StartTenantRegistrationResponse]
+	claimTenantOwnership      *connect.Client[v1.ClaimTenantOwnershipRequest, v1.ClaimTenantOwnershipResponse]
+	changeTenantContract      *connect.Client[v1.ChangeTenantContractRequest, v1.ChangeTenantContractResponse]
+	archiveTenant             *connect.Client[v1.ArchiveTenantRequest, v1.ArchiveTenantResponse]
+	createEvent               *connect.Client[v1.CreateEventRequest, v1.CreateEventResponse]
+	assignEventType           *connect.Client[v1.AssignEventTypeRequest, v1.AssignEventTypeResponse]
+	transitionEventStatus     *connect.Client[v1.TransitionEventStatusRequest, v1.TransitionEventStatusResponse]
+	getEvent                  *connect.Client[v1.GetEventRequest, v1.GetEventResponse]
+	getObservationSettings    *connect.Client[v1.GetObservationSettingsRequest, v1.GetObservationSettingsResponse]
+	updateObservationSettings *connect.Client[v1.UpdateObservationSettingsRequest, v1.UpdateObservationSettingsResponse]
+	listEvents                *connect.Client[v1.ListEventsRequest, v1.ListEventsResponse]
 }
 
-// RegisterTenant calls tolo.tenant.v1.TenantService.RegisterTenant.
-func (c *tenantServiceClient) RegisterTenant(ctx context.Context, req *connect.Request[v1.RegisterTenantRequest]) (*connect.Response[v1.RegisterTenantResponse], error) {
-	return c.registerTenant.CallUnary(ctx, req)
+// StartTenantRegistration calls tolo.tenant.v1.TenantService.StartTenantRegistration.
+func (c *tenantServiceClient) StartTenantRegistration(ctx context.Context, req *connect.Request[v1.StartTenantRegistrationRequest]) (*connect.Response[v1.StartTenantRegistrationResponse], error) {
+	return c.startTenantRegistration.CallUnary(ctx, req)
+}
+
+// ClaimTenantOwnership calls tolo.tenant.v1.TenantService.ClaimTenantOwnership.
+func (c *tenantServiceClient) ClaimTenantOwnership(ctx context.Context, req *connect.Request[v1.ClaimTenantOwnershipRequest]) (*connect.Response[v1.ClaimTenantOwnershipResponse], error) {
+	return c.claimTenantOwnership.CallUnary(ctx, req)
 }
 
 // ChangeTenantContract calls tolo.tenant.v1.TenantService.ChangeTenantContract.
@@ -182,6 +227,16 @@ func (c *tenantServiceClient) GetEvent(ctx context.Context, req *connect.Request
 	return c.getEvent.CallUnary(ctx, req)
 }
 
+// GetObservationSettings calls tolo.tenant.v1.TenantService.GetObservationSettings.
+func (c *tenantServiceClient) GetObservationSettings(ctx context.Context, req *connect.Request[v1.GetObservationSettingsRequest]) (*connect.Response[v1.GetObservationSettingsResponse], error) {
+	return c.getObservationSettings.CallUnary(ctx, req)
+}
+
+// UpdateObservationSettings calls tolo.tenant.v1.TenantService.UpdateObservationSettings.
+func (c *tenantServiceClient) UpdateObservationSettings(ctx context.Context, req *connect.Request[v1.UpdateObservationSettingsRequest]) (*connect.Response[v1.UpdateObservationSettingsResponse], error) {
+	return c.updateObservationSettings.CallUnary(ctx, req)
+}
+
 // ListEvents calls tolo.tenant.v1.TenantService.ListEvents.
 func (c *tenantServiceClient) ListEvents(ctx context.Context, req *connect.Request[v1.ListEventsRequest]) (*connect.Response[v1.ListEventsResponse], error) {
 	return c.listEvents.CallUnary(ctx, req)
@@ -189,16 +244,26 @@ func (c *tenantServiceClient) ListEvents(ctx context.Context, req *connect.Reque
 
 // TenantServiceHandler is an implementation of the tolo.tenant.v1.TenantService service.
 type TenantServiceHandler interface {
-	// Self-signup requires the tenant.register permission. token_use=registration
-	// (the credential class) is enforced separately. The caller must not already
-	// belong to the tenant being created.
-	RegisterTenant(context.Context, *connect.Request[v1.RegisterTenantRequest]) (*connect.Response[v1.RegisterTenantResponse], error)
+	// StartTenantRegistration creates a pending_owner tenant without
+	// authentication and returns a one-time ownership claim token.
+	StartTenantRegistration(context.Context, *connect.Request[v1.StartTenantRegistrationRequest]) (*connect.Response[v1.StartTenantRegistrationResponse], error)
+	// ClaimTenantOwnership turns a pending_owner tenant into an owned tenant
+	// and registers the authenticated user as its owner. It requires
+	// token_use=registration, which carries no tenant context.
+	ClaimTenantOwnership(context.Context, *connect.Request[v1.ClaimTenantOwnershipRequest]) (*connect.Response[v1.ClaimTenantOwnershipResponse], error)
 	ChangeTenantContract(context.Context, *connect.Request[v1.ChangeTenantContractRequest]) (*connect.Response[v1.ChangeTenantContractResponse], error)
 	ArchiveTenant(context.Context, *connect.Request[v1.ArchiveTenantRequest]) (*connect.Response[v1.ArchiveTenantResponse], error)
 	CreateEvent(context.Context, *connect.Request[v1.CreateEventRequest]) (*connect.Response[v1.CreateEventResponse], error)
 	AssignEventType(context.Context, *connect.Request[v1.AssignEventTypeRequest]) (*connect.Response[v1.AssignEventTypeResponse], error)
 	TransitionEventStatus(context.Context, *connect.Request[v1.TransitionEventStatusRequest]) (*connect.Response[v1.TransitionEventStatusResponse], error)
+	// GetEvent is the referential-integrity read used by Graph Authoring. It
+	// requires token_use=service with tenant context.
 	GetEvent(context.Context, *connect.Request[v1.GetEventRequest]) (*connect.Response[v1.GetEventResponse], error)
+	// GetObservationSettings supplies observation settings to Observation. It
+	// requires token_use=service and does not enforce the tenant boundary, so
+	// the response carries settings only.
+	GetObservationSettings(context.Context, *connect.Request[v1.GetObservationSettingsRequest]) (*connect.Response[v1.GetObservationSettingsResponse], error)
+	UpdateObservationSettings(context.Context, *connect.Request[v1.UpdateObservationSettingsRequest]) (*connect.Response[v1.UpdateObservationSettingsResponse], error)
 	ListEvents(context.Context, *connect.Request[v1.ListEventsRequest]) (*connect.Response[v1.ListEventsResponse], error)
 }
 
@@ -209,10 +274,16 @@ type TenantServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewTenantServiceHandler(svc TenantServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	tenantServiceMethods := v1.File_tolo_tenant_v1_tenant_proto.Services().ByName("TenantService").Methods()
-	tenantServiceRegisterTenantHandler := connect.NewUnaryHandler(
-		TenantServiceRegisterTenantProcedure,
-		svc.RegisterTenant,
-		connect.WithSchema(tenantServiceMethods.ByName("RegisterTenant")),
+	tenantServiceStartTenantRegistrationHandler := connect.NewUnaryHandler(
+		TenantServiceStartTenantRegistrationProcedure,
+		svc.StartTenantRegistration,
+		connect.WithSchema(tenantServiceMethods.ByName("StartTenantRegistration")),
+		connect.WithHandlerOptions(opts...),
+	)
+	tenantServiceClaimTenantOwnershipHandler := connect.NewUnaryHandler(
+		TenantServiceClaimTenantOwnershipProcedure,
+		svc.ClaimTenantOwnership,
+		connect.WithSchema(tenantServiceMethods.ByName("ClaimTenantOwnership")),
 		connect.WithHandlerOptions(opts...),
 	)
 	tenantServiceChangeTenantContractHandler := connect.NewUnaryHandler(
@@ -251,6 +322,18 @@ func NewTenantServiceHandler(svc TenantServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(tenantServiceMethods.ByName("GetEvent")),
 		connect.WithHandlerOptions(opts...),
 	)
+	tenantServiceGetObservationSettingsHandler := connect.NewUnaryHandler(
+		TenantServiceGetObservationSettingsProcedure,
+		svc.GetObservationSettings,
+		connect.WithSchema(tenantServiceMethods.ByName("GetObservationSettings")),
+		connect.WithHandlerOptions(opts...),
+	)
+	tenantServiceUpdateObservationSettingsHandler := connect.NewUnaryHandler(
+		TenantServiceUpdateObservationSettingsProcedure,
+		svc.UpdateObservationSettings,
+		connect.WithSchema(tenantServiceMethods.ByName("UpdateObservationSettings")),
+		connect.WithHandlerOptions(opts...),
+	)
 	tenantServiceListEventsHandler := connect.NewUnaryHandler(
 		TenantServiceListEventsProcedure,
 		svc.ListEvents,
@@ -259,8 +342,10 @@ func NewTenantServiceHandler(svc TenantServiceHandler, opts ...connect.HandlerOp
 	)
 	return "/tolo.tenant.v1.TenantService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case TenantServiceRegisterTenantProcedure:
-			tenantServiceRegisterTenantHandler.ServeHTTP(w, r)
+		case TenantServiceStartTenantRegistrationProcedure:
+			tenantServiceStartTenantRegistrationHandler.ServeHTTP(w, r)
+		case TenantServiceClaimTenantOwnershipProcedure:
+			tenantServiceClaimTenantOwnershipHandler.ServeHTTP(w, r)
 		case TenantServiceChangeTenantContractProcedure:
 			tenantServiceChangeTenantContractHandler.ServeHTTP(w, r)
 		case TenantServiceArchiveTenantProcedure:
@@ -273,6 +358,10 @@ func NewTenantServiceHandler(svc TenantServiceHandler, opts ...connect.HandlerOp
 			tenantServiceTransitionEventStatusHandler.ServeHTTP(w, r)
 		case TenantServiceGetEventProcedure:
 			tenantServiceGetEventHandler.ServeHTTP(w, r)
+		case TenantServiceGetObservationSettingsProcedure:
+			tenantServiceGetObservationSettingsHandler.ServeHTTP(w, r)
+		case TenantServiceUpdateObservationSettingsProcedure:
+			tenantServiceUpdateObservationSettingsHandler.ServeHTTP(w, r)
 		case TenantServiceListEventsProcedure:
 			tenantServiceListEventsHandler.ServeHTTP(w, r)
 		default:
@@ -284,8 +373,12 @@ func NewTenantServiceHandler(svc TenantServiceHandler, opts ...connect.HandlerOp
 // UnimplementedTenantServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedTenantServiceHandler struct{}
 
-func (UnimplementedTenantServiceHandler) RegisterTenant(context.Context, *connect.Request[v1.RegisterTenantRequest]) (*connect.Response[v1.RegisterTenantResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tolo.tenant.v1.TenantService.RegisterTenant is not implemented"))
+func (UnimplementedTenantServiceHandler) StartTenantRegistration(context.Context, *connect.Request[v1.StartTenantRegistrationRequest]) (*connect.Response[v1.StartTenantRegistrationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tolo.tenant.v1.TenantService.StartTenantRegistration is not implemented"))
+}
+
+func (UnimplementedTenantServiceHandler) ClaimTenantOwnership(context.Context, *connect.Request[v1.ClaimTenantOwnershipRequest]) (*connect.Response[v1.ClaimTenantOwnershipResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tolo.tenant.v1.TenantService.ClaimTenantOwnership is not implemented"))
 }
 
 func (UnimplementedTenantServiceHandler) ChangeTenantContract(context.Context, *connect.Request[v1.ChangeTenantContractRequest]) (*connect.Response[v1.ChangeTenantContractResponse], error) {
@@ -310,6 +403,14 @@ func (UnimplementedTenantServiceHandler) TransitionEventStatus(context.Context, 
 
 func (UnimplementedTenantServiceHandler) GetEvent(context.Context, *connect.Request[v1.GetEventRequest]) (*connect.Response[v1.GetEventResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tolo.tenant.v1.TenantService.GetEvent is not implemented"))
+}
+
+func (UnimplementedTenantServiceHandler) GetObservationSettings(context.Context, *connect.Request[v1.GetObservationSettingsRequest]) (*connect.Response[v1.GetObservationSettingsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tolo.tenant.v1.TenantService.GetObservationSettings is not implemented"))
+}
+
+func (UnimplementedTenantServiceHandler) UpdateObservationSettings(context.Context, *connect.Request[v1.UpdateObservationSettingsRequest]) (*connect.Response[v1.UpdateObservationSettingsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tolo.tenant.v1.TenantService.UpdateObservationSettings is not implemented"))
 }
 
 func (UnimplementedTenantServiceHandler) ListEvents(context.Context, *connect.Request[v1.ListEventsRequest]) (*connect.Response[v1.ListEventsResponse], error) {

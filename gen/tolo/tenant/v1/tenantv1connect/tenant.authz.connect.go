@@ -48,8 +48,10 @@ type tenantServiceAuthzInterceptor struct{ verifier Verifier }
 
 func (i *tenantServiceAuthzInterceptor) verify(ctx context.Context, procedure string) error {
 	switch procedure {
-	case "/tolo.tenant.v1.TenantService/RegisterTenant":
-		if err := i.verifier.Verify(ctx, AuthPolicy{Level: AuthLevelAuthenticated, RequiredScopes: []string{"tenant.register"}}); err != nil {
+	case "/tolo.tenant.v1.TenantService/StartTenantRegistration":
+		return nil
+	case "/tolo.tenant.v1.TenantService/ClaimTenantOwnership":
+		if err := i.verifier.Verify(ctx, AuthPolicy{Level: AuthLevelAuthenticated, RequiredScopes: []string{"tenant.claim"}}); err != nil {
 			var connectErr *connect.Error
 			if errors.As(err, &connectErr) {
 				return err
@@ -104,6 +106,24 @@ func (i *tenantServiceAuthzInterceptor) verify(ctx context.Context, procedure st
 		return nil
 	case "/tolo.tenant.v1.TenantService/GetEvent":
 		if err := i.verifier.Verify(ctx, AuthPolicy{Level: AuthLevelInternal}); err != nil {
+			var connectErr *connect.Error
+			if errors.As(err, &connectErr) {
+				return err
+			}
+			return connect.NewError(connect.CodeUnauthenticated, err)
+		}
+		return nil
+	case "/tolo.tenant.v1.TenantService/GetObservationSettings":
+		if err := i.verifier.Verify(ctx, AuthPolicy{Level: AuthLevelInternal}); err != nil {
+			var connectErr *connect.Error
+			if errors.As(err, &connectErr) {
+				return err
+			}
+			return connect.NewError(connect.CodeUnauthenticated, err)
+		}
+		return nil
+	case "/tolo.tenant.v1.TenantService/UpdateObservationSettings":
+		if err := i.verifier.Verify(ctx, AuthPolicy{Level: AuthLevelAuthenticated, RequiredScopes: []string{"events.write"}}); err != nil {
 			var connectErr *connect.Error
 			if errors.As(err, &connectErr) {
 				return err
