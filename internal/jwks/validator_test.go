@@ -22,7 +22,7 @@ func (f roundTripperFunc) RoundTrip(request *http.Request) (*http.Response, erro
 
 func TestJWKSValidatorCachesFetchedKey(t *testing.T) {
 	generated, err := jwtgen.Generate(jwtgen.Config{
-		Issuer: "api-gateway", Audience: "tenant-management", TokenUse: "tenant_access",
+		Issuer: DefaultInternalJWTIssuer, Audience: "tenant-management", TokenUse: "tenant_access",
 		TenantPublicID: "0123456789abcdef", Scope: "events.read", KeyID: "key-1", TTL: time.Hour,
 	})
 	if err != nil {
@@ -41,7 +41,7 @@ func TestJWKSValidatorCachesFetchedKey(t *testing.T) {
 
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body)), Header: make(http.Header)}, nil
 	})}
-	validator := newJWKSValidator("https://jwks.example.test/keys", "api-gateway", "tenant-management", client)
+	validator := newJWKSValidator("https://jwks.example.test/keys", DefaultInternalJWTIssuer, "tenant-management", client)
 
 	for range 2 {
 		if _, err := validator.Claims(context.Background(), "Bearer "+generated.Token); err != nil {
@@ -66,12 +66,12 @@ func TestJWKSValidatorAcceptsBothServiceTokenOrigins(t *testing.T) {
 	}{
 		{
 			name:   "machine origin",
-			config: jwtgen.Config{Issuer: "api-gateway", Audience: "tenant-management", TokenUse: "service", KeyID: "key-1", TTL: time.Hour},
+			config: jwtgen.Config{Issuer: DefaultInternalJWTIssuer, Audience: "tenant-management", TokenUse: "service", KeyID: "key-1", TTL: time.Hour},
 		},
 		{
 			name: "user origin with tenant context",
 			config: jwtgen.Config{
-				Issuer: "api-gateway", Audience: "tenant-management", TokenUse: "service",
+				Issuer: DefaultInternalJWTIssuer, Audience: "tenant-management", TokenUse: "service",
 				OriginSub: "user-1", Scope: "events.read", TenantPublicID: "0123456789abcdef", KeyID: "key-1", TTL: time.Hour,
 			},
 		},
@@ -86,7 +86,7 @@ func TestJWKSValidatorAcceptsBothServiceTokenOrigins(t *testing.T) {
 				t.Fatalf("Generate() error = %v", err)
 			}
 
-			validator := newJWKSValidator("https://jwks.example.test/keys", "api-gateway", "tenant-management", staticJWKSClient(t, generated.JWKS))
+			validator := newJWKSValidator("https://jwks.example.test/keys", DefaultInternalJWTIssuer, "tenant-management", staticJWKSClient(t, generated.JWKS))
 
 			claims, err := validator.Claims(context.Background(), "Bearer "+generated.Token)
 			if err != nil {

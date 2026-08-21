@@ -17,11 +17,18 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-const DefaultInternalJWKSURL = "http://gateway:8080/.well-known/jwks.json"
+// Defaults for verifying internal JWTs. The issuer is the Service Gateway's
+// issuer identifier and must match the value the gateway signs with; the
+// audience is this service's logical identifier.
+const (
+	DefaultInternalJWKSURL     = "http://gateway:8080/.well-known/jwks.json"
+	DefaultInternalJWTIssuer   = "service-gateway"
+	DefaultInternalJWTAudience = "tolo-tenant-management"
+)
 
 const jwksCacheTTL = 5 * time.Minute
 
-// JWKSValidator validates internal JWTs against API Gateway's published keys.
+// JWKSValidator validates internal JWTs against the Service Gateway's published keys.
 // One instance is shared by authorization and tenant ID extraction.
 type JWKSValidator struct {
 	url      string

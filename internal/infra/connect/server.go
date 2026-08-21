@@ -14,16 +14,33 @@ import (
 	"github.com/pj-hoakari/tolo-tenant-management/internal/jwks"
 )
 
-func NewHandler(tenantService application.TenantUseCases) (http.Handler, error) {
-	return NewHandlerWithJWKSURL(tenantService, jwks.DefaultInternalJWKSURL)
+// JWTSettings locates the Service Gateway's JWKS and names the issuer and
+// audience every internal JWT must carry.
+type JWTSettings struct {
+	JWKSURL  string
+	Issuer   string
+	Audience string
 }
 
-func NewHandlerWithJWKSURL(tenantService application.TenantUseCases, jwksURL string) (http.Handler, error) {
-	return NewHandlerWithValidator(tenantService, jwks.NewJWKSValidator(jwksURL, internalJWTIssuer, internalJWTAudience))
+// DefaultJWTSettings returns the settings for the Docker Compose setup.
+func DefaultJWTSettings() JWTSettings {
+	return JWTSettings{
+		JWKSURL:  jwks.DefaultInternalJWKSURL,
+		Issuer:   jwks.DefaultInternalJWTIssuer,
+		Audience: jwks.DefaultInternalJWTAudience,
+	}
+}
+
+func NewHandler(tenantService application.TenantUseCases) (http.Handler, error) {
+	return NewHandlerWithJWTSettings(tenantService, DefaultJWTSettings())
+}
+
+func NewHandlerWithJWTSettings(tenantService application.TenantUseCases, settings JWTSettings) (http.Handler, error) {
+	return NewHandlerWithValidator(tenantService, jwks.NewJWKSValidator(settings.JWKSURL, settings.Issuer, settings.Audience))
 }
 
 func NewHandlerWithValidator(tenantService application.TenantUseCases, validator JWTValidator) (http.Handler, error) {
-	// The caller sits behind the API Gateway, so an incoming trace context is
+	// The caller sits behind the Service Gateway, so an incoming trace context is
 	// trusted and continued instead of being demoted to a span link.
 	tracing, err := otelconnect.NewInterceptor(otelconnect.WithTrustRemote())
 	if err != nil {

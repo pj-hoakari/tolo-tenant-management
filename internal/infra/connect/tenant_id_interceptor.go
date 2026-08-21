@@ -9,11 +9,6 @@ import (
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
 
-const (
-	internalJWTIssuer   = "api-gateway"
-	internalJWTAudience = "tolo-tenant-management"
-)
-
 type internalTokenUse = string
 
 const (

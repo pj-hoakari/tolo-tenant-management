@@ -51,9 +51,12 @@ func newDynamicTestHandler(t *testing.T, service application.TenantUseCases) (ht
 	}))
 	t.Cleanup(server.Close)
 
-	handler, err := NewHandlerWithJWKSURL(service, server.URL)
+	settings := DefaultJWTSettings()
+	settings.JWKSURL = server.URL
+
+	handler, err := NewHandlerWithJWTSettings(service, settings)
 	if err != nil {
-		t.Fatalf("NewHandlerWithJWKSURL() error = %v", err)
+		t.Fatalf("NewHandlerWithJWTSettings() error = %v", err)
 	}
 
 	return handler, registry
