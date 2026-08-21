@@ -18,6 +18,13 @@ var (
 	ErrEventPublicIDExists     = errors.New("event public ID already exists")
 )
 
+// Transactor runs a unit of work inside one database transaction. The
+// transaction is carried by the context handed to fn, so repository calls made
+// with that context join it.
+type Transactor interface {
+	WithinTransaction(ctx context.Context, fn func(context.Context) error) error
+}
+
 // TenantRepository persists tenants and their events.
 //
 // Lookups that serve RPC requests take public IDs, because the wire contract

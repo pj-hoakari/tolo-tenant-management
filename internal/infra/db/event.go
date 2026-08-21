@@ -7,13 +7,14 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jmoiron/sqlx"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/repository"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
 
 func (r *PostgresTenantRepository) CreateEvent(ctx context.Context, event domain.Event) error {
-	result, err := r.db.ExecContext(ctx, `
+	result, err := r.executor(ctx).ExecContext(ctx, `
 		INSERT INTO events (id, public_id, tenant_id, tenant_public_id, name, event_type, status)
 		SELECT $1, $2, $3, $4, $5, $6, $7
 		FROM tenants
@@ -58,7 +59,7 @@ func (r *PostgresTenantRepository) findEventByID(ctx context.Context, eventID st
 
 func (r *PostgresTenantRepository) findEvent(ctx context.Context, query, value string) (domain.Event, error) {
 	var row eventRow
-	if err := r.db.GetContext(ctx, &row, query, value); err != nil {
+	if err := sqlx.GetContext(ctx, r.executor(ctx), &row, query, value); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Event{}, repository.ErrEventNotFound
 		}
@@ -71,7 +72,7 @@ func (r *PostgresTenantRepository) findEvent(ctx context.Context, query, value s
 
 func (r *PostgresTenantRepository) ListEventsByTenantID(ctx context.Context, tenantID string) ([]domain.Event, error) {
 	var rows []eventRow
-	if err := r.db.SelectContext(ctx, &rows, `
+	if err := sqlx.SelectContext(ctx, r.executor(ctx), &rows, `
 		SELECT id, public_id, tenant_id, tenant_public_id, name, event_type, status
 		FROM events WHERE tenant_id = $1 ORDER BY id`, tenantID); err != nil {
 		return nil, err
@@ -91,7 +92,7 @@ func (r *PostgresTenantRepository) ListEventsByTenantID(ctx context.Context, ten
 }
 
 func (r *PostgresTenantRepository) UpdateEvent(ctx context.Context, event domain.Event) error {
-	result, err := r.db.ExecContext(ctx, `
+	result, err := r.executor(ctx).ExecContext(ctx, `
 		UPDATE events AS e
 		SET name = $2, event_type = $3, status = $4
 		FROM tenants AS t

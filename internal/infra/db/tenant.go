@@ -25,7 +25,7 @@ func NewPostgresTenantRepository(db *sqlx.DB) *PostgresTenantRepository {
 }
 
 func (r *PostgresTenantRepository) CreateTenant(ctx context.Context, tenant domain.Tenant) error {
-	_, err := r.db.ExecContext(ctx, `
+	_, err := r.executor(ctx).ExecContext(ctx, `
 		INSERT INTO tenants (id, public_id, name, contract_plan, ownership_state, archived)
 		VALUES ($1, $2, $3, $4, $5, $6)`,
 		tenant.ID(), tenant.PublicID(), tenant.Name(), tenant.ContractPlan(), tenant.OwnershipState().String(), tenant.Archived())
@@ -70,7 +70,7 @@ func (r tenantRow) domain(ctx context.Context) (domain.Tenant, error) {
 
 func (r *PostgresTenantRepository) findTenant(ctx context.Context, query, value string) (domain.Tenant, error) {
 	var row tenantRow
-	if err := r.db.GetContext(ctx, &row, query, value); err != nil {
+	if err := sqlx.GetContext(ctx, r.executor(ctx), &row, query, value); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Tenant{}, repository.ErrTenantNotFound
 		}

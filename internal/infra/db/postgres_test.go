@@ -311,3 +311,48 @@ func migrationPaths() []string {
 
 	return paths
 }
+
+func TestPostgresTenantRepositoryWithinTransaction(t *testing.T) {
+	repository := newTestRepository(t)
+	ctx := context.Background()
+	errAbort := errors.New("abort")
+
+	rolledBack := newTenant("00000000-0000-0000-0000-000000000001", "tenant-001", "Rolled Back", false)
+
+	err := repository.WithinTransaction(ctx, func(ctx context.Context) error {
+		if err := repository.CreateTenant(ctx, rolledBack); err != nil {
+			return err
+		}
+
+		// Inside the transaction the row is visible to the same connection.
+		if _, err := repository.FindTenantByID(ctx, rolledBack.ID()); err != nil {
+			return err
+		}
+
+		return errAbort
+	})
+	if !errors.Is(err, errAbort) {
+		t.Fatalf("WithinTransaction() error = %v, want %v", err, errAbort)
+	}
+
+	if _, err := repository.FindTenantByID(ctx, rolledBack.ID()); !errors.Is(err, repositorypkg.ErrTenantNotFound) {
+		t.Errorf("FindTenantByID() after rollback error = %v, want %v", err, repositorypkg.ErrTenantNotFound)
+	}
+
+	committed := newTenant("00000000-0000-0000-0000-000000000002", "tenant-002", "Committed", false)
+
+	err = repository.WithinTransaction(ctx, func(ctx context.Context) error {
+		// A nested call joins the surrounding transaction instead of opening
+		// a second one.
+		return repository.WithinTransaction(ctx, func(ctx context.Context) error {
+			return repository.CreateTenant(ctx, committed)
+		})
+	})
+	if err != nil {
+		t.Fatalf("WithinTransaction() error = %v", err)
+	}
+
+	if _, err := repository.FindTenantByID(ctx, committed.ID()); err != nil {
+		t.Errorf("FindTenantByID() after commit error = %v, want nil", err)
+	}
+}
