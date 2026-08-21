@@ -44,34 +44,6 @@ func NewService(tenantService application.TenantUseCases) *Service {
 	}
 }
 
-func (s *Service) RegisterTenant(ctx context.Context, req *connectrpc.Request[tenantv1.RegisterTenantRequest]) (*connectrpc.Response[tenantv1.RegisterTenantResponse], error) {
-	tenant, err := s.tenantService.RegisterTenant(ctx, application.RegisterTenantInput{
-		Name:         req.Msg.GetName(),
-		ContractPlan: req.Msg.GetContractPlan(),
-	})
-	if err != nil {
-		if errors.Is(err, application.ErrTenantNameRequired) || errors.Is(err, application.ErrTenantContractPlanRequired) {
-			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
-		}
-
-		if errors.Is(err, repository.ErrTenantNameAlreadyExists) {
-			return nil, connectrpc.NewError(connectrpc.CodeAlreadyExists, err)
-		}
-
-		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
-	}
-
-	return connectrpc.NewResponse(&tenantv1.RegisterTenantResponse{
-		Tenant: &tenantv1.Tenant{
-			TenantId:       tenant.ID(),
-			Name:           tenant.Name(),
-			ContractPlan:   tenant.ContractPlan(),
-			Archived:       tenant.Archived(),
-			TenantPublicId: tenant.PublicID(),
-		},
-	}), nil
-}
-
 func (s *Service) ChangeTenantContract(context.Context, *connectrpc.Request[tenantv1.ChangeTenantContractRequest]) (*connectrpc.Response[tenantv1.ChangeTenantContractResponse], error) {
 	return nil, connectrpc.NewError(connectrpc.CodeUnimplemented, errNotImplemented)
 }
@@ -105,18 +77,7 @@ func (s *Service) CreateEvent(ctx context.Context, req *connectrpc.Request[tenan
 		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
 	}
 
-	return connectrpc.NewResponse(&tenantv1.CreateEventResponse{
-		Event: &tenantv1.Event{
-			EventId:             event.ID(),
-			TenantId:            event.TenantID(),
-			Name:                event.Name(),
-			Type:                eventTypeProto(event.Type()),
-			Status:              eventStatusProto(event.Status()),
-			ObservationSettings: nil,
-			EventPublicId:       event.PublicID(),
-			TenantPublicId:      event.TenantPublicID(),
-		},
-	}), nil
+	return connectrpc.NewResponse(&tenantv1.CreateEventResponse{Event: eventProto(event)}), nil
 }
 
 func eventTypeDomain(eventType tenantv1.EventType) domain.EventType {
@@ -185,8 +146,8 @@ func eventStatusDomain(eventStatus tenantv1.EventStatus) domain.EventStatus {
 
 func (s *Service) AssignEventType(ctx context.Context, req *connectrpc.Request[tenantv1.AssignEventTypeRequest]) (*connectrpc.Response[tenantv1.AssignEventTypeResponse], error) {
 	event, err := s.tenantService.AssignEventType(ctx, application.AssignEventTypeInput{
-		EventID: req.Msg.GetEventId(),
-		Type:    eventTypeDomain(req.Msg.GetType()),
+		EventPublicID: req.Msg.GetEventId(),
+		Type:          eventTypeDomain(req.Msg.GetType()),
 	})
 	if err != nil {
 		if errors.Is(err, application.ErrEventIDRequired) || errors.Is(err, application.ErrEventTypeRequired) {
@@ -213,8 +174,8 @@ func (s *Service) AssignEventType(ctx context.Context, req *connectrpc.Request[t
 
 func (s *Service) TransitionEventStatus(ctx context.Context, req *connectrpc.Request[tenantv1.TransitionEventStatusRequest]) (*connectrpc.Response[tenantv1.TransitionEventStatusResponse], error) {
 	event, err := s.tenantService.TransitionEventStatus(ctx, application.TransitionEventStatusInput{
-		EventID: req.Msg.GetEventId(),
-		To:      eventStatusDomain(req.Msg.GetTo()),
+		EventPublicID: req.Msg.GetEventId(),
+		To:            eventStatusDomain(req.Msg.GetTo()),
 	})
 	if err != nil {
 		if errors.Is(err, application.ErrEventIDRequired) || errors.Is(err, application.ErrEventStatusRequired) {
@@ -241,16 +202,15 @@ func (s *Service) TransitionEventStatus(ctx context.Context, req *connectrpc.Req
 	}), nil
 }
 
+// eventProto maps an event to its wire representation. Only public IDs are
+// exposed; the internal primary keys never leave the service.
 func eventProto(event domain.Event) *tenantv1.Event {
 	return &tenantv1.Event{
-		EventId:             event.ID(),
-		TenantId:            event.TenantID(),
-		Name:                event.Name(),
-		Type:                eventTypeProto(event.Type()),
-		Status:              eventStatusProto(event.Status()),
-		ObservationSettings: nil,
-		EventPublicId:       event.PublicID(),
-		TenantPublicId:      event.TenantPublicID(),
+		EventId:  event.PublicID(),
+		TenantId: event.TenantPublicID(),
+		Name:     event.Name(),
+		Type:     eventTypeProto(event.Type()),
+		Status:   eventStatusProto(event.Status()),
 	}
 }
 

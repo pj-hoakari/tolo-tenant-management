@@ -35,14 +35,14 @@ type CreateEventInput struct {
 
 // TransitionEventStatusInput contains the requested event status change.
 type TransitionEventStatusInput struct {
-	EventID string
-	To      domain.EventStatus
+	EventPublicID string
+	To            domain.EventStatus
 }
 
 // AssignEventTypeInput contains the requested event type assignment.
 type AssignEventTypeInput struct {
-	EventID string
-	Type    domain.EventType
+	EventPublicID string
+	Type          domain.EventType
 }
 
 // RegisterTenantUseCase registers a tenant.
@@ -65,7 +65,7 @@ type AssignEventTypeUseCase interface {
 	AssignEventType(context.Context, AssignEventTypeInput) (domain.Event, error)
 }
 
-// GetEventUseCase retrieves one event by its internal ID.
+// GetEventUseCase retrieves one event by its public ID.
 type GetEventUseCase interface {
 	GetEvent(context.Context, string) (domain.Event, error)
 }
@@ -175,7 +175,7 @@ func (s *TenantService) CreateEvent(ctx context.Context, input CreateEventInput)
 }
 
 func (s *TenantService) TransitionEventStatus(ctx context.Context, input TransitionEventStatusInput) (domain.Event, error) {
-	if input.EventID == "" {
+	if input.EventPublicID == "" {
 		return domain.Event{}, ErrEventIDRequired
 	}
 
@@ -183,7 +183,7 @@ func (s *TenantService) TransitionEventStatus(ctx context.Context, input Transit
 		return domain.Event{}, ErrEventStatusRequired
 	}
 
-	event, err := s.tenantRepository.FindEventByID(ctx, input.EventID)
+	event, err := s.tenantRepository.FindEventByPublicID(ctx, input.EventPublicID)
 	if err != nil {
 		return domain.Event{}, err
 	}
@@ -206,7 +206,7 @@ func (s *TenantService) TransitionEventStatus(ctx context.Context, input Transit
 }
 
 func (s *TenantService) AssignEventType(ctx context.Context, input AssignEventTypeInput) (domain.Event, error) {
-	if input.EventID == "" {
+	if input.EventPublicID == "" {
 		return domain.Event{}, ErrEventIDRequired
 	}
 
@@ -214,7 +214,7 @@ func (s *TenantService) AssignEventType(ctx context.Context, input AssignEventTy
 		return domain.Event{}, ErrEventTypeRequired
 	}
 
-	event, err := s.tenantRepository.FindEventByID(ctx, input.EventID)
+	event, err := s.tenantRepository.FindEventByPublicID(ctx, input.EventPublicID)
 	if err != nil {
 		return domain.Event{}, err
 	}
@@ -236,12 +236,12 @@ func (s *TenantService) AssignEventType(ctx context.Context, input AssignEventTy
 	return updatedEvent, nil
 }
 
-func (s *TenantService) GetEvent(ctx context.Context, eventID string) (domain.Event, error) {
-	if eventID == "" {
+func (s *TenantService) GetEvent(ctx context.Context, eventPublicID string) (domain.Event, error) {
+	if eventPublicID == "" {
 		return domain.Event{}, ErrEventIDRequired
 	}
 
-	return s.tenantRepository.FindEventByID(ctx, eventID)
+	return s.tenantRepository.FindEventByPublicID(ctx, eventPublicID)
 }
 
 func (s *TenantService) ListEvents(ctx context.Context) ([]domain.Event, error) {

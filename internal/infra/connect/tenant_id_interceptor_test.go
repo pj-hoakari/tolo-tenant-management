@@ -13,7 +13,7 @@ func TestTenantIDNotRequired(t *testing.T) {
 		procedure string
 		want      bool
 	}{
-		{procedure: tenantv1connect.TenantServiceRegisterTenantProcedure, want: true},
+		{procedure: tenantv1connect.TenantServiceClaimTenantOwnershipProcedure, want: true},
 		{procedure: tenantv1connect.TenantServiceGetEventProcedure, want: true},
 		{procedure: tenantv1connect.TenantServiceCreateEventProcedure, want: false},
 	}

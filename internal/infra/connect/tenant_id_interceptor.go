@@ -49,7 +49,7 @@ func newTenantPublicIDInterceptor(validator JWTValidator) connectrpc.Interceptor
 
 func requiredTokenUse(procedure string) internalTokenUse {
 	switch procedure {
-	case tenantv1connect.TenantServiceRegisterTenantProcedure:
+	case tenantv1connect.TenantServiceClaimTenantOwnershipProcedure:
 		return internalTokenUseRegistration
 	case tenantv1connect.TenantServiceGetEventProcedure:
 		return internalTokenUseService
@@ -70,7 +70,7 @@ func hasScope(scope, requiredScope string) bool {
 
 func tenantIDNotRequired(procedure string) bool {
 	switch procedure {
-	case tenantv1connect.TenantServiceRegisterTenantProcedure,
+	case tenantv1connect.TenantServiceClaimTenantOwnershipProcedure,
 		tenantv1connect.TenantServiceGetEventProcedure:
 		return true
 	default:

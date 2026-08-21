@@ -4,139 +4,32 @@ import (
 	"context"
 	"net/http/httptest"
 	"regexp"
-	"sync"
 	"testing"
 
 	connectrpc "connectrpc.com/connect"
+	"github.com/google/uuid"
 
 	tenantv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1"
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1/tenantv1connect"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/infra"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
 )
 
-var (
-	publicIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
-	uuidV7Pattern   = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
-)
+var publicIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
 
-type relationTransportSpy struct {
-	mu    sync.Mutex
-	input application.AddTenantMemberInput
-}
+// createTenant stores an owned tenant directly, standing in for the onboarding
+// flow that is not part of this transport's responsibilities.
+func createTenant(t *testing.T, repository *db.PostgresTenantRepository, publicID, name string) domain.Tenant {
+	t.Helper()
 
-func (s *relationTransportSpy) AddTenantMember(_ context.Context, input application.AddTenantMemberInput) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.input = input
-
-	return nil
-}
-
-func (s *relationTransportSpy) call() application.AddTenantMemberInput {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	return s.input
-}
-
-func TestRegisterTenantOverTransport(t *testing.T) {
-	relationTransport := &relationTransportSpy{}
-	tenantService := application.NewTenantService(
-		newIntegrationTenantRepository(t),
-		infra.NewRelationServiceWithTransport(relationTransport),
-	)
-	httpServer := httptest.NewServer(newTestHandler(t, tenantService))
-	t.Cleanup(httpServer.Close)
-	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
-
-	t.Run("rejects missing bearer token", func(t *testing.T) {
-		_, err := client.RegisterTenant(context.Background(), connectrpc.NewRequest(&tenantv1.RegisterTenantRequest{Name: "Acme"}))
-		if connectrpc.CodeOf(err) != connectrpc.CodeUnauthenticated {
-			t.Fatalf("RegisterTenant() error code = %v, want %v", connectrpc.CodeOf(err), connectrpc.CodeUnauthenticated)
-		}
-	})
-
-	t.Run("registers tenant in the repository", func(t *testing.T) {
-		req := connectrpc.NewRequest(&tenantv1.RegisterTenantRequest{Name: "Acme", ContractPlan: "standard"})
-		req.Header().Set("Authorization", internalJWTs(t).registration)
-
-		res, err := client.RegisterTenant(context.Background(), req)
-		if err != nil {
-			t.Fatalf("RegisterTenant() error = %v", err)
-		}
-
-		if got, want := res.Msg.GetTenant().GetName(), "Acme"; got != want {
-			t.Errorf("Tenant.Name = %q, want %q", got, want)
-		}
-
-		if got, want := res.Msg.GetTenant().GetContractPlan(), "standard"; got != want {
-			t.Errorf("Tenant.ContractPlan = %q, want %q", got, want)
-		}
-
-		if got := res.Msg.GetTenant().GetTenantId(); !uuidV7Pattern.MatchString(got) {
-			t.Errorf("Tenant.TenantId = %q, want UUIDv7", got)
-		}
-
-		if got := res.Msg.GetTenant().GetTenantPublicId(); !publicIDPattern.MatchString(got) {
-			t.Errorf("Tenant.TenantPublicId = %q, want 16-character hex", got)
-		}
-
-		if res.Msg.GetTenant().GetArchived() {
-			t.Error("Tenant.Archived = true, want false")
-		}
-
-		input := relationTransport.call()
-
-		if got := input.TenantID; !uuidV7Pattern.MatchString(got) {
-			t.Errorf("Relation tenant ID = %q, want UUIDv7", got)
-		}
-
-		if got, want := input.TenantID, res.Msg.GetTenant().GetTenantId(); got != want {
-			t.Errorf("Relation tenant ID = %q, want %q", got, want)
-		}
-
-		if got, want := input.Role, application.TenantOwnerRole; got != want {
-			t.Errorf("Relation role = %q, want %q", got, want)
-		}
-	})
-
-	t.Run("rejects missing required fields", func(t *testing.T) {
-		req := connectrpc.NewRequest(&tenantv1.RegisterTenantRequest{ContractPlan: "standard"})
-		req.Header().Set("Authorization", internalJWTs(t).registration)
-
-		_, err := client.RegisterTenant(context.Background(), req)
-		if connectrpc.CodeOf(err) != connectrpc.CodeInvalidArgument {
-			t.Fatalf("RegisterTenant() error code = %v, want %v", connectrpc.CodeOf(err), connectrpc.CodeInvalidArgument)
-		}
-	})
-}
-
-func TestRegisterTenantOverTransportRejectsDuplicateName(t *testing.T) {
-	tenantRepository := newIntegrationTenantRepository(t)
-	tenantService := application.NewTenantService(tenantRepository, infra.NewRelationService())
-	httpServer := httptest.NewServer(newTestHandler(t, tenantService))
-	t.Cleanup(httpServer.Close)
-	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
-
-	register := func(t *testing.T) error {
-		t.Helper()
-
-		req := connectrpc.NewRequest(&tenantv1.RegisterTenantRequest{Name: "Acme", ContractPlan: "standard"})
-		req.Header().Set("Authorization", internalJWTs(t).registration)
-		_, err := client.RegisterTenant(context.Background(), req)
-
-		return err
+	tenant := domain.NewTenant(uuid.Must(uuid.NewV7()).String(), publicID, name, "standard", false)
+	if err := repository.CreateTenant(context.Background(), tenant); err != nil {
+		t.Fatalf("CreateTenant(%q) error = %v", name, err)
 	}
 
-	if err := register(t); err != nil {
-		t.Fatalf("first RegisterTenant() error = %v", err)
-	}
-
-	if err := register(t); connectrpc.CodeOf(err) != connectrpc.CodeAlreadyExists {
-		t.Fatalf("second RegisterTenant() error code = %v, want %v", connectrpc.CodeOf(err), connectrpc.CodeAlreadyExists)
-	}
+	return tenant
 }
 
 func TestCreateEventOverTransport(t *testing.T) {
@@ -147,24 +40,13 @@ func TestCreateEventOverTransport(t *testing.T) {
 	t.Cleanup(httpServer.Close)
 	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
 
-	registerRequest := connectrpc.NewRequest(&tenantv1.RegisterTenantRequest{
-		Name:         "Event Host",
-		ContractPlan: "standard",
-	})
-	registerRequest.Header().Set("Authorization", internalJWTs(t).registration)
-
-	registeredTenant, err := client.RegisterTenant(context.Background(), registerRequest)
-	if err != nil {
-		t.Fatalf("RegisterTenant() error = %v", err)
-	}
-
-	tenantPublicID := registeredTenant.Msg.GetTenant().GetTenantPublicId()
+	tenant := createTenant(t, tenantRepository, "0123456789abcdef", "Event Host")
 
 	createRequest := connectrpc.NewRequest(&tenantv1.CreateEventRequest{
 		Name: "Summer Festival",
 		Type: tenantv1.EventType_EVENT_TYPE_SHORT_TERM,
 	})
-	createRequest.Header().Set("Authorization", mintTenantAccessToken(t, jwks, tenantPublicID))
+	createRequest.Header().Set("Authorization", mintTenantAccessToken(t, jwks, tenant.PublicID()))
 
 	eventResponse, err := client.CreateEvent(context.Background(), createRequest)
 	if err != nil {
@@ -172,12 +54,8 @@ func TestCreateEventOverTransport(t *testing.T) {
 	}
 
 	event := eventResponse.Msg.GetEvent()
-	if got, want := event.GetTenantId(), registeredTenant.Msg.GetTenant().GetTenantId(); got != want {
+	if got, want := event.GetTenantId(), tenant.PublicID(); got != want {
 		t.Errorf("Event.TenantId = %q, want %q", got, want)
-	}
-
-	if got, want := event.GetTenantPublicId(), registeredTenant.Msg.GetTenant().GetTenantPublicId(); got != want {
-		t.Errorf("Event.TenantPublicId = %q, want %q", got, want)
 	}
 
 	if got, want := event.GetName(), "Summer Festival"; got != want {
@@ -192,12 +70,10 @@ func TestCreateEventOverTransport(t *testing.T) {
 		t.Errorf("Event.Status = %v, want %v", got, want)
 	}
 
-	if got := event.GetEventId(); !uuidV7Pattern.MatchString(got) {
-		t.Errorf("Event.EventId = %q, want UUIDv7", got)
-	}
-
-	if got := event.GetEventPublicId(); !publicIDPattern.MatchString(got) {
-		t.Errorf("Event.EventPublicId = %q, want 16-character hex", got)
+	// Only the public ID is exposed; the internal UUIDv7 never leaves the
+	// service.
+	if got := event.GetEventId(); !publicIDPattern.MatchString(got) {
+		t.Errorf("Event.EventId = %q, want 16-character hex", got)
 	}
 }
 
@@ -244,24 +120,15 @@ func TestCreateEventOverTransportRejectsForeignTenant(t *testing.T) {
 }
 
 func TestTransitionEventStatusOverTransport(t *testing.T) {
-	tenantService := application.NewTenantService(newIntegrationTenantRepository(t), infra.NewRelationService())
+	tenantRepository := newIntegrationTenantRepository(t)
+	tenantService := application.NewTenantService(tenantRepository, infra.NewRelationService())
 	handler, jwks := newDynamicTestHandler(t, tenantService)
 	httpServer := httptest.NewServer(handler)
 	t.Cleanup(httpServer.Close)
 	client := tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)
 
-	registerRequest := connectrpc.NewRequest(&tenantv1.RegisterTenantRequest{
-		Name:         "Status Host",
-		ContractPlan: "standard",
-	})
-	registerRequest.Header().Set("Authorization", internalJWTs(t).registration)
-
-	tenantResponse, err := client.RegisterTenant(context.Background(), registerRequest)
-	if err != nil {
-		t.Fatalf("RegisterTenant() error = %v", err)
-	}
-
-	tenantAccess := mintTenantAccessToken(t, jwks, tenantResponse.Msg.GetTenant().GetTenantPublicId())
+	tenant := createTenant(t, tenantRepository, "0123456789abcdef", "Status Host")
+	tenantAccess := mintTenantAccessToken(t, jwks, tenant.PublicID())
 
 	createRequest := connectrpc.NewRequest(&tenantv1.CreateEventRequest{
 		Name: "Status Event",
@@ -332,7 +199,7 @@ func TestTransitionEventStatusOverTransportRejectsInvalidRequest(t *testing.T) {
 	}
 
 	req = connectrpc.NewRequest(&tenantv1.TransitionEventStatusRequest{
-		EventId: "0197f1ce-cad0-7f00-8000-000000000000",
+		EventId: "0000000000000000",
 		To:      tenantv1.EventStatus_EVENT_STATUS_OPEN,
 	})
 	req.Header().Set("Authorization", internalJWTs(t).tenantAccess)

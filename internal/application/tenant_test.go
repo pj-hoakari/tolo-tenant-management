@@ -143,14 +143,14 @@ func TestTransitionEventStatusRejectsMismatchedContextTenant(t *testing.T) {
 	event := domain.NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", domain.EventTypeShortTerm, domain.EventStatusDraft)
 	ctrl := gomock.NewController(t)
 	repo := NewMockTenantRepository(ctrl)
-	repo.EXPECT().FindEventByID(gomock.Any(), event.ID()).Return(event, nil)
+	repo.EXPECT().FindEventByPublicID(gomock.Any(), event.PublicID()).Return(event, nil)
 	service := application.NewTenantService(repo, successfulMembershipService{})
 
 	ctx := tenantctx.WithTenantPublicID(context.Background(), "other-tenant-public-id")
 
 	_, err := service.TransitionEventStatus(ctx, application.TransitionEventStatusInput{
-		EventID: event.ID(),
-		To:      domain.EventStatusOpen,
+		EventPublicID: event.PublicID(),
+		To:            domain.EventStatusOpen,
 	})
 	if !errors.Is(err, tenantctx.ErrMismatch) {
 		t.Fatalf("TransitionEventStatus() error = %v, want %v", err, tenantctx.ErrMismatch)
@@ -163,7 +163,7 @@ func TestTransitionEventStatus(t *testing.T) {
 	event := domain.NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", domain.EventTypeShortTerm, domain.EventStatusDraft)
 	ctrl := gomock.NewController(t)
 	repo := NewMockTenantRepository(ctrl)
-	repo.EXPECT().FindEventByID(gomock.Any(), event.ID()).Return(event, nil)
+	repo.EXPECT().FindEventByPublicID(gomock.Any(), event.PublicID()).Return(event, nil)
 
 	var updatedEventFromRepository domain.Event
 
@@ -177,8 +177,8 @@ func TestTransitionEventStatus(t *testing.T) {
 	ctx := tenantctx.WithTenantPublicID(context.Background(), event.TenantPublicID())
 
 	updatedEvent, err := service.TransitionEventStatus(ctx, application.TransitionEventStatusInput{
-		EventID: event.ID(),
-		To:      domain.EventStatusOpen,
+		EventPublicID: event.PublicID(),
+		To:            domain.EventStatusOpen,
 	})
 	if err != nil {
 		t.Fatalf("TransitionEventStatus() error = %v", err)
@@ -199,7 +199,7 @@ func TestAssignEventType(t *testing.T) {
 	event := domain.NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", domain.EventTypeShortTerm, domain.EventStatusDraft)
 	ctrl := gomock.NewController(t)
 	repository := NewMockTenantRepository(ctrl)
-	repository.EXPECT().FindEventByID(gomock.Any(), event.ID()).Return(event, nil)
+	repository.EXPECT().FindEventByPublicID(gomock.Any(), event.PublicID()).Return(event, nil)
 
 	var updatedEventFromRepository domain.Event
 
@@ -213,8 +213,8 @@ func TestAssignEventType(t *testing.T) {
 	ctx := tenantctx.WithTenantPublicID(context.Background(), event.TenantPublicID())
 
 	updatedEvent, err := service.AssignEventType(ctx, application.AssignEventTypeInput{
-		EventID: event.ID(),
-		Type:    domain.EventTypeLongTerm,
+		EventPublicID: event.PublicID(),
+		Type:          domain.EventTypeLongTerm,
 	})
 	if err != nil {
 		t.Fatalf("AssignEventType() error = %v", err)
@@ -235,10 +235,10 @@ func TestGetEvent(t *testing.T) {
 	event := domain.NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", domain.EventTypeShortTerm, domain.EventStatusDraft)
 	ctrl := gomock.NewController(t)
 	repository := NewMockTenantRepository(ctrl)
-	repository.EXPECT().FindEventByID(gomock.Any(), event.ID()).Return(event, nil)
+	repository.EXPECT().FindEventByPublicID(gomock.Any(), event.PublicID()).Return(event, nil)
 	service := application.NewTenantService(repository, successfulMembershipService{})
 
-	found, err := service.GetEvent(context.Background(), event.ID())
+	found, err := service.GetEvent(context.Background(), event.PublicID())
 	if err != nil {
 		t.Fatalf("GetEvent() error = %v", err)
 	}
