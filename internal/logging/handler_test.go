@@ -191,16 +191,51 @@ func TestDerivedHandlersKeepTraceFields(t *testing.T) {
 		var buf bytes.Buffer
 
 		logger := NewLogger(&buf, Options{Level: slog.LevelInfo, AddSource: false, ProjectID: "tolo-example"}).WithGroup("request")
-		logger.ErrorContext(contextWithSampledSpan(t), "internal error")
+		logger.ErrorContext(contextWithSampledSpan(t), "internal error", "method", "ListEvents")
 
-		// An open group nests every attribute of the record, the trace fields
-		// included, which is why the service logs through an ungrouped logger.
-		group, ok := decodeLine(t, &buf)["request"].(map[string]any)
+		entry := decodeLine(t, &buf)
+
+		// Cloud Logging reads the trace fields at the top level only, so an
+		// open group must not swallow them.
+		assertTraceFields(t, entry, "projects/tolo-example/traces/"+testTraceID)
+
+		group, ok := entry["request"].(map[string]any)
 		if !ok {
-			t.Fatalf("request = %#v, want a group", decodeLine(t, &buf)["request"])
+			t.Fatalf("request = %#v, want a group", entry["request"])
 		}
 
-		assertTraceFields(t, group, "projects/tolo-example/traces/"+testTraceID)
+		// The record's own attributes still belong to the open group.
+		if got, want := group["method"], "ListEvents"; got != want {
+			t.Errorf("request.method = %v, want %q", got, want)
+		}
+
+		for _, key := range []string{keyTrace, keySpanID, keyTraceSampled} {
+			if _, ok := group[key]; ok {
+				t.Errorf("group has key %q, want the trace fields outside the group", key)
+			}
+		}
+	})
+
+	t.Run("WithAttrs after WithGroup", func(t *testing.T) {
+		t.Parallel()
+
+		var buf bytes.Buffer
+
+		logger := NewLogger(&buf, Options{Level: slog.LevelInfo, AddSource: false, ProjectID: "tolo-example"}).WithGroup("request").With("method", "ListEvents")
+		logger.ErrorContext(contextWithSampledSpan(t), "internal error")
+
+		entry := decodeLine(t, &buf)
+
+		assertTraceFields(t, entry, "projects/tolo-example/traces/"+testTraceID)
+
+		group, ok := entry["request"].(map[string]any)
+		if !ok {
+			t.Fatalf("request = %#v, want a group", entry["request"])
+		}
+
+		if got, want := group["method"], "ListEvents"; got != want {
+			t.Errorf("request.method = %v, want %q", got, want)
+		}
 	})
 }
 
