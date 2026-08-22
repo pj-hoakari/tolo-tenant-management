@@ -182,6 +182,7 @@ proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16
 内部エラーは `internal` と固定メッセージ `internal error` だけを返し、原因はサーバー側のログ（`tenant-management: internal error: ...`）にのみ記録する。
 クライアント都合の中断と締め切り超過は `canceled`／`deadline_exceeded` として返してログには記録せず、内部エラーはトレースが有効なときだけログに `trace_id` を添えてトレースと突き合わせられるようにする。
 エラーメッセージには内部主キー（UUIDv7）、テナント名、ユーザー ID を含めない。
+`connectrpc.CodeInternal` の直接使用は golangci-lint の `forbidigo` で禁止しており、許可するのは `InternalError` の中だけである。
 
 ## テナントとイベント
 
