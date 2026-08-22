@@ -558,7 +558,7 @@ func TestTransitionEventStatusOverTransport(t *testing.T) {
 	token := mintTenantAccessToken(t, fixture.jwks, tenant.PublicID())
 	eventID := fixture.createEvent(t, token, tenant.PublicID(), "Status Event").GetEventId()
 
-	transition := func(to tenantv1.EventStatus) (*tenantv1.Event, error) {
+	transition := func(eventID string, to tenantv1.EventStatus) (*tenantv1.Event, error) {
 		t.Helper()
 
 		req := connectrpc.NewRequest(&tenantv1.TransitionEventStatusRequest{EventId: eventID, To: to})
@@ -584,7 +584,7 @@ func TestTransitionEventStatusOverTransport(t *testing.T) {
 		tenantv1.EventStatus_EVENT_STATUS_ARCHIVED,
 		tenantv1.EventStatus_EVENT_STATUS_CLOSED,
 	} {
-		event, err := transition(want)
+		event, err := transition(eventID, want)
 		if err != nil {
 			t.Fatalf("TransitionEventStatus(%v) error = %v", want, err)
 		}
@@ -594,10 +594,28 @@ func TestTransitionEventStatusOverTransport(t *testing.T) {
 		}
 	}
 
-	_, err := transition(tenantv1.EventStatus_EVENT_STATUS_LOCKED)
+	_, err := transition(eventID, tenantv1.EventStatus_EVENT_STATUS_LOCKED)
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodeFailedPrecondition; got != want {
 		t.Errorf("invalid transition error code = %v, want %v", got, want)
 	}
+
+	t.Run("discards a draft event and restores it as closed", func(t *testing.T) {
+		draftID := fixture.createEvent(t, token, tenant.PublicID(), "Discarded Event").GetEventId()
+
+		for _, want := range []tenantv1.EventStatus{
+			tenantv1.EventStatus_EVENT_STATUS_ARCHIVED,
+			tenantv1.EventStatus_EVENT_STATUS_CLOSED,
+		} {
+			event, err := transition(draftID, want)
+			if err != nil {
+				t.Fatalf("TransitionEventStatus(%v) error = %v", want, err)
+			}
+
+			if got := event.GetStatus(); got != want {
+				t.Errorf("Event.Status = %v, want %v", got, want)
+			}
+		}
+	})
 }
 
 func TestTransitionEventStatusOverTransportRejectsForeignEvent(t *testing.T) {

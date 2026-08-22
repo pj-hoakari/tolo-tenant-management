@@ -2,6 +2,7 @@ package domain
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 )
 
@@ -55,40 +56,68 @@ func TestNewEvent(t *testing.T) {
 	}
 }
 
+// eventStatusTransition is one (from, to) pair of the status transition table
+// in docs/tenant_management_spec.md.
+type eventStatusTransition struct {
+	from EventStatus
+	to   EventStatus
+}
+
 func TestEventTransitionTo(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name string
-		from EventStatus
-		to   EventStatus
-	}{
-		{name: "opens a draft event", from: EventStatusDraft, to: EventStatusOpen},
-		{name: "locks an open event", from: EventStatusOpen, to: EventStatusLocked},
-		{name: "closes a locked event", from: EventStatusLocked, to: EventStatusClosed},
-		{name: "unlocks a locked event", from: EventStatusLocked, to: EventStatusOpen},
-		{name: "reopens a closed event", from: EventStatusClosed, to: EventStatusOpen},
-		{name: "archives a closed event", from: EventStatusClosed, to: EventStatusArchived},
-		{name: "unarchives an archived event", from: EventStatusArchived, to: EventStatusClosed},
+	// The spec allows exactly these eight transitions. Every other pair,
+	// including a transition to the same status, must be rejected.
+	allowed := make(map[eventStatusTransition]bool)
+	for _, transition := range []eventStatusTransition{
+		{from: EventStatusDraft, to: EventStatusOpen},
+		{from: EventStatusDraft, to: EventStatusArchived},
+		{from: EventStatusOpen, to: EventStatusLocked},
+		{from: EventStatusLocked, to: EventStatusOpen},
+		{from: EventStatusLocked, to: EventStatusClosed},
+		{from: EventStatusClosed, to: EventStatusOpen},
+		{from: EventStatusClosed, to: EventStatusArchived},
+		{from: EventStatusArchived, to: EventStatusClosed},
+	} {
+		allowed[transition] = true
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			event := Event{status: tt.from}
+	statuses := []EventStatus{
+		EventStatusUnspecified,
+		EventStatusDraft,
+		EventStatusOpen,
+		EventStatusLocked,
+		EventStatusClosed,
+		EventStatusArchived,
+	}
 
-			updatedEvent, err := event.TransitionTo(tt.to)
-			if err != nil {
-				t.Fatalf("TransitionTo(%q) error = %v", tt.to, err)
-			}
+	for _, from := range statuses {
+		for _, to := range statuses {
+			wantAllowed := allowed[eventStatusTransition{from: from, to: to}]
 
-			if got := updatedEvent.Status(); got != tt.to {
-				t.Errorf("updated event status = %q, want %q", got, tt.to)
-			}
+			t.Run(fmt.Sprintf("%s to %s", from, to), func(t *testing.T) {
+				t.Parallel()
 
-			if got := event.Status(); got != tt.from {
-				t.Errorf("original event status = %q, want %q", got, tt.from)
-			}
-		})
+				event := Event{status: from}
+
+				updatedEvent, err := event.TransitionTo(to)
+
+				switch {
+				case wantAllowed && err != nil:
+					t.Fatalf("TransitionTo(%q) error = %v, want success", to, err)
+				case wantAllowed:
+					if got := updatedEvent.Status(); got != to {
+						t.Errorf("updated event status = %q, want %q", got, to)
+					}
+				case !errors.Is(err, ErrInvalidEventStatusTransition):
+					t.Fatalf("TransitionTo(%q) error = %v, want %v", to, err, ErrInvalidEventStatusTransition)
+				}
+
+				if got := event.Status(); got != from {
+					t.Errorf("original event status = %q, want %q", got, from)
+				}
+			})
+		}
 	}
 }
 
@@ -107,7 +136,7 @@ func TestEventAssignType(t *testing.T) {
 	}
 }
 
-func TestEventTransitionToRejectsInvalidTransitions(t *testing.T) {
+func TestEventTransitionToRejectsUnknownStatus(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -115,15 +144,14 @@ func TestEventTransitionToRejectsInvalidTransitions(t *testing.T) {
 		from EventStatus
 		to   EventStatus
 	}{
-		{name: "cannot lock a draft event", from: EventStatusDraft, to: EventStatusLocked},
-		{name: "cannot close an open event", from: EventStatusOpen, to: EventStatusClosed},
-		{name: "cannot reopen an archived event directly", from: EventStatusArchived, to: EventStatusOpen},
-		{name: "cannot transition to an unspecified status", from: EventStatusDraft, to: EventStatusUnspecified},
 		{name: "cannot transition from an unknown status", from: EventStatus(99), to: EventStatusOpen},
+		{name: "cannot transition to an unknown status", from: EventStatusDraft, to: EventStatus(99)},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			event := Event{status: tt.from}
 
 			_, err := event.TransitionTo(tt.to)
