@@ -10,6 +10,7 @@ linters:
         - containedctx
         - exhaustruct
         - exhaustive
+        - forbidigo
         - gosec
         - nilnil
         - nilerr
@@ -23,6 +24,12 @@ linters:
                 - fmt.Print
                 - fmt.Printf
                 - fmt.Println
+        forbidigo:
+            forbid:
+                # Internal errors must go through connect.InternalError so the
+                # cause is logged server-side and never reaches the client.
+                - pattern: '^connectrpc\.CodeInternal$'
+                  msg: "build internal errors with InternalError(ctx, err) instead of connectrpc.CodeInternal"
         exhaustruct:
             exclude:
                 - 'crypto/tls\.Config'
@@ -40,6 +47,7 @@ linters:
               linters:
                   - errcheck
                   - exhaustruct
+                  - forbidigo
                   - gosec
                   - staticcheck
                   - fatcontext

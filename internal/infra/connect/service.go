@@ -52,7 +52,7 @@ func InternalError(ctx context.Context, err error) *connectrpc.Error {
 		log.Printf("tenant-management: internal error: %v", err)
 	}
 
-	return connectrpc.NewError(connectrpc.CodeInternal, errInternal)
+	return connectrpc.NewError(connectrpc.CodeInternal, errInternal) //nolint:forbidigo // the one place that builds internal errors
 }
 
 // tenantContextErrorCode maps the tenant-context guard errors to Connect codes.
