@@ -147,6 +147,79 @@ func (r *PostgresTenantRepository) UpdateEvent(ctx context.Context, event domain
 	return errUpdateEventNoRow
 }
 
+// FindObservationSettingsByEventPublicID reads the observation settings of one
+// event. The tenant's public ID is selected alongside them so that the
+// ownership check below has something to verify, but it never leaves this
+// method: the caller receives the settings alone.
+func (r *PostgresTenantRepository) FindObservationSettingsByEventPublicID(ctx context.Context, publicID string) (domain.ObservationSettings, error) {
+	var row observationSettingsRow
+	if err := sqlx.GetContext(ctx, r.executor(ctx), &row, `
+		SELECT tenant_public_id, history_window_days
+		FROM events WHERE public_id = $1`, publicID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.ObservationSettings{}, repository.ErrEventNotFound
+		}
+
+		return domain.ObservationSettings{}, err
+	}
+
+	return row.domain(ctx)
+}
+
+func (r *PostgresTenantRepository) UpdateObservationSettings(ctx context.Context, eventID string, settings domain.ObservationSettings) error {
+	result, err := r.executor(ctx).ExecContext(ctx, `
+		UPDATE events AS e
+		SET history_window_days = $2
+		FROM tenants AS t
+		WHERE e.id = $1 AND e.tenant_id = t.id AND t.archived = FALSE`,
+		eventID, settings.HistoryWindowDays())
+	if err != nil {
+		return err
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("get updated observation settings row count: %w", err)
+	}
+
+	if rows != 0 {
+		return nil
+	}
+
+	// The update matched nothing: either the event is gone or its tenant is
+	// archived. Distinguish the two the way UpdateEvent does.
+	storedEvent, err := r.findEventByID(ctx, eventID)
+	if err != nil {
+		return err
+	}
+
+	tenant, err := r.FindTenantByID(ctx, storedEvent.TenantID())
+	if err != nil {
+		return err
+	}
+
+	if tenant.Archived() {
+		return repository.ErrTenantArchived
+	}
+
+	return fmt.Errorf("update observation settings of event %q: no row updated", eventID)
+}
+
+type observationSettingsRow struct {
+	TenantPublicID    string `db:"tenant_public_id"`
+	HistoryWindowDays int    `db:"history_window_days"`
+}
+
+func (r observationSettingsRow) domain(ctx context.Context) (domain.ObservationSettings, error) {
+	// Defense in depth: never return the settings of an event that belongs to
+	// a tenant other than the authenticated tenant carried in the context.
+	if err := tenantctx.VerifyOwnership(ctx, r.TenantPublicID); err != nil {
+		return domain.ObservationSettings{}, err
+	}
+
+	return domain.NewObservationSettings(r.HistoryWindowDays)
+}
+
 type eventRow struct {
 	ID             string `db:"id"`
 	PublicID       string `db:"public_id"`

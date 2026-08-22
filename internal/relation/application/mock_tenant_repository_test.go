@@ -153,6 +153,21 @@ func (mr *MockTenantRepositoryMockRecorder) FindEventByPublicID(arg0, arg1 any) 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindEventByPublicID", reflect.TypeOf((*MockTenantRepository)(nil).FindEventByPublicID), arg0, arg1)
 }
 
+// FindObservationSettingsByEventPublicID mocks base method.
+func (m *MockTenantRepository) FindObservationSettingsByEventPublicID(arg0 context.Context, arg1 string) (domain.ObservationSettings, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FindObservationSettingsByEventPublicID", arg0, arg1)
+	ret0, _ := ret[0].(domain.ObservationSettings)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// FindObservationSettingsByEventPublicID indicates an expected call of FindObservationSettingsByEventPublicID.
+func (mr *MockTenantRepositoryMockRecorder) FindObservationSettingsByEventPublicID(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindObservationSettingsByEventPublicID", reflect.TypeOf((*MockTenantRepository)(nil).FindObservationSettingsByEventPublicID), arg0, arg1)
+}
+
 // FindTenantByID mocks base method.
 func (m *MockTenantRepository) FindTenantByID(arg0 context.Context, arg1 string) (domain.Tenant, error) {
 	m.ctrl.T.Helper()
@@ -240,6 +255,20 @@ func (m *MockTenantRepository) UpdateEvent(arg0 context.Context, arg1 domain.Eve
 func (mr *MockTenantRepositoryMockRecorder) UpdateEvent(arg0, arg1 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateEvent", reflect.TypeOf((*MockTenantRepository)(nil).UpdateEvent), arg0, arg1)
+}
+
+// UpdateObservationSettings mocks base method.
+func (m *MockTenantRepository) UpdateObservationSettings(arg0 context.Context, arg1 string, arg2 domain.ObservationSettings) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateObservationSettings", arg0, arg1, arg2)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateObservationSettings indicates an expected call of UpdateObservationSettings.
+func (mr *MockTenantRepositoryMockRecorder) UpdateObservationSettings(arg0, arg1, arg2 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateObservationSettings", reflect.TypeOf((*MockTenantRepository)(nil).UpdateObservationSettings), arg0, arg1, arg2)
 }
 
 // UpdateTenant mocks base method.

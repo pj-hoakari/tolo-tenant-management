@@ -285,6 +285,84 @@ func assertNoInternalIdentifier(t *testing.T, err error, identifiers ...string) 
 	}
 }
 
+func TestPostgresTenantRepositoryObservationSettings(t *testing.T) {
+	repository := newTestRepository(t)
+	ctx := context.Background()
+	activeTenant := newTenant("00000000-0000-0000-0000-000000000001", "tenant-001", "Acme", false)
+
+	archivedTenant := newTenant("00000000-0000-0000-0000-000000000002", "tenant-002", "Initech", true)
+	for _, tenant := range []domain.Tenant{activeTenant, archivedTenant} {
+		if err := repository.CreateTenant(ctx, tenant); err != nil {
+			t.Fatalf("CreateTenant(%q) error = %v", tenant.ID(), err)
+		}
+	}
+
+	event := newEvent("00000000-0000-0000-0000-000000000011", "event-001", activeTenant, "Festival", domain.EventTypeShortTerm, domain.EventStatusDraft)
+	if err := repository.CreateEvent(ctx, event); err != nil {
+		t.Fatalf("CreateEvent() error = %v", err)
+	}
+
+	// A freshly created event observes with the default window.
+	settings, err := repository.FindObservationSettingsByEventPublicID(ctx, event.PublicID())
+	if err != nil {
+		t.Fatalf("FindObservationSettingsByEventPublicID() error = %v", err)
+	}
+
+	if got, want := settings.HistoryWindowDays(), domain.DefaultHistoryWindowDays; got != want {
+		t.Errorf("HistoryWindowDays() = %d, want %d", got, want)
+	}
+
+	updated, err := domain.NewObservationSettings(45)
+	if err != nil {
+		t.Fatalf("NewObservationSettings() error = %v", err)
+	}
+
+	if err := repository.UpdateObservationSettings(ctx, event.ID(), updated); err != nil {
+		t.Fatalf("UpdateObservationSettings() error = %v", err)
+	}
+
+	settings, err = repository.FindObservationSettingsByEventPublicID(ctx, event.PublicID())
+	if err != nil {
+		t.Fatalf("FindObservationSettingsByEventPublicID() after update error = %v", err)
+	}
+
+	if got, want := settings.HistoryWindowDays(), 45; got != want {
+		t.Errorf("HistoryWindowDays() after update = %d, want %d", got, want)
+	}
+
+	// The settings of an archived tenant's event cannot be changed. The event
+	// is inserted directly, as CreateEvent refuses an archived tenant.
+	archivedEvent := newEvent("00000000-0000-0000-0000-000000000015", "event-005", archivedTenant, "Archived event", domain.EventTypeShortTerm, domain.EventStatusDraft)
+	if _, err := testDB.ExecContext(ctx, `INSERT INTO events (id, public_id, tenant_id, tenant_public_id, name, event_type, status) VALUES ($1, $2, $3, $4, $5, $6, $7)`, archivedEvent.ID(), archivedEvent.PublicID(), archivedEvent.TenantID(), archivedEvent.TenantPublicID(), archivedEvent.Name(), archivedEvent.Type().String(), archivedEvent.Status().String()); err != nil {
+		t.Fatalf("insert archived tenant event fixture: %v", err)
+	}
+
+	if err := repository.UpdateObservationSettings(ctx, archivedEvent.ID(), updated); !errors.Is(err, repositorypkg.ErrTenantArchived) {
+		t.Errorf("archived tenant update error = %v, want %v", err, repositorypkg.ErrTenantArchived)
+	}
+
+	if _, err := repository.FindObservationSettingsByEventPublicID(ctx, "event-099"); !errors.Is(err, repositorypkg.ErrEventNotFound) {
+		t.Errorf("FindObservationSettingsByEventPublicID(unknown) error = %v, want %v", err, repositorypkg.ErrEventNotFound)
+	}
+
+	if err := repository.UpdateObservationSettings(ctx, "00000000-0000-0000-0000-000000000099", updated); !errors.Is(err, repositorypkg.ErrEventNotFound) {
+		t.Errorf("UpdateObservationSettings(unknown) error = %v, want %v", err, repositorypkg.ErrEventNotFound)
+	}
+
+	// A caller authenticated as another tenant is rejected on reconstitution;
+	// its own tenant is accepted. The reads above ran without tenant context,
+	// as a service-token read does, and were left unrestricted.
+	foreignCtx := tenantctx.WithTenantPublicID(ctx, archivedTenant.PublicID())
+	if _, err := repository.FindObservationSettingsByEventPublicID(foreignCtx, event.PublicID()); !errors.Is(err, tenantctx.ErrMismatch) {
+		t.Errorf("FindObservationSettingsByEventPublicID(foreign) error = %v, want %v", err, tenantctx.ErrMismatch)
+	}
+
+	ownCtx := tenantctx.WithTenantPublicID(ctx, activeTenant.PublicID())
+	if _, err := repository.FindObservationSettingsByEventPublicID(ownCtx, event.PublicID()); err != nil {
+		t.Errorf("FindObservationSettingsByEventPublicID(own) error = %v, want nil", err)
+	}
+}
+
 func TestPostgresTenantRepositoryRejectsForeignTenantOnReconstitution(t *testing.T) {
 	repository := newTestRepository(t)
 	ctx := context.Background()

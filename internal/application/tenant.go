@@ -71,6 +71,14 @@ type AssignEventTypeInput struct {
 	Type          domain.EventType
 }
 
+// UpdateObservationSettingsInput contains the requested observation settings
+// of an event. The settings are validated by the domain, so the raw value is
+// carried here.
+type UpdateObservationSettingsInput struct {
+	EventPublicID     string
+	HistoryWindowDays int
+}
+
 // StartTenantRegistrationUseCase creates a pending_owner tenant without
 // authentication.
 type StartTenantRegistrationUseCase interface {
@@ -138,6 +146,18 @@ type ListEventsUseCase interface {
 	ListEvents(context.Context, string, bool) ([]domain.Event, error)
 }
 
+// GetObservationSettingsUseCase retrieves the observation settings of one
+// event by its public ID.
+type GetObservationSettingsUseCase interface {
+	GetObservationSettings(context.Context, string) (domain.ObservationSettings, error)
+}
+
+// UpdateObservationSettingsUseCase changes the observation settings of one
+// event.
+type UpdateObservationSettingsUseCase interface {
+	UpdateObservationSettings(context.Context, UpdateObservationSettingsInput) (domain.ObservationSettings, error)
+}
+
 // TenantUseCases groups the tenant operations exposed by the Connect
 // transport.
 type TenantUseCases interface {
@@ -150,6 +170,8 @@ type TenantUseCases interface {
 	TransitionEventStatusUseCase
 	GetEventUseCase
 	ListEventsUseCase
+	GetObservationSettingsUseCase
+	UpdateObservationSettingsUseCase
 }
 
 // TenantService implements tenant use cases.
@@ -500,6 +522,51 @@ func (s *TenantService) GetEvent(ctx context.Context, eventPublicID string) (dom
 	}
 
 	return s.resolveEvent(ctx, eventPublicID)
+}
+
+// GetObservationSettings serves the service-to-service read of an event's
+// observation settings. Unlike GetEvent it does not enforce the tenant
+// boundary, because the read is reached from chains without tenant context
+// (the observation cycle triggered by a QR-borne tally). A caller that does
+// carry a tenant is still cross-checked: the repository refuses to hand back
+// another tenant's event. In exchange for the open boundary the answer is
+// limited to the settings; the event's name, status and tenant stay inside.
+// Archived events are answered too, so no reference is left dangling.
+func (s *TenantService) GetObservationSettings(ctx context.Context, eventPublicID string) (domain.ObservationSettings, error) {
+	if eventPublicID == "" {
+		return domain.ObservationSettings{}, ErrEventIDRequired
+	}
+
+	return s.tenantRepository.FindObservationSettingsByEventPublicID(ctx, eventPublicID)
+}
+
+// UpdateObservationSettings changes the observation settings of an event of
+// the tenant the caller is authenticated for. An archived event keeps the
+// settings it was archived with.
+func (s *TenantService) UpdateObservationSettings(ctx context.Context, input UpdateObservationSettingsInput) (domain.ObservationSettings, error) {
+	if input.EventPublicID == "" {
+		return domain.ObservationSettings{}, ErrEventIDRequired
+	}
+
+	settings, err := domain.NewObservationSettings(input.HistoryWindowDays)
+	if err != nil {
+		return domain.ObservationSettings{}, err
+	}
+
+	event, err := s.resolveEvent(ctx, input.EventPublicID)
+	if err != nil {
+		return domain.ObservationSettings{}, err
+	}
+
+	if event.Status() == domain.EventStatusArchived {
+		return domain.ObservationSettings{}, repository.ErrEventArchived
+	}
+
+	if err := s.tenantRepository.UpdateObservationSettings(ctx, event.ID(), settings); err != nil {
+		return domain.ObservationSettings{}, err
+	}
+
+	return settings, nil
 }
 
 // ListEvents returns the tenant's events in creation order. Archived events
