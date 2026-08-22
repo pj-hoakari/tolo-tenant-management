@@ -33,7 +33,7 @@ linters:
                 # Logging goes through log/slog, so that every record comes out
                 # in the structure Cloud Logging parses and carries the trace of
                 # its request context.
-                - pattern: '^log\.(Print|Printf|Println|Fatal|Fatalf|Fatalln|Panic|Panicf|Panicln|SetOutput|Default|New)$'
+                - pattern: '^log\.[A-Z]\w*$'
                   msg: "use log/slog (internal/logging) instead of the standard log package"
         exhaustruct:
             exclude:

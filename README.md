@@ -72,7 +72,7 @@ connect-es の生成（`task proto:gen:es`）はリリース時に CI で行う�
 |---|---|---|
 | `DATABASE_URL` | なし（必須） | PostgreSQL の接続先。未設定ならサーバーは起動しない |
 | `SERVER_ADDR` | `:8080` | HTTP サーバーの待ち受けアドレス |
-| `LOG_LEVEL` | `info` | ログに出力する最小レベル。`debug`／`info`／`warn`／`error`／`critical` を取り、未知の値ならサーバーは起動しない |
+| `LOG_LEVEL` | `info` | ログに出力する最小レベル。`debug`／`info`／`warn`（`warning` も同義）／`error`／`critical` を取り、未知の値ならサーバーは起動しない |
 | `INTERNAL_JWKS_URL` | `http://gateway:8080/.well-known/jwks.json` | 内部 JWT の署名鍵を取得する JWKS エンドポイント |
 | `INTERNAL_JWT_ISSUER` | `service-gateway` | 内部 JWT に要求する `iss`。Service Gateway の発行者識別子に合わせる |
 | `INTERNAL_JWT_AUDIENCE` | `tolo-tenant-management` | 内部 JWT に要求する `aud` |
