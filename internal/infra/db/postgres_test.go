@@ -561,4 +561,35 @@ func TestPostgresTenantRepositoryUpdateTenant(t *testing.T) {
 	if err := repository.UpdateTenant(ctx, missing); !errors.Is(err, repositorypkg.ErrTenantNotFound) {
 		t.Errorf("UpdateTenant(unknown) error = %v, want %v", err, repositorypkg.ErrTenantNotFound)
 	}
+
+	// The administrative write never touches the ownership columns, so a
+	// pending_owner tenant keeps its state and its unconsumed claim.
+	expiresAt := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+
+	token, hash, err := domain.NewOwnershipClaimToken()
+	if err != nil {
+		t.Fatalf("NewOwnershipClaimToken() error = %v", err)
+	}
+
+	pending := domain.NewTenant("00000000-0000-0000-0000-000000000002", "tenant-002", "Pending", "standard", domain.TenantOwnershipStatePendingOwner, false)
+	if err := repository.CreatePendingTenant(ctx, pending, domain.OwnershipClaim{TokenHash: hash, ExpiresAt: expiresAt}); err != nil {
+		t.Fatalf("CreatePendingTenant() error = %v", err)
+	}
+
+	if err := repository.UpdateTenant(ctx, pending.ChangeContractPlan("enterprise")); err != nil {
+		t.Fatalf("UpdateTenant(pending) error = %v", err)
+	}
+
+	storedPending, claim, err := repository.FindTenantByPublicIDForUpdate(ctx, pending.PublicID())
+	if err != nil {
+		t.Fatalf("FindTenantByPublicIDForUpdate() after update error = %v", err)
+	}
+
+	if got, want := storedPending.OwnershipState(), domain.TenantOwnershipStatePendingOwner; got != want {
+		t.Errorf("OwnershipState() after update = %v, want %v", got, want)
+	}
+
+	if !claim.TokenHash.Matches(token) || !claim.ExpiresAt.Equal(expiresAt) {
+		t.Errorf("claim after update = %#v, want hash of the token expiring at %v", claim, expiresAt)
+	}
 }
