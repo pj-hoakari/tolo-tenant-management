@@ -75,4 +75,10 @@ type TenantRepository interface {
 	// narrowed by filter.
 	ListEventsByTenantID(ctx context.Context, tenantID string, filter ListEventsFilter) ([]domain.Event, error)
 	UpdateEvent(context.Context, domain.Event) error
+	// FindObservationSettingsByEventPublicID loads the observation settings of
+	// the event with the given public ID, and nothing else about the event.
+	FindObservationSettingsByEventPublicID(context.Context, string) (domain.ObservationSettings, error)
+	// UpdateObservationSettings stores the observation settings of the event
+	// with the given internal ID.
+	UpdateObservationSettings(context.Context, string, domain.ObservationSettings) error
 }
