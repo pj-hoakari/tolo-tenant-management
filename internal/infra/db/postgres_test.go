@@ -131,34 +131,56 @@ func TestPostgresTenantRepositoryEvents(t *testing.T) {
 		t.Fatalf("CreateTenant() error = %v", err)
 	}
 
-	event2 := newEvent("00000000-0000-0000-0000-000000000012", "event-002", tenant, "Festival 2", domain.EventTypeLongTerm, domain.EventStatusOpen)
+	// The archived event sits between the other two by key, so a limited
+	// listing that includes archived events differs from the default one.
+	archivedEvent := newEvent("00000000-0000-0000-0000-000000000012", "event-002", tenant, "Festival 2", domain.EventTypeLongTerm, domain.EventStatusArchived)
+	openEvent := newEvent("00000000-0000-0000-0000-000000000013", "event-003", tenant, "Festival 3", domain.EventTypeLongTerm, domain.EventStatusOpen)
 
-	event1 := newEvent("00000000-0000-0000-0000-000000000011", "event-001", tenant, "Festival 1", domain.EventTypeShortTerm, domain.EventStatusDraft)
-	for _, event := range []domain.Event{event2, event1} {
+	draftEvent := newEvent("00000000-0000-0000-0000-000000000011", "event-001", tenant, "Festival 1", domain.EventTypeShortTerm, domain.EventStatusDraft)
+	for _, event := range []domain.Event{openEvent, archivedEvent, draftEvent} {
 		if err := repository.CreateEvent(ctx, event); err != nil {
 			t.Fatalf("CreateEvent(%q) error = %v", event.ID(), err)
 		}
 	}
 
-	got, err := repository.FindEventByPublicID(ctx, event1.PublicID())
+	got, err := repository.FindEventByPublicID(ctx, draftEvent.PublicID())
 	if err != nil {
 		t.Fatalf("FindEventByPublicID() error = %v", err)
 	}
 
-	if got != event1 {
-		t.Errorf("found event = %#v, want %#v", got, event1)
+	if got != draftEvent {
+		t.Errorf("found event = %#v, want %#v", got, draftEvent)
 	}
 
-	events, err := repository.ListEventsByTenantID(ctx, tenant.ID())
-	if err != nil {
-		t.Fatalf("ListEventsByTenantID() error = %v", err)
+	// The listing is ordered by primary key byte order, not by the order the
+	// rows were inserted in. These fixtures use hand-written UUIDs; production
+	// keys are UUIDv7, which makes that order the creation order.
+	listTests := []struct {
+		name   string
+		filter repositorypkg.ListEventsFilter
+		want   []domain.Event
+	}{
+		{name: "default", filter: repositorypkg.ListEventsFilter{}, want: []domain.Event{draftEvent, openEvent}},
+		{name: "include archived", filter: repositorypkg.ListEventsFilter{IncludeArchived: true}, want: []domain.Event{draftEvent, archivedEvent, openEvent}},
+		{name: "limit", filter: repositorypkg.ListEventsFilter{Limit: 1}, want: []domain.Event{draftEvent}},
+		{name: "limit within an archived listing", filter: repositorypkg.ListEventsFilter{IncludeArchived: true, Limit: 2}, want: []domain.Event{draftEvent, archivedEvent}},
+		{name: "non-positive limit falls back to the cap", filter: repositorypkg.ListEventsFilter{Limit: -1}, want: []domain.Event{draftEvent, openEvent}},
 	}
 
-	if want := []domain.Event{event1, event2}; !slices.Equal(events, want) {
-		t.Errorf("ListEventsByTenantID() = %#v, want %#v", events, want)
+	for _, tt := range listTests {
+		t.Run(tt.name, func(t *testing.T) {
+			events, err := repository.ListEventsByTenantID(ctx, tenant.ID(), tt.filter)
+			if err != nil {
+				t.Fatalf("ListEventsByTenantID() error = %v", err)
+			}
+
+			if !slices.Equal(events, tt.want) {
+				t.Errorf("ListEventsByTenantID() = %#v, want %#v", events, tt.want)
+			}
+		})
 	}
 
-	updated := event1.AssignType(domain.EventTypeLongTerm)
+	updated := draftEvent.AssignType(domain.EventTypeLongTerm)
 
 	updated, err = updated.TransitionTo(domain.EventStatusOpen)
 	if err != nil {
@@ -298,7 +320,7 @@ func TestPostgresTenantRepositoryRejectsForeignTenantOnReconstitution(t *testing
 		t.Errorf("FindEventByPublicID(foreign) error = %v, want %v", err, tenantctx.ErrMismatch)
 	}
 
-	if _, err := repository.ListEventsByTenantID(foreignCtx, tenantB.ID()); !errors.Is(err, tenantctx.ErrMismatch) {
+	if _, err := repository.ListEventsByTenantID(foreignCtx, tenantB.ID(), repositorypkg.ListEventsFilter{}); !errors.Is(err, tenantctx.ErrMismatch) {
 		t.Errorf("ListEventsByTenantID(foreign) error = %v, want %v", err, tenantctx.ErrMismatch)
 	}
 

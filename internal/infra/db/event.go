@@ -80,11 +80,20 @@ func (r *PostgresTenantRepository) findEvent(ctx context.Context, query, value s
 	return row.domain(ctx)
 }
 
-func (r *PostgresTenantRepository) ListEventsByTenantID(ctx context.Context, tenantID string) ([]domain.Event, error) {
+func (r *PostgresTenantRepository) ListEventsByTenantID(ctx context.Context, tenantID string, filter repository.ListEventsFilter) ([]domain.Event, error) {
+	// A filter that asks for no limit of its own still gets the cap, so that
+	// no caller can trigger an unbounded scan of a tenant's events.
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = repository.MaxListEvents
+	}
+
+	// Events carry a UUIDv7 primary key, so ordering by id is creation order.
 	var rows []eventRow
 	if err := sqlx.SelectContext(ctx, r.executor(ctx), &rows, `
 		SELECT id, public_id, tenant_id, tenant_public_id, name, event_type, status
-		FROM events WHERE tenant_id = $1 ORDER BY id`, tenantID); err != nil {
+		FROM events WHERE tenant_id = $1 AND ($2 OR status <> $3) ORDER BY id LIMIT $4`,
+		tenantID, filter.IncludeArchived, domain.EventStatusArchived.String(), limit); err != nil {
 		return nil, err
 	}
 

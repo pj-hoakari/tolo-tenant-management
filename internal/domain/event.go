@@ -91,7 +91,8 @@ func (e Event) AssignType(eventType EventType) Event {
 }
 
 // TransitionTo returns a copy of the event in the requested status. The
-// lifecycle permits its normal progression and the documented recovery paths.
+// lifecycle permits its normal progression, discarding a draft, and the
+// documented recovery paths.
 func (e Event) TransitionTo(status EventStatus) (Event, error) {
 	if !canTransitionEventStatus(e.status, status) {
 		return Event{}, ErrInvalidEventStatusTransition
@@ -107,7 +108,9 @@ func canTransitionEventStatus(from, to EventStatus) bool {
 	case EventStatusUnspecified:
 		return false
 	case EventStatusDraft:
-		return to == EventStatusOpen
+		// Archiving a draft discards it; archived events come back as closed,
+		// never as drafts.
+		return to == EventStatusOpen || to == EventStatusArchived
 	case EventStatusOpen:
 		return to == EventStatusLocked
 	case EventStatusLocked:

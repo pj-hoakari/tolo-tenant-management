@@ -26,6 +26,21 @@ type Transactor interface {
 	WithinTransaction(ctx context.Context, fn func(context.Context) error) error
 }
 
+// MaxListEvents is the number of events a listing returns at most. The spec
+// caps ListEvents at 1000 events and defines no paging; callers pass it as
+// ListEventsFilter.Limit.
+const MaxListEvents = 1000
+
+// ListEventsFilter narrows a tenant's event listing.
+//
+// Archived events are omitted unless IncludeArchived is set. A Limit greater
+// than zero caps the number of events returned; zero or less leaves the cap to
+// the implementation.
+type ListEventsFilter struct {
+	IncludeArchived bool
+	Limit           int
+}
+
 // TenantRepository persists tenants and their events.
 //
 // Lookups that serve RPC requests take public IDs, because the wire contract
@@ -56,6 +71,8 @@ type TenantRepository interface {
 	FindTenantByPublicID(context.Context, string) (domain.Tenant, error)
 	CreateEvent(context.Context, domain.Event) error
 	FindEventByPublicID(context.Context, string) (domain.Event, error)
-	ListEventsByTenantID(context.Context, string) ([]domain.Event, error)
+	// ListEventsByTenantID lists a tenant's events in creation order,
+	// narrowed by filter.
+	ListEventsByTenantID(ctx context.Context, tenantID string, filter ListEventsFilter) ([]domain.Event, error)
 	UpdateEvent(context.Context, domain.Event) error
 }

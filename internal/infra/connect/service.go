@@ -406,7 +406,7 @@ func (s *Service) UpdateObservationSettings(context.Context, *connectrpc.Request
 }
 
 func (s *Service) ListEvents(ctx context.Context, req *connectrpc.Request[tenantv1.ListEventsRequest]) (*connectrpc.Response[tenantv1.ListEventsResponse], error) {
-	events, err := s.tenantService.ListEvents(ctx, req.Msg.GetTenantId())
+	events, err := s.tenantService.ListEvents(ctx, req.Msg.GetTenantId(), req.Msg.GetIncludeArchived())
 	if err != nil {
 		if errors.Is(err, application.ErrTenantIDRequired) {
 			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
