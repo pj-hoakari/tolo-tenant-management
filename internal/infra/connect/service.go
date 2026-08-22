@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"math"
 
 	connectrpc "connectrpc.com/connect"
 	"go.opentelemetry.io/otel/trace"
@@ -18,7 +19,9 @@ import (
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
 
-var errNotImplemented = errors.New("tenant service method is not implemented")
+// errObservationSettingsRequired rejects an update that names no settings at
+// all; the request carries the whole value, not a patch.
+var errObservationSettingsRequired = errors.New("observation settings are required")
 
 // errInternal is the only detail a client learns about an internal failure.
 var errInternal = errors.New("internal error")
@@ -397,12 +400,72 @@ func (s *Service) GetEvent(ctx context.Context, req *connectrpc.Request[tenantv1
 	return connectrpc.NewResponse(&tenantv1.GetEventResponse{Event: eventProto(event)}), nil
 }
 
-func (s *Service) GetObservationSettings(context.Context, *connectrpc.Request[tenantv1.GetObservationSettingsRequest]) (*connectrpc.Response[tenantv1.GetObservationSettingsResponse], error) {
-	return nil, connectrpc.NewError(connectrpc.CodeUnimplemented, errNotImplemented)
+// observationSettingsProto maps the settings to their wire representation.
+// Nothing else about the event is exposed, so the read stays safe to serve
+// without a tenant boundary.
+func observationSettingsProto(settings domain.ObservationSettings) *tenantv1.ObservationSettings {
+	// The domain keeps the window as an int; the wire carries an int32. A
+	// window that large cannot be stored, but the clamp keeps the conversion
+	// total rather than relying on that.
+	historyWindowDays := settings.HistoryWindowDays()
+	if historyWindowDays > math.MaxInt32 {
+		historyWindowDays = math.MaxInt32
+	}
+
+	return &tenantv1.ObservationSettings{HistoryWindowDays: int32(historyWindowDays)}
 }
 
-func (s *Service) UpdateObservationSettings(context.Context, *connectrpc.Request[tenantv1.UpdateObservationSettingsRequest]) (*connectrpc.Response[tenantv1.UpdateObservationSettingsResponse], error) {
-	return nil, connectrpc.NewError(connectrpc.CodeUnimplemented, errNotImplemented)
+func (s *Service) GetObservationSettings(ctx context.Context, req *connectrpc.Request[tenantv1.GetObservationSettingsRequest]) (*connectrpc.Response[tenantv1.GetObservationSettingsResponse], error) {
+	settings, err := s.tenantService.GetObservationSettings(ctx, req.Msg.GetEventId())
+	if err != nil {
+		if errors.Is(err, application.ErrEventIDRequired) {
+			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
+		}
+
+		if errors.Is(err, repository.ErrEventNotFound) {
+			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
+		}
+
+		if code, ok := tenantContextErrorCode(err); ok {
+			return nil, connectrpc.NewError(code, err)
+		}
+
+		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
+	}
+
+	return connectrpc.NewResponse(&tenantv1.GetObservationSettingsResponse{Settings: observationSettingsProto(settings)}), nil
+}
+
+func (s *Service) UpdateObservationSettings(ctx context.Context, req *connectrpc.Request[tenantv1.UpdateObservationSettingsRequest]) (*connectrpc.Response[tenantv1.UpdateObservationSettingsResponse], error) {
+	if req.Msg.GetSettings() == nil {
+		return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, errObservationSettingsRequired)
+	}
+
+	settings, err := s.tenantService.UpdateObservationSettings(ctx, application.UpdateObservationSettingsInput{
+		EventPublicID:     req.Msg.GetEventId(),
+		HistoryWindowDays: int(req.Msg.GetSettings().GetHistoryWindowDays()),
+	})
+	if err != nil {
+		if errors.Is(err, application.ErrEventIDRequired) || errors.Is(err, domain.ErrHistoryWindowDaysInvalid) {
+			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
+		}
+
+		if errors.Is(err, repository.ErrEventNotFound) {
+			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
+		}
+
+		if errors.Is(err, repository.ErrEventArchived) || errors.Is(err, repository.ErrTenantArchived) {
+			return nil, connectrpc.NewError(connectrpc.CodeFailedPrecondition, err)
+		}
+
+		if code, ok := tenantContextErrorCode(err); ok {
+			return nil, connectrpc.NewError(code, err)
+		}
+
+		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
+	}
+
+	return connectrpc.NewResponse(&tenantv1.UpdateObservationSettingsResponse{Settings: observationSettingsProto(settings)}), nil
 }
 
 func (s *Service) ListEvents(ctx context.Context, req *connectrpc.Request[tenantv1.ListEventsRequest]) (*connectrpc.Response[tenantv1.ListEventsResponse], error) {

@@ -355,6 +355,183 @@ func TestGetEventEnforcesTenantBoundary(t *testing.T) {
 	}
 }
 
+func TestGetObservationSettings(t *testing.T) {
+	t.Parallel()
+
+	settings, err := domain.NewObservationSettings(45)
+	if err != nil {
+		t.Fatalf("NewObservationSettings() error = %v", err)
+	}
+
+	tests := []struct {
+		name string
+		ctx  context.Context
+	}{
+		// The boundary is optional here: a machine-origin service token
+		// carries no tenant, and the read still answers.
+		{name: "no tenant context", ctx: context.Background()},
+		{name: "tenant context", ctx: tenantctx.WithTenantPublicID(context.Background(), "tenant-public-id")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctrl := gomock.NewController(t)
+			repo := NewMockTenantRepository(ctrl)
+			repo.EXPECT().FindObservationSettingsByEventPublicID(gomock.Any(), "event-public-id").Return(settings, nil)
+			service := newService(repo)
+
+			got, err := service.GetObservationSettings(tt.ctx, "event-public-id")
+			if err != nil {
+				t.Fatalf("GetObservationSettings() error = %v", err)
+			}
+
+			if got != settings {
+				t.Errorf("GetObservationSettings() = %#v, want %#v", got, settings)
+			}
+		})
+	}
+}
+
+func TestGetObservationSettingsValidatesInput(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	service := newService(NewMockTenantRepository(ctrl))
+
+	if _, err := service.GetObservationSettings(context.Background(), ""); !errors.Is(err, application.ErrEventIDRequired) {
+		t.Fatalf("GetObservationSettings() error = %v, want %v", err, application.ErrEventIDRequired)
+	}
+}
+
+func TestGetObservationSettingsReportsUnknownEvents(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	repo := NewMockTenantRepository(ctrl)
+	repo.EXPECT().FindObservationSettingsByEventPublicID(gomock.Any(), "event-public-id").Return(domain.ObservationSettings{}, repository.ErrEventNotFound)
+	service := newService(repo)
+
+	if _, err := service.GetObservationSettings(context.Background(), "event-public-id"); !errors.Is(err, repository.ErrEventNotFound) {
+		t.Fatalf("GetObservationSettings() error = %v, want %v", err, repository.ErrEventNotFound)
+	}
+}
+
+func TestUpdateObservationSettings(t *testing.T) {
+	t.Parallel()
+
+	event := domain.NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", domain.EventTypeShortTerm, domain.EventStatusOpen)
+	ctrl := gomock.NewController(t)
+	repo := NewMockTenantRepository(ctrl)
+	repo.EXPECT().FindEventByPublicID(gomock.Any(), event.PublicID()).Return(event, nil)
+
+	var (
+		updatedEventID string
+		storedSettings domain.ObservationSettings
+	)
+
+	repo.EXPECT().UpdateObservationSettings(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, eventID string, settings domain.ObservationSettings) error {
+		updatedEventID, storedSettings = eventID, settings
+
+		return nil
+	})
+	service := newService(repo)
+
+	ctx := tenantctx.WithTenantPublicID(context.Background(), event.TenantPublicID())
+
+	settings, err := service.UpdateObservationSettings(ctx, application.UpdateObservationSettingsInput{
+		EventPublicID:     event.PublicID(),
+		HistoryWindowDays: 45,
+	})
+	if err != nil {
+		t.Fatalf("UpdateObservationSettings() error = %v", err)
+	}
+
+	if got, want := settings.HistoryWindowDays(), 45; got != want {
+		t.Errorf("HistoryWindowDays() = %d, want %d", got, want)
+	}
+
+	// The repository is addressed by the event's internal ID, never its public
+	// one.
+	if got, want := updatedEventID, event.ID(); got != want {
+		t.Errorf("stored event ID = %q, want %q", got, want)
+	}
+
+	if got, want := storedSettings, settings; got != want {
+		t.Errorf("stored settings = %#v, want %#v", got, want)
+	}
+}
+
+func TestUpdateObservationSettingsValidatesInput(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input application.UpdateObservationSettingsInput
+		want  error
+	}{
+		{name: "missing event ID", input: application.UpdateObservationSettingsInput{HistoryWindowDays: 45}, want: application.ErrEventIDRequired},
+		{name: "zero window", input: application.UpdateObservationSettingsInput{EventPublicID: "event-public-id"}, want: domain.ErrHistoryWindowDaysInvalid},
+		{name: "negative window", input: application.UpdateObservationSettingsInput{EventPublicID: "event-public-id", HistoryWindowDays: -1}, want: domain.ErrHistoryWindowDaysInvalid},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctrl := gomock.NewController(t)
+			// The input is rejected before the repository is touched.
+			service := newService(NewMockTenantRepository(ctrl))
+
+			ctx := tenantctx.WithTenantPublicID(context.Background(), "tenant-public-id")
+			if _, err := service.UpdateObservationSettings(ctx, tt.input); !errors.Is(err, tt.want) {
+				t.Fatalf("UpdateObservationSettings() error = %v, want %v", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestUpdateObservationSettingsRejectsArchivedEvent(t *testing.T) {
+	t.Parallel()
+
+	event := domain.NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", domain.EventTypeShortTerm, domain.EventStatusArchived)
+	ctrl := gomock.NewController(t)
+	repo := NewMockTenantRepository(ctrl)
+	repo.EXPECT().FindEventByPublicID(gomock.Any(), event.PublicID()).Return(event, nil)
+	service := newService(repo)
+
+	ctx := tenantctx.WithTenantPublicID(context.Background(), event.TenantPublicID())
+
+	_, err := service.UpdateObservationSettings(ctx, application.UpdateObservationSettingsInput{
+		EventPublicID:     event.PublicID(),
+		HistoryWindowDays: 45,
+	})
+	if !errors.Is(err, repository.ErrEventArchived) {
+		t.Fatalf("UpdateObservationSettings() error = %v, want %v", err, repository.ErrEventArchived)
+	}
+}
+
+func TestUpdateObservationSettingsRejectsMismatchedContextTenant(t *testing.T) {
+	t.Parallel()
+
+	event := domain.NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", domain.EventTypeShortTerm, domain.EventStatusOpen)
+	ctrl := gomock.NewController(t)
+	repo := NewMockTenantRepository(ctrl)
+	repo.EXPECT().FindEventByPublicID(gomock.Any(), event.PublicID()).Return(event, nil)
+	service := newService(repo)
+
+	ctx := tenantctx.WithTenantPublicID(context.Background(), "other-tenant-public-id")
+
+	_, err := service.UpdateObservationSettings(ctx, application.UpdateObservationSettingsInput{
+		EventPublicID:     event.PublicID(),
+		HistoryWindowDays: 45,
+	})
+	if !errors.Is(err, tenantctx.ErrMismatch) {
+		t.Fatalf("UpdateObservationSettings() error = %v, want %v", err, tenantctx.ErrMismatch)
+	}
+}
+
 func TestListEvents(t *testing.T) {
 	t.Parallel()
 

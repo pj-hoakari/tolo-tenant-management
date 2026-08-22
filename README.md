@@ -166,6 +166,21 @@ draft はそのままアーカイブでき、これは作成した draft を破�
 アーカイブ済みイベントは既定では返さず、`include_archived` を指定したときだけ含める。
 返却件数の上限は 1000 件（`repository.MaxListEvents`）で、ページングは設けない。
 
+### 観測設定値
+
+イベントの観測設定値は `history_window_days` のみを持つ（`docs/tenant_management_spec.md` の「観測設定値」）。
+既定は 30 で、1 以上の値でなければならない。
+値は `events` テーブルの列として保持し、イベントの作成時に既定値が入る。
+
+`GetObservationSettings` はサービス間の参照系 RPC で、応答は観測設定値だけを含み、イベント名・状態・所属テナントは返さない。
+アーカイブ済みのイベントについても応答し、宙づりの参照を生まない。
+テナント境界は強制せず、テナント文脈のない `service` トークン（マシン起点）も受け付ける。
+ただし `tenant_id` クレームを持つ場合は突合し、不一致なら `permission_denied` を返す。
+
+`UpdateObservationSettings` は `tenant_access` と scope `events.write` を要求し、対象イベントの所属テナントをクレームと突合する。
+アーカイブ済みのイベント、およびアーカイブ済みテナントのイベントは `failed_precondition` で拒否する。
+`history_window_days` が 1 未満の場合は `invalid_argument` を返す。
+
 ### 関係参照（所属とロール）
 
 所属とロールの真実の源は `internal/relation` 配下に置き、テナント側（`internal/domain`、`internal/application`）とはパッケージを分ける。
