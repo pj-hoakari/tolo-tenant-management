@@ -335,3 +335,101 @@ func newReadService(t *testing.T) (*Service, domain.Tenant, []domain.Event) {
 
 	return NewService(application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{}, permissionStub{allowed: true})), tenant, events
 }
+
+// TestEveryHandlerHidesInternalErrorDetail drives each authenticated handler
+// into its internal-error fallback with a repository that fails on every
+// lookup, and checks that none of them leaks the cause. It shares the
+// process-wide logger and so must not run in parallel.
+func TestEveryHandlerHidesInternalErrorDetail(t *testing.T) {
+	logs := captureLog(t)
+	errDetail := errors.New("secret detail")
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, false)
+
+	repo := NewMockTenantRepository(gomock.NewController(t))
+	repo.EXPECT().FindTenantByPublicID(gomock.Any(), gomock.Any()).Return(domain.Tenant{}, errDetail).AnyTimes()
+	repo.EXPECT().FindTenantByPublicIDForUpdate(gomock.Any(), gomock.Any()).Return(domain.Tenant{}, domain.OwnershipClaim{}, errDetail).AnyTimes()
+	repo.EXPECT().FindEventByPublicID(gomock.Any(), gomock.Any()).Return(domain.Event{}, errDetail).AnyTimes()
+	repo.EXPECT().FindObservationSettingsByEventPublicID(gomock.Any(), gomock.Any()).Return(domain.ObservationSettings{}, errDetail).AnyTimes()
+	repo.EXPECT().DeleteExpiredPendingTenants(gomock.Any(), gomock.Any()).Return(int64(0), errDetail).AnyTimes()
+	service := NewService(application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{}, permissionStub{allowed: true}))
+
+	ctx := tenantctx.WithSubject(tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID()), "user-1")
+	eventID := "0123456789abcdef"
+
+	calls := map[string]func() error{
+		"StartTenantRegistration": func() error {
+			_, err := service.StartTenantRegistration(ctx, connectrpc.NewRequest(&tenantv1.StartTenantRegistrationRequest{Name: "Acme", ContractPlan: "standard"}))
+
+			return err
+		},
+		"ClaimTenantOwnership": func() error {
+			_, err := service.ClaimTenantOwnership(ctx, connectrpc.NewRequest(&tenantv1.ClaimTenantOwnershipRequest{TenantId: tenant.PublicID(), OwnershipClaimToken: "token"}))
+
+			return err
+		},
+		"ChangeTenantContract": func() error {
+			_, err := service.ChangeTenantContract(ctx, connectrpc.NewRequest(&tenantv1.ChangeTenantContractRequest{TenantId: tenant.PublicID(), ContractPlan: "enterprise"}))
+
+			return err
+		},
+		"ArchiveTenant": func() error {
+			_, err := service.ArchiveTenant(ctx, connectrpc.NewRequest(&tenantv1.ArchiveTenantRequest{TenantId: tenant.PublicID()}))
+
+			return err
+		},
+		"CreateEvent": func() error {
+			_, err := service.CreateEvent(ctx, connectrpc.NewRequest(&tenantv1.CreateEventRequest{TenantId: tenant.PublicID(), Name: "Festival"}))
+
+			return err
+		},
+		"AssignEventType": func() error {
+			_, err := service.AssignEventType(ctx, connectrpc.NewRequest(&tenantv1.AssignEventTypeRequest{EventId: eventID, Type: tenantv1.EventType_EVENT_TYPE_SHORT_TERM}))
+
+			return err
+		},
+		"TransitionEventStatus": func() error {
+			_, err := service.TransitionEventStatus(ctx, connectrpc.NewRequest(&tenantv1.TransitionEventStatusRequest{EventId: eventID, To: tenantv1.EventStatus_EVENT_STATUS_OPEN}))
+
+			return err
+		},
+		"GetEvent": func() error {
+			_, err := service.GetEvent(ctx, connectrpc.NewRequest(&tenantv1.GetEventRequest{EventId: eventID}))
+
+			return err
+		},
+		"GetObservationSettings": func() error {
+			_, err := service.GetObservationSettings(ctx, connectrpc.NewRequest(&tenantv1.GetObservationSettingsRequest{EventId: eventID}))
+
+			return err
+		},
+		"UpdateObservationSettings": func() error {
+			_, err := service.UpdateObservationSettings(ctx, connectrpc.NewRequest(&tenantv1.UpdateObservationSettingsRequest{EventId: eventID, Settings: &tenantv1.ObservationSettings{HistoryWindowDays: 10}}))
+
+			return err
+		},
+		"ListEvents": func() error {
+			_, err := service.ListEvents(ctx, connectrpc.NewRequest(&tenantv1.ListEventsRequest{TenantId: tenant.PublicID()}))
+
+			return err
+		},
+	}
+
+	for name, call := range calls {
+		t.Run(name, func(t *testing.T) {
+			logs.Reset()
+
+			err := call()
+			if got, want := connectrpc.CodeOf(err), connectrpc.CodeInternal; got != want {
+				t.Fatalf("%s error code = %v, want %v", name, got, want)
+			}
+
+			if strings.Contains(err.Error(), "secret detail") {
+				t.Errorf("%s error = %q, want it to omit the underlying failure", name, err)
+			}
+
+			if !strings.Contains(logs.String(), "secret detail") {
+				t.Errorf("%s log = %q, want the cause to be logged", name, logs.String())
+			}
+		})
+	}
+}
