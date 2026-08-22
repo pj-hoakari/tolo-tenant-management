@@ -103,6 +103,10 @@ func run() error {
 		Addr:              addr,
 		Handler:           handler,
 		ReadHeaderTimeout: readHeaderTimeout,
+		// net/http reports its own failures (a broken connection, a panic in a
+		// handler) through this logger, so it goes to the same structured
+		// stream as everything else.
+		ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError),
 	}
 
 	serveErr := make(chan error, 1)

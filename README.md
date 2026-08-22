@@ -91,6 +91,7 @@ OTLP のエクスポート先がどちらも未設定の場合、トレースは
 トレースが有効なリクエストでは、その文脈からトレース ID とスパン ID を自動で読み取り、`logging.googleapis.com/trace` などのフィールドとして各レコードに付与する。
 このハンドラは `internal/logging` が提供し、最小レベルは `LOG_LEVEL`、トレースの相関先プロジェクトは `GOOGLE_CLOUD_PROJECT` で指定する。
 `message` や `severity` のような予約キーと同じ名前の属性は、値が上書きされないように `attr_` 接頭辞付きで出力する。
+`net/http` と OpenTelemetry が内部で出すログも同じハンドラに流すので、サーバーのログはこの 1 系統にまとまる。
 
 ### テスト用内部 JWT の生成
 

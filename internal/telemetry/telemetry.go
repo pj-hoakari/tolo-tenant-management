@@ -4,8 +4,10 @@ package telemetry
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 
+	"github.com/go-logr/logr"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
@@ -37,9 +39,15 @@ type ShutdownFunc func(context.Context) error
 // variables (headers, protocol-specific paths, TLS, timeouts) are honoured by
 // the exporter itself.
 //
+// Whatever the pipeline reports about itself goes through the default slog
+// logger, so that an export failure is a record like any other rather than a
+// line on stderr no log backend reads.
+//
 // The returned ShutdownFunc must be called before the process exits so that
 // buffered spans are flushed.
 func Setup(ctx context.Context) (ShutdownFunc, error) {
+	setupInternalLogging()
+
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},
 		propagation.Baggage{},
@@ -68,6 +76,18 @@ func Setup(ctx context.Context) (ShutdownFunc, error) {
 	otel.SetTracerProvider(provider)
 
 	return provider.Shutdown, nil
+}
+
+// setupInternalLogging routes what OpenTelemetry says about itself into slog.
+// It runs whether or not an exporter is configured: it costs nothing, and a
+// no-op pipeline simply never reports anything.
+func setupInternalLogging() {
+	otel.SetLogger(logr.FromSlogHandler(slog.Default().Handler()))
+	// The error handler resolves the default logger per call, so a caller that
+	// installs its logger after Setup is still heard.
+	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
+		slog.Error("opentelemetry error", "error", err)
+	}))
 }
 
 // Enabled reports whether Setup exports spans with the current environment.

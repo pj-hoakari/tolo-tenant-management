@@ -1,11 +1,16 @@
 package telemetry_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"log/slog"
 	"slices"
 	"testing"
 	"time"
 
+	"github.com/pj-hoakari/tolo-tenant-management/internal/logging"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/telemetry"
 	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -65,6 +70,51 @@ func TestSetupWithEndpointInstallsSDKProvider(t *testing.T) {
 
 	if _, ok := otel.GetTracerProvider().(*sdktrace.TracerProvider); !ok {
 		t.Errorf("tracer provider = %T, want *sdktrace.TracerProvider", otel.GetTracerProvider())
+	}
+}
+
+// TestSetupReportsInternalErrorsThroughSlog checks that what the tracing
+// pipeline says about itself becomes a log record rather than a line on stderr.
+// It installs the process-wide default logger, so it must not run in parallel.
+func TestSetupReportsInternalErrorsThroughSlog(t *testing.T) {
+	clearOTLPEndpoints(t)
+
+	var logs bytes.Buffer
+
+	previous := slog.Default()
+
+	slog.SetDefault(logging.NewLogger(&logs, logging.Options{Level: slog.LevelDebug, AddSource: false, ProjectID: ""}))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	shutdown, err := telemetry.Setup(context.Background())
+	if err != nil {
+		t.Fatalf("Setup() error = %v", err)
+	}
+
+	t.Cleanup(func() {
+		if err := shutdown(context.Background()); err != nil {
+			t.Errorf("shutdown() error = %v", err)
+		}
+	})
+
+	otel.Handle(errors.New("boom"))
+
+	var entry map[string]any
+
+	if err := json.Unmarshal(bytes.TrimSpace(logs.Bytes()), &entry); err != nil {
+		t.Fatalf("unmarshal %q: %v", logs.String(), err)
+	}
+
+	if got, want := entry["severity"], "ERROR"; got != want {
+		t.Errorf("severity = %v, want %q", got, want)
+	}
+
+	if got, want := entry["message"], "opentelemetry error"; got != want {
+		t.Errorf("message = %v, want %q", got, want)
+	}
+
+	if got, want := entry["error"], "boom"; got != want {
+		t.Errorf("error = %v, want %q", got, want)
 	}
 }
 
