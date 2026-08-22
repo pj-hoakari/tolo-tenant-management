@@ -101,12 +101,56 @@ func (s *Service) ClaimTenantOwnership(ctx context.Context, req *connectrpc.Requ
 	return connectrpc.NewResponse(&tenantv1.ClaimTenantOwnershipResponse{Tenant: tenantProto(tenant)}), nil
 }
 
-func (s *Service) ChangeTenantContract(context.Context, *connectrpc.Request[tenantv1.ChangeTenantContractRequest]) (*connectrpc.Response[tenantv1.ChangeTenantContractResponse], error) {
-	return nil, connectrpc.NewError(connectrpc.CodeUnimplemented, errNotImplemented)
+// administrativeTenantWriteError maps the failures of the administrative
+// tenant writes (ChangeTenantContract, ArchiveTenant) to Connect codes. Both
+// re-check the caller's current membership, so a caller whose permission has
+// been revoked or downgraded is answered with permission_denied even though
+// the scope of its token still says otherwise.
+func administrativeTenantWriteError(err error) error {
+	switch {
+	case errors.Is(err, application.ErrTenantIDRequired), errors.Is(err, application.ErrTenantContractPlanRequired):
+		return connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
+	case errors.Is(err, repository.ErrTenantNotFound):
+		return connectrpc.NewError(connectrpc.CodeNotFound, err)
+	case errors.Is(err, application.ErrTenantPendingOwner),
+		errors.Is(err, repository.ErrTenantArchived),
+		errors.Is(err, domain.ErrTenantAlreadyArchived):
+		return connectrpc.NewError(connectrpc.CodeFailedPrecondition, err)
+	case errors.Is(err, application.ErrPermissionDenied):
+		return connectrpc.NewError(connectrpc.CodePermissionDenied, err)
+	case errors.Is(err, tenantctx.ErrSubjectMissing):
+		return connectrpc.NewError(connectrpc.CodeUnauthenticated, err)
+	// The write runs in a transaction; an aborted one can be retried.
+	case errors.Is(err, db.ErrTransactionAborted):
+		return connectrpc.NewError(connectrpc.CodeAborted, err)
+	default:
+		if code, ok := tenantContextErrorCode(err); ok {
+			return connectrpc.NewError(code, err)
+		}
+
+		return connectrpc.NewError(connectrpc.CodeInternal, err)
+	}
 }
 
-func (s *Service) ArchiveTenant(context.Context, *connectrpc.Request[tenantv1.ArchiveTenantRequest]) (*connectrpc.Response[tenantv1.ArchiveTenantResponse], error) {
-	return nil, connectrpc.NewError(connectrpc.CodeUnimplemented, errNotImplemented)
+func (s *Service) ChangeTenantContract(ctx context.Context, req *connectrpc.Request[tenantv1.ChangeTenantContractRequest]) (*connectrpc.Response[tenantv1.ChangeTenantContractResponse], error) {
+	tenant, err := s.tenantService.ChangeTenantContract(ctx, application.ChangeTenantContractInput{
+		TenantPublicID: req.Msg.GetTenantId(),
+		ContractPlan:   req.Msg.GetContractPlan(),
+	})
+	if err != nil {
+		return nil, administrativeTenantWriteError(err)
+	}
+
+	return connectrpc.NewResponse(&tenantv1.ChangeTenantContractResponse{Tenant: tenantProto(tenant)}), nil
+}
+
+func (s *Service) ArchiveTenant(ctx context.Context, req *connectrpc.Request[tenantv1.ArchiveTenantRequest]) (*connectrpc.Response[tenantv1.ArchiveTenantResponse], error) {
+	tenant, err := s.tenantService.ArchiveTenant(ctx, application.ArchiveTenantInput{TenantPublicID: req.Msg.GetTenantId()})
+	if err != nil {
+		return nil, administrativeTenantWriteError(err)
+	}
+
+	return connectrpc.NewResponse(&tenantv1.ArchiveTenantResponse{Tenant: tenantProto(tenant)}), nil
 }
 
 func (s *Service) CreateEvent(ctx context.Context, req *connectrpc.Request[tenantv1.CreateEventRequest]) (*connectrpc.Response[tenantv1.CreateEventResponse], error) {

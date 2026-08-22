@@ -240,3 +240,17 @@ func (mr *MockTenantRepositoryMockRecorder) UpdateEvent(arg0, arg1 any) *gomock.
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateEvent", reflect.TypeOf((*MockTenantRepository)(nil).UpdateEvent), arg0, arg1)
 }
+
+// UpdateTenant mocks base method.
+func (m *MockTenantRepository) UpdateTenant(arg0 context.Context, arg1 domain.Tenant) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateTenant", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateTenant indicates an expected call of UpdateTenant.
+func (mr *MockTenantRepositoryMockRecorder) UpdateTenant(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateTenant", reflect.TypeOf((*MockTenantRepository)(nil).UpdateTenant), arg0, arg1)
+}

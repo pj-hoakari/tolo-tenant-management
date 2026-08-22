@@ -75,3 +75,52 @@ func TestParseTenantOwnershipState(t *testing.T) {
 		t.Error("ParseTenantOwnershipState(other) error = nil, want error")
 	}
 }
+
+func TestTenantChangeContractPlan(t *testing.T) {
+	t.Parallel()
+
+	tenant := NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", TenantOwnershipStateOwned, false)
+
+	changed := tenant.ChangeContractPlan("enterprise")
+	if got, want := changed.ContractPlan(), "enterprise"; got != want {
+		t.Errorf("ContractPlan() after change = %q, want %q", got, want)
+	}
+
+	// The tenant is immutable: the original keeps its plan and everything else
+	// carries over to the copy.
+	if got, want := tenant.ContractPlan(), "standard"; got != want {
+		t.Errorf("ContractPlan() of the original = %q, want %q", got, want)
+	}
+
+	if got, want := changed, NewTenant(tenant.ID(), tenant.PublicID(), tenant.Name(), "enterprise", tenant.OwnershipState(), tenant.Archived()); got != want {
+		t.Errorf("changed tenant = %#v, want %#v", got, want)
+	}
+}
+
+func TestTenantArchive(t *testing.T) {
+	t.Parallel()
+
+	tenant := NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", TenantOwnershipStateOwned, false)
+
+	archived, err := tenant.Archive()
+	if err != nil {
+		t.Fatalf("Archive() error = %v", err)
+	}
+
+	if !archived.Archived() {
+		t.Error("Archived() after Archive() = false, want true")
+	}
+
+	if tenant.Archived() {
+		t.Error("Archived() of the original = true, want false")
+	}
+
+	// Archiving keeps the identifier, the name, the plan and the ownership.
+	if got, want := archived, NewTenant(tenant.ID(), tenant.PublicID(), tenant.Name(), tenant.ContractPlan(), tenant.OwnershipState(), true); got != want {
+		t.Errorf("archived tenant = %#v, want %#v", got, want)
+	}
+
+	if _, err := archived.Archive(); !errors.Is(err, ErrTenantAlreadyArchived) {
+		t.Errorf("second Archive() error = %v, want %v", err, ErrTenantAlreadyArchived)
+	}
+}

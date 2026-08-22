@@ -17,7 +17,12 @@ const (
 	TenantOwnershipStateOwned                                    // owned
 )
 
-var ErrTenantNotPendingOwner = errors.New("tenant is not pending an owner")
+var (
+	ErrTenantNotPendingOwner = errors.New("tenant is not pending an owner")
+	// ErrTenantAlreadyArchived rejects archiving a tenant that is already
+	// archived: archiving is a one-way transition and never repeated.
+	ErrTenantAlreadyArchived = errors.New("tenant is already archived")
+)
 
 // ParseTenantOwnershipState maps a string representation (as produced by
 // String) back to a TenantOwnershipState.
@@ -71,6 +76,27 @@ func (t Tenant) ClaimOwnership() (Tenant, error) {
 	}
 
 	t.ownershipState = TenantOwnershipStateOwned
+
+	return t, nil
+}
+
+// ChangeContractPlan returns a copy of the tenant on the given contract plan.
+func (t Tenant) ChangeContractPlan(plan string) Tenant {
+	t.contractPlan = plan
+
+	return t
+}
+
+// Archive returns a copy of the tenant marked as archived. Archiving is a soft
+// delete: the tenant keeps its identifier, its name (which is never released),
+// its events and its memberships, and only refuses further writes. A tenant
+// that is already archived cannot be archived again.
+func (t Tenant) Archive() (Tenant, error) {
+	if t.archived {
+		return Tenant{}, ErrTenantAlreadyArchived
+	}
+
+	t.archived = true
 
 	return t, nil
 }
