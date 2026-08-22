@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -32,6 +32,7 @@ import (
 	infradb "github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/jwks"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/jwtgen"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/logging"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/application"
 	relationdomain "github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	relationdb "github.com/pj-hoakari/tolo-tenant-management/internal/relation/infra/db"
@@ -513,7 +514,7 @@ func TestConnectError(t *testing.T) {
 // TestConnectErrorHidesInternalDetail keeps the cause of an internal failure
 // out of the response and puts it in the server log instead, as the tenant
 // transport does (service_gateway.md「エラー方針」). It cannot run in parallel:
-// it reads the log back through the standard library's process-wide logger.
+// it reads the log back through the process-wide default logger.
 func TestConnectErrorHidesInternalDetail(t *testing.T) {
 	logs := captureLog(t)
 
@@ -532,8 +533,18 @@ func TestConnectErrorHidesInternalDetail(t *testing.T) {
 		t.Errorf("error = %q, want it to omit the underlying failure", err)
 	}
 
-	if got, want := logs.String(), "tenant-management: internal error: secret detail"; !strings.Contains(got, want) {
-		t.Errorf("log = %q, want it to contain %q", got, want)
+	entry := decodeLogEntry(t, logs)
+
+	if got, want := entry["severity"], "ERROR"; got != want {
+		t.Errorf("severity = %v, want %q", got, want)
+	}
+
+	if got, want := entry["message"], "internal error"; got != want {
+		t.Errorf("message = %v, want %q", got, want)
+	}
+
+	if got, want := entry["error"], "secret detail"; got != want {
+		t.Errorf("error = %v, want %q", got, want)
 	}
 }
 
@@ -554,20 +565,43 @@ func TestConnectErrorReportsCanceledWithoutLogging(t *testing.T) {
 	}
 }
 
-// captureLog redirects the standard library's global logger into a buffer for
-// the duration of the test. The logger is process-wide, so a test that calls
-// this one must not call t.Parallel().
+// captureLog installs the service's own handler over a buffer as the default
+// logger for the duration of the test, so the assertions read the records in
+// the shape production writes them. The default logger is process-wide, so a
+// test that calls this one must not call t.Parallel().
 func captureLog(t *testing.T) *bytes.Buffer {
 	t.Helper()
 
 	var logs bytes.Buffer
 
-	previous := log.Writer()
+	previous := slog.Default()
 
-	log.SetOutput(&logs)
-	t.Cleanup(func() { log.SetOutput(previous) })
+	slog.SetDefault(logging.NewLogger(&logs, logging.Options{Level: slog.LevelDebug, AddSource: false, ProjectID: ""}))
+	t.Cleanup(func() { slog.SetDefault(previous) })
 
 	return &logs
+}
+
+// decodeLogEntry parses the single JSON record the captured log holds.
+func decodeLogEntry(t *testing.T, logs *bytes.Buffer) map[string]any {
+	t.Helper()
+
+	line := strings.TrimSpace(logs.String())
+	if line == "" {
+		t.Fatal("nothing was logged")
+	}
+
+	if strings.Contains(line, "\n") {
+		t.Fatalf("log = %q, want a single record", line)
+	}
+
+	var entry map[string]any
+
+	if err := json.Unmarshal([]byte(line), &entry); err != nil {
+		t.Fatalf("unmarshal %q: %v", line, err)
+	}
+
+	return entry
 }
 
 // membershipOf returns the listed membership of userID, or nil.

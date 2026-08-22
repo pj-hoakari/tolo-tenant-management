@@ -3,7 +3,7 @@ package connect
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 
 	connectrpc "connectrpc.com/connect"
@@ -71,10 +71,10 @@ func NewHandlerWithValidator(tenantService application.TenantUseCases, validator
 	return mux, nil
 }
 
-func handleHealthz(w http.ResponseWriter, _ *http.Request) {
+func handleHealthz(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	if _, err := w.Write([]byte("ok")); err != nil {
-		log.Printf("healthz response write: %v", err)
+		slog.ErrorContext(r.Context(), "healthz response write failed", "error", err)
 	}
 }

@@ -72,16 +72,26 @@ connect-es の生成（`task proto:gen:es`）はリリース時に CI で行う�
 |---|---|---|
 | `DATABASE_URL` | なし（必須） | PostgreSQL の接続先。未設定ならサーバーは起動しない |
 | `SERVER_ADDR` | `:8080` | HTTP サーバーの待ち受けアドレス |
+| `LOG_LEVEL` | `info` | ログに出力する最小レベル。`debug`／`info`／`warn`（`warning` も同義）／`error`／`critical` を取り、未知の値ならサーバーは起動しない |
 | `INTERNAL_JWKS_URL` | `http://gateway:8080/.well-known/jwks.json` | 内部 JWT の署名鍵を取得する JWKS エンドポイント |
 | `INTERNAL_JWT_ISSUER` | `service-gateway` | 内部 JWT に要求する `iss`。Service Gateway の発行者識別子に合わせる |
 | `INTERNAL_JWT_AUDIENCE` | `tolo-tenant-management` | 内部 JWT に要求する `aud` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | なし | OTLP/HTTP のエクスポート先 |
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | なし | トレース専用の OTLP エクスポート先 |
 | `OTEL_SERVICE_NAME` | `tolo-tenant-management` | トレースが報告する `service.name` |
+| `GOOGLE_CLOUD_PROJECT` | なし（未設定可） | 設定するとログの `logging.googleapis.com/trace` を `projects/<project>/traces/<trace_id>` 形式にし、Cloud Logging でトレースと相関させる |
 
 OTLP のエクスポート先がどちらも未設定の場合、トレースは no-op のまま起動する。
 そのほかの OTLP 用の環境変数（ヘッダー、TLS、タイムアウトなど）はエクスポータ自身が解釈する。
 `DATABASE_URL` は `task migrate:*` でも参照し、未設定の場合は `compose.yml` の PostgreSQL を指す既定値を使う。
+
+### ログ
+
+ログは標準出力へ 1 行 1 件の JSON で書き出し、Cloud Logging がそのまま解釈する構造化フォーマット（`severity`、`message`、`time`）に合わせている。
+トレースが有効なリクエストでは、その文脈からトレース ID とスパン ID を自動で読み取り、`logging.googleapis.com/trace` などのフィールドとして各レコードに付与する。
+このハンドラは `internal/logging` が提供し、最小レベルは `LOG_LEVEL`、トレースの相関先プロジェクトは `GOOGLE_CLOUD_PROJECT` で指定する。
+`message` や `severity` のような予約キーと同じ名前の属性は、値が上書きされないように `attr_` 接頭辞付きで出力する。
+`net/http` と OpenTelemetry が内部で出すログも同じハンドラに流すので、サーバーのログはこの 1 系統にまとまる。
 
 ### テスト用内部 JWT の生成
 
@@ -179,8 +189,9 @@ proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16
 
 ### エラー
 
-内部エラーは `internal` と固定メッセージ `internal error` だけを返し、原因はサーバー側のログ（`tenant-management: internal error: ...`）にのみ記録する。
-クライアント都合の中断と締め切り超過は `canceled`／`deadline_exceeded` として返してログには記録せず、内部エラーはトレースが有効なときだけログに `trace_id` を添えてトレースと突き合わせられるようにする。
+内部エラーは `internal` と固定メッセージ `internal error` だけを返し、原因はサーバー側のログにのみ記録する。
+そのログは `message` が `internal error`、`error` 属性が原因という構造化レコードで、トレースが有効なときはトレースのフィールドも付く（「ログ」を参照）。
+クライアント都合の中断と締め切り超過は `canceled`／`deadline_exceeded` として返し、サーバー側のログには記録しない。
 エラーメッセージには内部主キー（UUIDv7）、テナント名、ユーザー ID を含めない。
 `connectrpc.CodeInternal` の直接使用は golangci-lint の `forbidigo` で禁止しており、許可するのは `InternalError` の中だけである。
 

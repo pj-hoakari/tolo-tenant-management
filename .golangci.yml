@@ -30,6 +30,11 @@ linters:
                 # cause is logged server-side and never reaches the client.
                 - pattern: '^connectrpc\.CodeInternal$'
                   msg: "build internal errors with InternalError(ctx, err) instead of connectrpc.CodeInternal"
+                # Logging goes through log/slog, so that every record comes out
+                # in the structure Cloud Logging parses and carries the trace of
+                # its request context.
+                - pattern: '^log\.[A-Z]\w*$'
+                  msg: "use log/slog (internal/logging) instead of the standard log package"
         exhaustruct:
             exclude:
                 - 'crypto/tls\.Config'

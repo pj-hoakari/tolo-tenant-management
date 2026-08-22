@@ -3,11 +3,10 @@ package connect
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"math"
 
 	connectrpc "connectrpc.com/connect"
-	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	tenantv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1"
@@ -28,8 +27,8 @@ var errInternal = errors.New("internal error")
 
 // InternalError reports a failure the client can do nothing about. The cause is
 // written to the server log and replaced by a fixed message, so that no
-// internal detail leaves the service (service_gateway.md「エラー方針」). When
-// the request carries a span, the log line names its trace ID, so an operator
+// internal detail leaves the service (service_gateway.md「エラー方針」). The log
+// handler names the trace of the request context on the record, so an operator
 // can find the failure in the trace it belongs to.
 //
 // A cancelled or timed-out request is the client going away rather than a
@@ -46,11 +45,7 @@ func InternalError(ctx context.Context, err error) *connectrpc.Error {
 		return connectrpc.NewError(connectrpc.CodeDeadlineExceeded, err)
 	}
 
-	if spanContext := trace.SpanFromContext(ctx).SpanContext(); spanContext.IsValid() {
-		log.Printf("tenant-management: internal error: %v trace_id=%s", err, spanContext.TraceID())
-	} else {
-		log.Printf("tenant-management: internal error: %v", err)
-	}
+	slog.ErrorContext(ctx, "internal error", "error", err)
 
 	return connectrpc.NewError(connectrpc.CodeInternal, errInternal) //nolint:forbidigo // the one place that builds internal errors
 }

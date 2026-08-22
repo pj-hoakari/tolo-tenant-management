@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,6 +15,7 @@ import (
 	connectinfra "github.com/pj-hoakari/tolo-tenant-management/internal/infra/connect"
 	dbinfra "github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/jwks"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/logging"
 	relationapplication "github.com/pj-hoakari/tolo-tenant-management/internal/relation/application"
 	relationconnect "github.com/pj-hoakari/tolo-tenant-management/internal/relation/infra/connect"
 	relationdb "github.com/pj-hoakari/tolo-tenant-management/internal/relation/infra/db"
@@ -23,17 +24,28 @@ import (
 
 const (
 	defaultAddr       = ":8080"
+	defaultLogLevel   = "info"
 	shutdownTimeout   = 10 * time.Second
 	readHeaderTimeout = 10 * time.Second
 )
 
 func main() {
 	if err := run(); err != nil {
-		log.Fatalf("server: %v", err)
+		// run() installs the default logger itself, so a failure before that
+		// point is reported by slog's own handler on stderr instead.
+		slog.Error("server failed", "error", err)
+		os.Exit(1)
 	}
 }
 
 func run() error {
+	logger, err := newLogger()
+	if err != nil {
+		return err
+	}
+
+	slog.SetDefault(logger)
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -56,7 +68,7 @@ func run() error {
 	defer shutdownTracingWithTimeout(shutdownTracing)
 
 	if telemetry.Enabled() {
-		log.Printf("tenant-management: tracing enabled for service %q", telemetry.ServiceName())
+		slog.Info("tracing enabled", "service", telemetry.ServiceName())
 	}
 
 	db, err := dbinfra.Open(ctx, databaseURL)
@@ -65,7 +77,7 @@ func run() error {
 	}
 	defer func() {
 		if err := db.Close(); err != nil {
-			log.Printf("tenant-management: close database: %v", err)
+			slog.Error("close database failed", "error", err)
 		}
 	}()
 
@@ -91,12 +103,16 @@ func run() error {
 		Addr:              addr,
 		Handler:           handler,
 		ReadHeaderTimeout: readHeaderTimeout,
+		// net/http reports its own failures (a broken connection, a panic in a
+		// handler) through this logger, so it goes to the same structured
+		// stream as everything else.
+		ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError),
 	}
 
 	serveErr := make(chan error, 1)
 
 	go func() {
-		log.Printf("tenant-management: server listening on %s", addr)
+		slog.Info("server listening", "addr", addr)
 
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serveErr <- err
@@ -111,13 +127,31 @@ func run() error {
 	case err := <-serveErr:
 		return err
 	case <-ctx.Done():
-		log.Print("tenant-management: server shutting down")
+		slog.Info("server shutting down")
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
 
 		return httpServer.Shutdown(shutdownCtx)
 	}
+}
+
+// newLogger builds the process logger from the environment. It is the first
+// thing run() does, so that everything the service reports afterwards is
+// written in the structure Cloud Logging parses.
+func newLogger() (*slog.Logger, error) {
+	level, err := logging.ParseLevel(getenv("LOG_LEVEL", defaultLogLevel))
+	if err != nil {
+		return nil, fmt.Errorf("read LOG_LEVEL: %w", err)
+	}
+
+	return logging.NewLogger(os.Stdout, logging.Options{
+		Level:     level,
+		AddSource: false,
+		// Without a project the log entries carry the bare trace ID, so Cloud
+		// Logging cannot correlate them with the trace.
+		ProjectID: os.Getenv("GOOGLE_CLOUD_PROJECT"),
+	}), nil
 }
 
 // shutdownTracingWithTimeout flushes pending spans on a fresh context, because
@@ -127,7 +161,7 @@ func shutdownTracingWithTimeout(shutdown telemetry.ShutdownFunc) {
 	defer cancel()
 
 	if err := shutdown(ctx); err != nil {
-		log.Printf("tenant-management: shutdown tracing: %v", err)
+		slog.Error("shutdown tracing failed", "error", err)
 	}
 }
 
