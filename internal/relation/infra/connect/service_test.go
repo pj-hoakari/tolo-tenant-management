@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -504,6 +505,28 @@ func TestConnectError(t *testing.T) {
 				t.Errorf("connectError(%v) code = %v, want %v", tt.err, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestConnectErrorHidesInternalDetail keeps the cause of an internal failure
+// out of the response, as the tenant transport does
+// (service_gateway.md「エラー方針」).
+func TestConnectErrorHidesInternalDetail(t *testing.T) {
+	t.Parallel()
+
+	err := connectError(errors.New("secret detail"))
+
+	var connectErr *connectrpc.Error
+	if !errors.As(err, &connectErr) {
+		t.Fatalf("connectError() = %v, want a Connect error", err)
+	}
+
+	if got, want := connectErr.Message(), "internal error"; got != want {
+		t.Errorf("Message() = %q, want %q", got, want)
+	}
+
+	if strings.Contains(err.Error(), "secret detail") {
+		t.Errorf("error = %q, want it to omit the underlying failure", err)
 	}
 }
 

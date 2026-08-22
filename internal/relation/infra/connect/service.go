@@ -131,7 +131,8 @@ func (s *Service) ListMemberships(ctx context.Context, req *connectrpc.Request[r
 // failed preconditions. A caller whose current membership no longer permits
 // the write is denied, and one without a subject is unauthenticated. A
 // transaction PostgreSQL aborted is reported as aborted, which tells the
-// client the call can be retried as it stands.
+// client the call can be retried as it stands. Anything else is an internal
+// failure, reported without its detail (tenantconnect.InternalError).
 func connectError(err error) error {
 	switch {
 	case errors.Is(err, application.ErrTenantIDRequired),
@@ -166,7 +167,7 @@ func connectError(err error) error {
 	case errors.Is(err, infradb.ErrTransactionAborted):
 		return connectrpc.NewError(connectrpc.CodeAborted, err)
 	default:
-		return connectrpc.NewError(connectrpc.CodeInternal, err)
+		return tenantconnect.InternalError(err)
 	}
 }
 

@@ -111,6 +111,9 @@ proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16
 JWKS は `INTERNAL_JWKS_URL` から取得する。未設定時は Gateway コンテナのエンドポイント `http://gateway:8080/.well-known/jwks.json` を使う。取得した鍵は 5 分間キャッシュし、未知の `kid` を受信した場合は直ちに再取得する。
 `iss`／`aud` の期待値は `INTERNAL_JWT_ISSUER`（既定 `service-gateway`。Service Gateway の発行者識別子に合わせる）と `INTERNAL_JWT_AUDIENCE`（既定 `tolo-tenant-management`）で設定する。
 
+内部エラーは `internal` と固定メッセージ `internal error` だけを返し、原因はサーバー側のログ（`tenant-management: internal error: ...`）にのみ記録する。
+エラーメッセージには内部主キー（UUIDv7）・テナント名・ユーザー ID を含めない。
+
 ### テナントのオンボーディング
 
 テナントは未認証の仮登録と、認証済みユーザーによる所有権取得の二段階で作成する（`docs/tenant_management_spec.md` の「オンボーディング」）。

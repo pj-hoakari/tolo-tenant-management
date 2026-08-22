@@ -4,6 +4,8 @@ package connect
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"sync"
 	"testing"
 
@@ -205,6 +207,40 @@ func TestCreateEventPublicIDCollision(t *testing.T) {
 	}))
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodeAlreadyExists; got != want {
 		t.Fatalf("CreateEvent() error code = %v, want %v", got, want)
+	}
+}
+
+// TestInternalErrorHidesDetail keeps the cause of an internal failure out of
+// the response: the client only ever sees the fixed message
+// (service_gateway.md「エラー方針」).
+func TestInternalErrorHidesDetail(t *testing.T) {
+	t.Parallel()
+
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, false)
+
+	ctrl := gomock.NewController(t)
+	repo := NewMockTenantRepository(ctrl)
+	repo.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(domain.Tenant{}, errors.New("secret detail"))
+
+	service := NewService(application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{}, permissionStub{allowed: true}))
+	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
+
+	_, err := service.ListEvents(ctx, connectrpc.NewRequest(&tenantv1.ListEventsRequest{TenantId: tenant.PublicID()}))
+	if got, want := connectrpc.CodeOf(err), connectrpc.CodeInternal; got != want {
+		t.Fatalf("ListEvents() error code = %v, want %v", got, want)
+	}
+
+	var connectErr *connectrpc.Error
+	if !errors.As(err, &connectErr) {
+		t.Fatalf("ListEvents() error = %v, want a Connect error", err)
+	}
+
+	if got, want := connectErr.Message(), "internal error"; got != want {
+		t.Errorf("Message() = %q, want %q", got, want)
+	}
+
+	if strings.Contains(err.Error(), "secret detail") {
+		t.Errorf("error = %q, want it to omit the underlying failure", err)
 	}
 }
 
