@@ -164,7 +164,7 @@ draft はそのままアーカイブでき、これは作成した draft を破�
 
 `ListEvents` はテナント配下のイベントを作成順（内部主キーの UUIDv7 順）に返す。
 アーカイブ済みイベントは既定では返さず、`include_archived` を指定したときだけ含める。
-返却件数の上限は 1000 件（`application.MaxListEvents`）で、ページングは設けない。
+返却件数の上限は 1000 件（`repository.MaxListEvents`）で、ページングは設けない。
 
 ### 関係参照（所属とロール）
 

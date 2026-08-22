@@ -80,14 +80,12 @@ func (r *PostgresTenantRepository) findEvent(ctx context.Context, query, value s
 	return row.domain(ctx)
 }
 
-// defaultListEventsLimit caps a listing whose filter asks for no limit of its
-// own, so that no caller can trigger an unbounded scan of a tenant's events.
-const defaultListEventsLimit = 1000
-
 func (r *PostgresTenantRepository) ListEventsByTenantID(ctx context.Context, tenantID string, filter repository.ListEventsFilter) ([]domain.Event, error) {
+	// A filter that asks for no limit of its own still gets the cap, so that
+	// no caller can trigger an unbounded scan of a tenant's events.
 	limit := filter.Limit
 	if limit <= 0 {
-		limit = defaultListEventsLimit
+		limit = repository.MaxListEvents
 	}
 
 	// Events carry a UUIDv7 primary key, so ordering by id is creation order.

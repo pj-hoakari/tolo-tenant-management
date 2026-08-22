@@ -180,7 +180,7 @@ func TestListEvents(t *testing.T) {
 
 			// include_archived comes straight off the request, and the listing
 			// carries the cap the spec sets.
-			wantFilter := repository.ListEventsFilter{IncludeArchived: includeArchived, Limit: application.MaxListEvents}
+			wantFilter := repository.ListEventsFilter{IncludeArchived: includeArchived, Limit: repository.MaxListEvents}
 
 			ctrl := gomock.NewController(t)
 			repo := NewMockTenantRepository(ctrl)

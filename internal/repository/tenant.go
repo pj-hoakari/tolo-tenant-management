@@ -26,6 +26,11 @@ type Transactor interface {
 	WithinTransaction(ctx context.Context, fn func(context.Context) error) error
 }
 
+// MaxListEvents is the number of events a listing returns at most. The spec
+// caps ListEvents at 1000 events and defines no paging; callers pass it as
+// ListEventsFilter.Limit.
+const MaxListEvents = 1000
+
 // ListEventsFilter narrows a tenant's event listing.
 //
 // Archived events are omitted unless IncludeArchived is set. A Limit greater

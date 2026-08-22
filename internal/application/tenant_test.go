@@ -370,7 +370,7 @@ func TestListEvents(t *testing.T) {
 
 			// The caller's flag reaches the repository unchanged, and the
 			// listing is always capped at the limit the spec sets.
-			wantFilter := repository.ListEventsFilter{IncludeArchived: includeArchived, Limit: application.MaxListEvents}
+			wantFilter := repository.ListEventsFilter{IncludeArchived: includeArchived, Limit: repository.MaxListEvents}
 
 			ctrl := gomock.NewController(t)
 			repo := NewMockTenantRepository(ctrl)
@@ -395,7 +395,7 @@ func TestListEvents(t *testing.T) {
 func TestListEventsCapMatchesTheSpec(t *testing.T) {
 	t.Parallel()
 
-	if got, want := application.MaxListEvents, 1000; got != want {
+	if got, want := repository.MaxListEvents, 1000; got != want {
 		t.Errorf("MaxListEvents = %d, want %d", got, want)
 	}
 }

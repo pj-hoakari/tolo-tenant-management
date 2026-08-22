@@ -131,35 +131,40 @@ func TestPostgresTenantRepositoryEvents(t *testing.T) {
 		t.Fatalf("CreateTenant() error = %v", err)
 	}
 
-	event2 := newEvent("00000000-0000-0000-0000-000000000012", "event-002", tenant, "Festival 2", domain.EventTypeLongTerm, domain.EventStatusOpen)
-	event3 := newEvent("00000000-0000-0000-0000-000000000013", "event-003", tenant, "Festival 3", domain.EventTypeShortTerm, domain.EventStatusArchived)
+	// The archived event sits between the other two by key, so a limited
+	// listing that includes archived events differs from the default one.
+	archivedEvent := newEvent("00000000-0000-0000-0000-000000000012", "event-002", tenant, "Festival 2", domain.EventTypeLongTerm, domain.EventStatusArchived)
+	openEvent := newEvent("00000000-0000-0000-0000-000000000013", "event-003", tenant, "Festival 3", domain.EventTypeLongTerm, domain.EventStatusOpen)
 
-	event1 := newEvent("00000000-0000-0000-0000-000000000011", "event-001", tenant, "Festival 1", domain.EventTypeShortTerm, domain.EventStatusDraft)
-	for _, event := range []domain.Event{event2, event3, event1} {
+	draftEvent := newEvent("00000000-0000-0000-0000-000000000011", "event-001", tenant, "Festival 1", domain.EventTypeShortTerm, domain.EventStatusDraft)
+	for _, event := range []domain.Event{openEvent, archivedEvent, draftEvent} {
 		if err := repository.CreateEvent(ctx, event); err != nil {
 			t.Fatalf("CreateEvent(%q) error = %v", event.ID(), err)
 		}
 	}
 
-	got, err := repository.FindEventByPublicID(ctx, event1.PublicID())
+	got, err := repository.FindEventByPublicID(ctx, draftEvent.PublicID())
 	if err != nil {
 		t.Fatalf("FindEventByPublicID() error = %v", err)
 	}
 
-	if got != event1 {
-		t.Errorf("found event = %#v, want %#v", got, event1)
+	if got != draftEvent {
+		t.Errorf("found event = %#v, want %#v", got, draftEvent)
 	}
 
-	// The events carry UUIDv7 keys, so the listing order is creation order
-	// regardless of the order the rows were inserted in.
+	// The listing is ordered by primary key byte order, not by the order the
+	// rows were inserted in. These fixtures use hand-written UUIDs; production
+	// keys are UUIDv7, which makes that order the creation order.
 	listTests := []struct {
 		name   string
 		filter repositorypkg.ListEventsFilter
 		want   []domain.Event
 	}{
-		{name: "default", filter: repositorypkg.ListEventsFilter{}, want: []domain.Event{event1, event2}},
-		{name: "include archived", filter: repositorypkg.ListEventsFilter{IncludeArchived: true}, want: []domain.Event{event1, event2, event3}},
-		{name: "limit", filter: repositorypkg.ListEventsFilter{Limit: 1}, want: []domain.Event{event1}},
+		{name: "default", filter: repositorypkg.ListEventsFilter{}, want: []domain.Event{draftEvent, openEvent}},
+		{name: "include archived", filter: repositorypkg.ListEventsFilter{IncludeArchived: true}, want: []domain.Event{draftEvent, archivedEvent, openEvent}},
+		{name: "limit", filter: repositorypkg.ListEventsFilter{Limit: 1}, want: []domain.Event{draftEvent}},
+		{name: "limit within an archived listing", filter: repositorypkg.ListEventsFilter{IncludeArchived: true, Limit: 2}, want: []domain.Event{draftEvent, archivedEvent}},
+		{name: "non-positive limit falls back to the cap", filter: repositorypkg.ListEventsFilter{Limit: -1}, want: []domain.Event{draftEvent, openEvent}},
 	}
 
 	for _, tt := range listTests {
@@ -175,7 +180,7 @@ func TestPostgresTenantRepositoryEvents(t *testing.T) {
 		})
 	}
 
-	updated := event1.AssignType(domain.EventTypeLongTerm)
+	updated := draftEvent.AssignType(domain.EventTypeLongTerm)
 
 	updated, err = updated.TransitionTo(domain.EventStatusOpen)
 	if err != nil {
