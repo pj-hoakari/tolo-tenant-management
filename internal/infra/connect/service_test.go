@@ -3,7 +3,11 @@
 package connect
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"log"
+	"strings"
 	"sync"
 	"testing"
 
@@ -11,6 +15,7 @@ import (
 	tenantv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/repository"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 	"go.uber.org/mock/gomock"
 )
@@ -180,6 +185,112 @@ func TestListEvents(t *testing.T) {
 			t.Errorf("Events[%d].EventId = %q, want %q", i, got, want)
 		}
 	}
+}
+
+// TestCreateEventPublicIDCollision pins an event public ID collision to
+// already_exists rather than internal (tenant_management_spec.md「エラー」).
+func TestCreateEventPublicIDCollision(t *testing.T) {
+	t.Parallel()
+
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, false)
+
+	ctrl := gomock.NewController(t)
+	repo := NewMockTenantRepository(ctrl)
+	repo.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(tenant, nil).AnyTimes()
+	repo.EXPECT().CreateEvent(gomock.Any(), gomock.Any()).Return(repository.ErrEventPublicIDExists)
+
+	service := NewService(application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{}, permissionStub{allowed: true}))
+	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
+
+	_, err := service.CreateEvent(ctx, connectrpc.NewRequest(&tenantv1.CreateEventRequest{
+		TenantId: tenant.PublicID(),
+		Name:     "Festival",
+		Type:     tenantv1.EventType_EVENT_TYPE_SHORT_TERM,
+	}))
+	if got, want := connectrpc.CodeOf(err), connectrpc.CodeAlreadyExists; got != want {
+		t.Fatalf("CreateEvent() error code = %v, want %v", got, want)
+	}
+}
+
+// TestInternalErrorHidesDetail keeps the cause of an internal failure out of
+// the response and puts it in the server log instead
+// (service_gateway.md「エラー方針」). It cannot run in parallel: it reads the
+// log back through the standard library's process-wide logger.
+func TestInternalErrorHidesDetail(t *testing.T) {
+	logs := captureLog(t)
+	service, tenant := newFailingService(t, errors.New("secret detail"))
+
+	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
+
+	_, err := service.ListEvents(ctx, connectrpc.NewRequest(&tenantv1.ListEventsRequest{TenantId: tenant.PublicID()}))
+	if got, want := connectrpc.CodeOf(err), connectrpc.CodeInternal; got != want {
+		t.Fatalf("ListEvents() error code = %v, want %v", got, want)
+	}
+
+	var connectErr *connectrpc.Error
+	if !errors.As(err, &connectErr) {
+		t.Fatalf("ListEvents() error = %v, want a Connect error", err)
+	}
+
+	if got, want := connectErr.Message(), "internal error"; got != want {
+		t.Errorf("Message() = %q, want %q", got, want)
+	}
+
+	if strings.Contains(err.Error(), "secret detail") {
+		t.Errorf("error = %q, want it to omit the underlying failure", err)
+	}
+
+	if got, want := logs.String(), "tenant-management: internal error: secret detail"; !strings.Contains(got, want) {
+		t.Errorf("log = %q, want it to contain %q", got, want)
+	}
+}
+
+// TestCanceledRequestIsNotLogged pins a client that goes away to canceled: it
+// is not a server fault, so nothing is logged. It shares the process-wide
+// logger with TestInternalErrorHidesDetail and so cannot run in parallel
+// either.
+func TestCanceledRequestIsNotLogged(t *testing.T) {
+	logs := captureLog(t)
+	service, tenant := newFailingService(t, context.Canceled)
+
+	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
+
+	_, err := service.ListEvents(ctx, connectrpc.NewRequest(&tenantv1.ListEventsRequest{TenantId: tenant.PublicID()}))
+	if got, want := connectrpc.CodeOf(err), connectrpc.CodeCanceled; got != want {
+		t.Fatalf("ListEvents() error code = %v, want %v", got, want)
+	}
+
+	if logs.Len() != 0 {
+		t.Errorf("log = %q, want nothing logged", logs.String())
+	}
+}
+
+// newFailingService returns a service whose tenant lookup fails with err.
+func newFailingService(t *testing.T, err error) (*Service, domain.Tenant) {
+	t.Helper()
+
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, false)
+
+	repo := NewMockTenantRepository(gomock.NewController(t))
+	repo.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(domain.Tenant{}, err)
+
+	return NewService(application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{}, permissionStub{allowed: true})), tenant
+}
+
+// captureLog redirects the standard library's global logger into a buffer for
+// the duration of the test. The logger is process-wide, so a test that calls
+// this one must not call t.Parallel().
+func captureLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+
+	var logs bytes.Buffer
+
+	previous := log.Writer()
+
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(previous) })
+
+	return &logs
 }
 
 func newReadService(t *testing.T) (*Service, domain.Tenant, []domain.Event) {

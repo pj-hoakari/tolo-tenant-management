@@ -13,6 +13,16 @@ import (
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
 
+// The write reached no row even though the tenant is present and not archived,
+// so the cause is unknown. The messages name no identifier: an error message
+// carries no internal primary key, tenant name, or user ID
+// (tenant_management_spec.md「エラー」). The transport logs the cause
+// server-side and answers the client with a fixed message.
+var (
+	errCreateEventNoRow = errors.New("create event: no row inserted")
+	errUpdateEventNoRow = errors.New("update event: no row updated")
+)
+
 func (r *PostgresTenantRepository) CreateEvent(ctx context.Context, event domain.Event) error {
 	result, err := r.executor(ctx).ExecContext(ctx, `
 		INSERT INTO events (id, public_id, tenant_id, tenant_public_id, name, event_type, status)
@@ -42,7 +52,7 @@ func (r *PostgresTenantRepository) CreateEvent(ctx context.Context, event domain
 		return repository.ErrTenantArchived
 	}
 
-	return fmt.Errorf("create event for tenant %q: no row inserted", event.TenantID())
+	return errCreateEventNoRow
 }
 
 func (r *PostgresTenantRepository) FindEventByPublicID(ctx context.Context, publicID string) (domain.Event, error) {
@@ -125,7 +135,7 @@ func (r *PostgresTenantRepository) UpdateEvent(ctx context.Context, event domain
 		return repository.ErrTenantArchived
 	}
 
-	return fmt.Errorf("update event %q: no row updated", event.ID())
+	return errUpdateEventNoRow
 }
 
 type eventRow struct {
@@ -141,12 +151,12 @@ type eventRow struct {
 func (r eventRow) domain(ctx context.Context) (domain.Event, error) {
 	eventType, err := domain.ParseEventType(r.EventType)
 	if err != nil {
-		return domain.Event{}, fmt.Errorf("parse event %q type: %w", r.ID, err)
+		return domain.Event{}, fmt.Errorf("parse event type: %w", err)
 	}
 
 	status, err := domain.ParseEventStatus(r.Status)
 	if err != nil {
-		return domain.Event{}, fmt.Errorf("parse event %q status: %w", r.ID, err)
+		return domain.Event{}, fmt.Errorf("parse event status: %w", err)
 	}
 
 	// Defense in depth: never return an event that belongs to a tenant other

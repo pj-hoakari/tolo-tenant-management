@@ -3,8 +3,10 @@ package connect
 import (
 	"context"
 	"errors"
+	"log"
 
 	connectrpc "connectrpc.com/connect"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	tenantv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1"
@@ -17,6 +19,38 @@ import (
 )
 
 var errNotImplemented = errors.New("tenant service method is not implemented")
+
+// errInternal is the only detail a client learns about an internal failure.
+var errInternal = errors.New("internal error")
+
+// InternalError reports a failure the client can do nothing about. The cause is
+// written to the server log and replaced by a fixed message, so that no
+// internal detail leaves the service (service_gateway.md「エラー方針」). When
+// the request carries a span, the log line names its trace ID, so an operator
+// can find the failure in the trace it belongs to.
+//
+// A cancelled or timed-out request is the client going away rather than a
+// server fault, so it keeps its own code and is not logged.
+//
+// It is exported for the other transports of this process, so that every
+// service answers an internal failure the same way.
+func InternalError(ctx context.Context, err error) *connectrpc.Error {
+	if errors.Is(err, context.Canceled) {
+		return connectrpc.NewError(connectrpc.CodeCanceled, err)
+	}
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		return connectrpc.NewError(connectrpc.CodeDeadlineExceeded, err)
+	}
+
+	if spanContext := trace.SpanFromContext(ctx).SpanContext(); spanContext.IsValid() {
+		log.Printf("tenant-management: internal error: %v trace_id=%s", err, spanContext.TraceID())
+	} else {
+		log.Printf("tenant-management: internal error: %v", err)
+	}
+
+	return connectrpc.NewError(connectrpc.CodeInternal, errInternal)
+}
 
 // tenantContextErrorCode maps the tenant-context guard errors to Connect codes.
 // A mismatch between the requested tenant and the authenticated tenant is a
@@ -60,7 +94,7 @@ func (s *Service) StartTenantRegistration(ctx context.Context, req *connectrpc.R
 			return nil, connectrpc.NewError(connectrpc.CodeAlreadyExists, err)
 		}
 
-		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
+		return nil, InternalError(ctx, err)
 	}
 
 	// The plaintext claim token appears in this response only; it is never
@@ -95,7 +129,7 @@ func (s *Service) ClaimTenantOwnership(ctx context.Context, req *connectrpc.Requ
 			return nil, connectrpc.NewError(connectrpc.CodeAborted, err)
 		}
 
-		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
+		return nil, InternalError(ctx, err)
 	}
 
 	return connectrpc.NewResponse(&tenantv1.ClaimTenantOwnershipResponse{Tenant: tenantProto(tenant)}), nil
@@ -164,6 +198,11 @@ func (s *Service) CreateEvent(ctx context.Context, req *connectrpc.Request[tenan
 			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
 		}
 
+		// A public ID collision is a conflict, not an internal failure.
+		if errors.Is(err, repository.ErrEventPublicIDExists) {
+			return nil, connectrpc.NewError(connectrpc.CodeAlreadyExists, err)
+		}
+
 		if errors.Is(err, repository.ErrTenantNotFound) {
 			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
 		}
@@ -176,7 +215,7 @@ func (s *Service) CreateEvent(ctx context.Context, req *connectrpc.Request[tenan
 			return nil, connectrpc.NewError(code, err)
 		}
 
-		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
+		return nil, InternalError(ctx, err)
 	}
 
 	return connectrpc.NewResponse(&tenantv1.CreateEventResponse{Event: eventProto(event)}), nil
@@ -268,7 +307,7 @@ func (s *Service) AssignEventType(ctx context.Context, req *connectrpc.Request[t
 			return nil, connectrpc.NewError(code, err)
 		}
 
-		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
+		return nil, InternalError(ctx, err)
 	}
 
 	return connectrpc.NewResponse(&tenantv1.AssignEventTypeResponse{Event: eventProto(event)}), nil
@@ -296,7 +335,7 @@ func (s *Service) TransitionEventStatus(ctx context.Context, req *connectrpc.Req
 			return nil, connectrpc.NewError(code, err)
 		}
 
-		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
+		return nil, InternalError(ctx, err)
 	}
 
 	return connectrpc.NewResponse(&tenantv1.TransitionEventStatusResponse{Event: eventProto(event)}), nil
@@ -352,7 +391,7 @@ func (s *Service) GetEvent(ctx context.Context, req *connectrpc.Request[tenantv1
 			return nil, connectrpc.NewError(code, err)
 		}
 
-		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
+		return nil, InternalError(ctx, err)
 	}
 
 	return connectrpc.NewResponse(&tenantv1.GetEventResponse{Event: eventProto(event)}), nil
@@ -385,7 +424,7 @@ func (s *Service) ListEvents(ctx context.Context, req *connectrpc.Request[tenant
 			return nil, connectrpc.NewError(code, err)
 		}
 
-		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
+		return nil, InternalError(ctx, err)
 	}
 
 	responseEvents := make([]*tenantv1.Event, 0, len(events))

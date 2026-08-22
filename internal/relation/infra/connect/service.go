@@ -62,7 +62,7 @@ func (s *Service) AddTenantMember(ctx context.Context, req *connectrpc.Request[r
 		Role:           roleDomain(req.Msg.GetTenantRole()),
 	})
 	if err != nil {
-		return nil, connectError(err)
+		return nil, connectError(ctx, err)
 	}
 
 	return connectrpc.NewResponse(&relationv1.AddTenantMemberResponse{Membership: membershipProto(membership)}), nil
@@ -75,7 +75,7 @@ func (s *Service) ChangeTenantRole(ctx context.Context, req *connectrpc.Request[
 		Role:           roleDomain(req.Msg.GetTenantRole()),
 	})
 	if err != nil {
-		return nil, connectError(err)
+		return nil, connectError(ctx, err)
 	}
 
 	return connectrpc.NewResponse(&relationv1.ChangeTenantRoleResponse{Membership: membershipProto(membership)}), nil
@@ -88,7 +88,7 @@ func (s *Service) GrantEventRole(ctx context.Context, req *connectrpc.Request[re
 		Role:          roleDomain(req.Msg.GetRole()),
 	})
 	if err != nil {
-		return nil, connectError(err)
+		return nil, connectError(ctx, err)
 	}
 
 	return connectrpc.NewResponse(&relationv1.GrantEventRoleResponse{Membership: membershipProto(membership)}), nil
@@ -101,7 +101,7 @@ func (s *Service) RevokeRole(ctx context.Context, req *connectrpc.Request[relati
 		EventPublicID:  req.Msg.GetEventId(),
 	})
 	if err != nil {
-		return nil, connectError(err)
+		return nil, connectError(ctx, err)
 	}
 
 	return connectrpc.NewResponse(&relationv1.RevokeRoleResponse{}), nil
@@ -113,7 +113,7 @@ func (s *Service) ListMemberships(ctx context.Context, req *connectrpc.Request[r
 		UserID:         req.Msg.GetUserId(),
 	})
 	if err != nil {
-		return nil, connectError(err)
+		return nil, connectError(ctx, err)
 	}
 
 	response := make([]*relationv1.Membership, 0, len(memberships))
@@ -131,8 +131,9 @@ func (s *Service) ListMemberships(ctx context.Context, req *connectrpc.Request[r
 // failed preconditions. A caller whose current membership no longer permits
 // the write is denied, and one without a subject is unauthenticated. A
 // transaction PostgreSQL aborted is reported as aborted, which tells the
-// client the call can be retried as it stands.
-func connectError(err error) error {
+// client the call can be retried as it stands. Anything else is an internal
+// failure, reported without its detail (tenantconnect.InternalError).
+func connectError(ctx context.Context, err error) error {
 	switch {
 	case errors.Is(err, application.ErrTenantIDRequired),
 		errors.Is(err, application.ErrEventIDRequired),
@@ -166,7 +167,7 @@ func connectError(err error) error {
 	case errors.Is(err, infradb.ErrTransactionAborted):
 		return connectrpc.NewError(connectrpc.CodeAborted, err)
 	default:
-		return connectrpc.NewError(connectrpc.CodeInternal, err)
+		return tenantconnect.InternalError(ctx, err)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -224,6 +225,41 @@ func TestPostgresTenantRepositoryEventErrors(t *testing.T) {
 
 	if err := repository.UpdateEvent(ctx, archivedEvent.AssignType(domain.EventTypeLongTerm)); !errors.Is(err, repositorypkg.ErrTenantArchived) {
 		t.Errorf("archived tenant update error = %v, want %v", err, repositorypkg.ErrTenantArchived)
+	}
+
+	// A row the repository cannot parse is reported without naming the event.
+	brokenEvent := newEvent("00000000-0000-0000-0000-000000000016", "event-006", activeTenant, "Broken festival", domain.EventTypeShortTerm, domain.EventStatusDraft)
+	if _, err := testDB.ExecContext(ctx, `INSERT INTO events (id, public_id, tenant_id, tenant_public_id, name, event_type, status) VALUES ($1, $2, $3, $4, $5, $6, $7)`, brokenEvent.ID(), brokenEvent.PublicID(), brokenEvent.TenantID(), brokenEvent.TenantPublicID(), brokenEvent.Name(), "not-an-event-type", brokenEvent.Status().String()); err != nil {
+		t.Fatalf("insert broken event fixture: %v", err)
+	}
+
+	_, parseErr := repository.FindEventByPublicID(ctx, brokenEvent.PublicID())
+	if parseErr == nil {
+		t.Fatalf("FindEventByPublicID(unparsable row) error = nil, want a parse error")
+	}
+
+	assertNoInternalIdentifier(t, parseErr, brokenEvent.ID(), activeTenant.ID(), activeTenant.Name())
+}
+
+// assertNoInternalIdentifier fails when the error message carries one of the
+// given internal identifiers. Repository errors travel to the transport, so
+// they must not name internal primary keys, tenant names, or user IDs
+// (tenant_management_spec.md「エラー」).
+func assertNoInternalIdentifier(t *testing.T, err error, identifiers ...string) {
+	t.Helper()
+
+	if err == nil {
+		return
+	}
+
+	for _, identifier := range identifiers {
+		if identifier == "" {
+			continue
+		}
+
+		if strings.Contains(err.Error(), identifier) {
+			t.Errorf("error = %q, want it to omit %q", err, identifier)
+		}
 	}
 }
 
