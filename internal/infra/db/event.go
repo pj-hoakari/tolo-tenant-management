@@ -42,7 +42,10 @@ func (r *PostgresTenantRepository) CreateEvent(ctx context.Context, event domain
 		return repository.ErrTenantArchived
 	}
 
-	return fmt.Errorf("create event for tenant %q: no row inserted", event.TenantID())
+	// Error messages carry no internal identifiers: primary keys, tenant names,
+	// and user IDs must not reach clients or logs
+	// (tenant_management_spec.md「エラー」).
+	return errors.New("create event: no row inserted")
 }
 
 func (r *PostgresTenantRepository) FindEventByPublicID(ctx context.Context, publicID string) (domain.Event, error) {
@@ -125,7 +128,7 @@ func (r *PostgresTenantRepository) UpdateEvent(ctx context.Context, event domain
 		return repository.ErrTenantArchived
 	}
 
-	return fmt.Errorf("update event %q: no row updated", event.ID())
+	return errors.New("update event: no row updated")
 }
 
 type eventRow struct {
@@ -141,12 +144,12 @@ type eventRow struct {
 func (r eventRow) domain(ctx context.Context) (domain.Event, error) {
 	eventType, err := domain.ParseEventType(r.EventType)
 	if err != nil {
-		return domain.Event{}, fmt.Errorf("parse event %q type: %w", r.ID, err)
+		return domain.Event{}, fmt.Errorf("parse event type: %w", err)
 	}
 
 	status, err := domain.ParseEventStatus(r.Status)
 	if err != nil {
-		return domain.Event{}, fmt.Errorf("parse event %q status: %w", r.ID, err)
+		return domain.Event{}, fmt.Errorf("parse event status: %w", err)
 	}
 
 	// Defense in depth: never return an event that belongs to a tenant other
