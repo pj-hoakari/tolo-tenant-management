@@ -118,10 +118,8 @@ Service Gateway が発行した内部 JWT を Authorization ヘッダーで受�
 Authorization: Bearer <Service Gateway 発行の内部 JWT>
 ```
 
-JWKS は `INTERNAL_JWKS_URL` から取得する。
-未設定時は Gateway コンテナのエンドポイント `http://gateway:8080/.well-known/jwks.json` を使う。
+JWKS の取得先は `INTERNAL_JWKS_URL`、`iss`／`aud` の期待値は `INTERNAL_JWT_ISSUER` と `INTERNAL_JWT_AUDIENCE` で設定する（既定値は「環境変数」）。
 取得した鍵は 5 分間キャッシュし、未知の `kid` を受信した場合は直ちに再取得する。
-`iss`／`aud` の期待値は `INTERNAL_JWT_ISSUER`（既定 `service-gateway`。Service Gateway の発行者識別子に合わせる）と `INTERNAL_JWT_AUDIENCE`（既定 `tolo-tenant-management`）で設定する。
 
 クレーム構造の正本は `docs/internal_jwt.md` である。
 すべての内部 JWT に `sub`、`client_id`、`jti`、`iat`／`nbf`／`exp`、`token_use`、`txn` を要求し、`token_use` ごとに次を追加で要求する。
@@ -154,16 +152,29 @@ proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16
 
 ### RPC ごとの認可
 
-`TenantService` は proto の policy annotation（`authz.v1.auth_policy`）で RPC ごとの公開面と要求 scope を宣言し、生成された authz interceptor が検証する。
+どちらのサービスも proto の policy annotation（`authz.v1.auth_policy`）で RPC ごとの公開面と要求 scope を宣言する。
+生成された authz verifier は `internal/infra/connect` の `AuthorizeCall` を共有し、procedure ごとに定めた `token_use` と宣言された scope を検証する。
 
-| RPC | 公開面 | 要求する `token_use` | 要求 scope |
-|---|---|---|---|
-| StartTenantRegistration | 未認証（`AUTH_LEVEL_PUBLIC`） | なし | なし |
-| ClaimTenantOwnership | 認証済み | `registration` | `tenant.claim` |
-| ChangeTenantContract、ArchiveTenant | 認証済み | `tenant_access` | `tenant.write` |
-| CreateEvent、AssignEventType、TransitionEventStatus、UpdateObservationSettings | 認証済み | `tenant_access` | `events.write` |
-| ListEvents | 認証済み | `tenant_access` | `events.read` |
-| GetEvent、GetObservationSettings | 内部（`AUTH_LEVEL_INTERNAL`） | `service` | なし |
+| RPC | サービス | 公開面 | 要求する `token_use` | 要求 scope |
+|---|---|---|---|---|
+| StartTenantRegistration | `TenantService` | 未認証（`AUTH_LEVEL_PUBLIC`） | なし | なし |
+| ClaimTenantOwnership | `TenantService` | 認証済み | `registration` | `tenant.claim` |
+| ChangeTenantContract、ArchiveTenant | `TenantService` | 認証済み | `tenant_access` | `tenant.write` |
+| CreateEvent、AssignEventType、TransitionEventStatus、UpdateObservationSettings | `TenantService` | 認証済み | `tenant_access` | `events.write` |
+| ListEvents | `TenantService` | 認証済み | `tenant_access` | `events.read` |
+| GetEvent、GetObservationSettings | `TenantService` | 内部（`AUTH_LEVEL_INTERNAL`） | `service` | なし |
+| AddTenantMember、ChangeTenantRole、GrantEventRole、RevokeRole | `RelationAdminService` | 認証済み | `tenant_access` | `tenant.write` |
+| ListMemberships | `RelationAdminService` | 認証済み | `tenant_access` | `tenant.read` |
+
+### 管理系書き込みの現在権限確認
+
+管理系の書き込み 6 RPC（`ArchiveTenant`、`ChangeTenantContract`、`AddTenantMember`、`ChangeTenantRole`、`GrantEventRole`、`RevokeRole`）は、JWT の scope 検証に加えて、呼び出し元自身の現在の所属とロールを書き込みと同じ DB トランザクション内で読み直す（`docs/tenant_management_spec.md` の「管理系書き込みの現在権限確認」）。
+`scope` はトークン発行時点で与えられた権限しか表さないため、剥奪や降格はトークンの期限切れを待たずにこの再確認で反映する。
+確認時に呼び出し元の所属行を `FOR SHARE` でロックするため、確認から書き込みの確定までの間に剥奪や降格が割り込むことはない。
+関係参照側の 4 RPC は、同じトランザクションの冒頭でテナント単位のアドバイザリロック（`pg_advisory_xact_lock`）を取得して同一テナントの所属書き込みを直列化するため、複数の管理者が互いを同時に剥奪、降格してもデッドロックしない。
+所属が存在しない場合、または現在のロールが `tenant.write` を発行できない場合は `permission_denied` を返す。
+テナント側の `ArchiveTenant` と `ChangeTenantContract` はこの確認を `application.CurrentPermissionChecker` ポートを通じて行い、関係参照側の `Authorizer`（`internal/relation/application/authorizer.go`）がこれを実装する。
+`ListMemberships` をはじめとする参照系 RPC は再確認せず、トークンの scope のみに依存する。
 
 ### エラー
 
@@ -185,9 +196,6 @@ proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16
 期限切れの `pending_owner` は次の `StartTenantRegistration` の際に物理削除し、その名前を解放する。
 トークンの不正、期限切れ、使用済みはいずれも `unauthenticated` で、理由は区別しない。
 
-オーナー所属の書き込みは `application.MembershipWriter` ポートを通じて関係参照側（`internal/relation`）が担う。
-`internal/relation/infra/db` の所属リポジトリがこのポートを実装し、テナント側と同じ接続プールと context 上のトランザクションを共有するため、オーナー所属と `owned` への遷移は同時に確定する。
-
 ### 契約変更とアーカイブ
 
 `ChangeTenantContract` と `ArchiveTenant` はいずれも `tenant_access` の内部 JWT と scope `tenant.write` を要求する。
@@ -195,9 +203,7 @@ proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16
 `ArchiveTenant` は論理削除で、テナントは識別子と名前（名前は解放しない）、イベント（状態は変えない）、所属をそのまま保持する。
 アーカイブ後はそのテナント配下の書き込み RPC を `failed_precondition` で拒否し、参照（`GetEvent`、`ListEvents`、`ListMemberships`）はそのまま利用できる。
 
-どちらの RPC も、JWT の scope 検証に加えて、呼び出し元の現在の所属とロールを書き込みと同じ DB トランザクション内で読み直す（`docs/tenant_management_spec.md` の「管理系書き込みの現在権限確認」）。
-再確認はテナント側の `application.CurrentPermissionChecker` ポートを通じて行い、関係参照側の `Authorizer`（`internal/relation/application/authorizer.go`）がこれを実装する。
-所属が存在しない場合、または現在のロールがオーナーでなく `tenant.write` を発行できない場合は `permission_denied` を返す。
+どちらの RPC も、JWT の scope 検証に加えて呼び出し元の現在権限を確認する（「管理系書き込みの現在権限確認」）。
 `pending_owner` のテナントへの操作は `failed_precondition`、存在しないテナントは `not_found` で拒否する。
 
 ### イベントの状態遷移と一覧
@@ -230,8 +236,7 @@ draft はそのままアーカイブでき、これは作成した draft を破�
 
 `GetObservationSettings` はサービス間の参照系 RPC で、応答は観測設定値だけを含み、イベント名、状態、所属テナントは返さない。
 アーカイブ済みのイベントについても応答し、宙づりの参照を生まない。
-テナント境界は強制せず、テナント文脈のない `service` トークン（マシン起点）も受け付ける。
-ただし `tenant_id` クレームを持つ場合は突合し、不一致なら `permission_denied` を返す。
+テナント境界は強制せず、`tenant_id` クレームを持つ場合だけ突合する（「識別子とテナントの突合」）。
 
 `UpdateObservationSettings` は `tenant_access` と scope `events.write` を要求し、対象イベントの所属テナントをクレームと突合する。
 アーカイブ済みのイベント、およびアーカイブ済みテナントのイベントは `failed_precondition` で拒否する。
@@ -242,7 +247,11 @@ draft はそのままアーカイブでき、これは作成した draft を破�
 ### パッケージ境界とポート
 
 所属とロールの真実の源は `internal/relation` 配下に置き、テナント側（`internal/domain`、`internal/application`）とはパッケージを分ける。
-テナント側から関係参照側への参照は `MembershipWriter` と `CurrentPermissionChecker` の 2 つのポートに限り、逆方向の参照は作らない。
+テナント側は `internal/relation` を直接参照せず、自身が宣言する `application.MembershipWriter` と `application.CurrentPermissionChecker` の 2 つのポートを通じてのみ関係参照側に到達する。
+`MembershipWriter` は `ClaimTenantOwnership` のオーナー所属の書き込みに、`CurrentPermissionChecker` は管理系書き込みの現在権限確認に使う。
+前者は `internal/relation/infra/db` の所属リポジトリが、後者は `internal/relation/application` の `Authorizer` が実装する。
+所属リポジトリはテナント側と同じ接続プールと context 上のトランザクションを共有するため、オーナー所属と `owned` への遷移は同時に確定する。
+関係参照側は、公開 ID の解決と書き込み可否を決めるテナントの状態（`pending_owner`、アーカイブ済み）の判定のために、テナント側のリポジトリを読み取り専用で参照する。
 
 ### スキーマとロール
 
@@ -260,11 +269,7 @@ draft はそのままアーカイブでき、これは作成した draft を破�
 | AddTenantMember、ChangeTenantRole、GrantEventRole、RevokeRole | `tenant.write` | 重複した所属、所属のないイベントロール、アーカイブ済みまたは `pending_owner` のテナントとイベントは `failed_precondition`、`ROLE_ADMIN` は `invalid_argument`、存在しない所属、テナント、イベントは `not_found` |
 | ListMemberships | `tenant.read` | `tenant_id` 指定はそのテナントの全所属、`user_id` 指定は認証テナント内のそのユーザーの所属のみ（他テナントの所属は返さない）。アーカイブ済みテナントも参照できる |
 
-書き込み 4 RPC は、JWT の scope 検証に加えて、呼び出し元自身の現在の所属とロールを書き込みと同じ DB トランザクション内で読み直す（`internal/relation/application/authorizer.go`）。
-確認時に呼び出し元の所属行を `FOR SHARE` でロックするため、確認から書き込みの確定までの間に剥奪や降格が割り込むことはない。
-同じトランザクションの冒頭でテナント単位のアドバイザリロック（`pg_advisory_xact_lock`）を取得し、同一テナントの所属書き込みを直列化するため、複数の管理者が互いを同時に剥奪、降格してもデッドロックしない。
-所属が存在しない場合、または現在のロールが `tenant.write` を発行できない場合は `permission_denied` を返す。
-`ListMemberships` は読み取りのため再確認せず、トークンの scope のみに依存する。
+書き込み 4 RPC は、JWT の scope 検証に加えて呼び出し元の現在権限を確認する（「管理系書き込みの現在権限確認」）。
 
 ## 仕様文書
 
@@ -280,7 +285,7 @@ draft はそのままアーカイブでき、これは作成した draft を破�
 ## proto アーティファクトの利用
 
 `.proto` は [ORAS](https://oras.land) で OCI アーティファクト化され、GitHub Container Registry に公開される。
-アーティファクト名: `ghcr.io/<owner>/<repo>/proto`
+アーティファクト名は `ghcr.io/<owner>/<repo>-proto` である。
 
 ### 取得（pull）
 
@@ -288,9 +293,9 @@ draft はそのままアーカイブでき、これは作成した draft を破�
 
 ```bash
 # 出力先ディレクトリに proto を展開（ディレクトリ構造が復元される）
-oras pull ghcr.io/pj-hoakari/tolo-tenant-management:latest -o proto
+oras pull ghcr.io/pj-hoakari/tolo-tenant-management-proto:latest -o proto
 
-# 例: proto/tenant/v1/tenant.proto として展開される
+# 例: proto/tolo/tenant/v1/tenant.proto として展開される
 ```
 
 取得した `.proto` は `buf` や `protoc` の入力としてそのまま利用できる。
