@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -406,6 +407,157 @@ func TestReplaceAttrLeavesANonTimeTimeAttrAlone(t *testing.T) {
 	}
 }
 
+func TestEnabledFollowsTheConfiguredLevel(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+
+	handler := NewHandler(&buf, Options{Level: slog.LevelWarn, AddSource: false, ProjectID: ""})
+	derived := handler.WithAttrs([]slog.Attr{slog.String("service", "tenant-management")}).WithGroup("request")
+
+	tests := map[string]struct {
+		handler slog.Handler
+		level   slog.Level
+		want    bool
+	}{
+		"base below the threshold":    {handler: handler, level: slog.LevelInfo, want: false},
+		"base at the threshold":       {handler: handler, level: slog.LevelWarn, want: true},
+		"base above the threshold":    {handler: handler, level: LevelCritical, want: true},
+		"derived below the threshold": {handler: derived, level: slog.LevelDebug, want: false},
+		"derived above the threshold": {handler: derived, level: slog.LevelError, want: true},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := tt.handler.Enabled(context.Background(), tt.level); got != tt.want {
+				t.Errorf("Enabled(%v) = %t, want %t", tt.level, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDerivingWithNothingReturnsTheReceiver(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+
+	handler := NewHandler(&buf, Options{Level: slog.LevelInfo, AddSource: false, ProjectID: ""})
+
+	tests := map[string]slog.Handler{
+		"WithGroup on an empty name": handler.WithGroup(""),
+		"WithAttrs on nil":           handler.WithAttrs(nil),
+		"WithAttrs on no attributes": handler.WithAttrs([]slog.Attr{}),
+	}
+
+	for name, derived := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if derived != handler {
+				t.Errorf("%s returned a new handler, want the receiver", name)
+			}
+		})
+	}
+}
+
+func TestSiblingHandlersKeepTheirOwnAttrs(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+
+	shared := NewLogger(&buf, Options{Level: slog.LevelInfo, AddSource: false, ProjectID: ""}).With("service", "tenant-management")
+	shared.With("rpc", "ListEvents").Info("first")
+	shared.With("tenant", "acme").Info("second")
+
+	entries := decodeLines(t, &buf)
+	if len(entries) != 2 {
+		t.Fatalf("wrote %d records, want 2", len(entries))
+	}
+
+	first, second := entries[0], entries[1]
+
+	for _, entry := range entries {
+		if got, want := entry["service"], "tenant-management"; got != want {
+			t.Errorf("service = %v, want %q", got, want)
+		}
+	}
+
+	if got, want := first["rpc"], "ListEvents"; got != want {
+		t.Errorf("rpc = %v, want %q", got, want)
+	}
+
+	if got, want := second["tenant"], "acme"; got != want {
+		t.Errorf("tenant = %v, want %q", got, want)
+	}
+
+	// Deriving twice from one handler must not let either sibling see the
+	// other's attributes.
+	if _, ok := first["tenant"]; ok {
+		t.Errorf("first record = %v, want it without the sibling's attribute", first)
+	}
+
+	if _, ok := second["rpc"]; ok {
+		t.Errorf("second record = %v, want it without the sibling's attribute", second)
+	}
+}
+
+func TestHandleIsSafeForConcurrentUse(t *testing.T) {
+	t.Parallel()
+
+	const goroutines = 64
+
+	writer := &syncWriter{}
+	logger := NewLogger(writer, Options{Level: slog.LevelInfo, AddSource: false, ProjectID: "tolo-example"}).With("service", "tenant-management").WithGroup("request")
+	ctx := contextWithSampledSpan(t)
+
+	var wg sync.WaitGroup
+
+	wg.Add(goroutines)
+
+	for i := range goroutines {
+		go func() {
+			defer wg.Done()
+
+			logger.ErrorContext(ctx, "internal error", "worker", i)
+		}()
+	}
+
+	wg.Wait()
+
+	entries := decodeLines(t, &writer.buf)
+	if len(entries) != goroutines {
+		t.Fatalf("wrote %d records, want %d", len(entries), goroutines)
+	}
+
+	for _, entry := range entries {
+		assertTraceFields(t, entry, "projects/tolo-example/traces/"+testTraceID)
+
+		if got, want := entry["service"], "tenant-management"; got != want {
+			t.Errorf("service = %v, want %q", got, want)
+		}
+
+		if _, ok := entry["request"].(map[string]any); !ok {
+			t.Errorf("request = %#v, want the record's attributes in the group", entry["request"])
+		}
+	}
+}
+
+// syncWriter serialises the writes of the concurrency test, so that the buffer
+// itself is never the thing under contention.
+type syncWriter struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (w *syncWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	return w.buf.Write(p)
+}
+
 // assertTraceFields checks the three fields Cloud Logging correlates on.
 func assertTraceFields(t *testing.T, entry map[string]any, wantTrace string) {
 	t.Helper()
@@ -449,20 +601,35 @@ func contextWithSampledSpan(t *testing.T) context.Context {
 func decodeLine(t *testing.T, buf *bytes.Buffer) map[string]any {
 	t.Helper()
 
-	line := strings.TrimSpace(buf.String())
-	if line == "" {
+	entries := decodeLines(t, buf)
+	if len(entries) != 1 {
+		t.Fatalf("log = %q, want a single record", buf.String())
+	}
+
+	return entries[0]
+}
+
+// decodeLines parses every JSON record the buffer holds, in order.
+func decodeLines(t *testing.T, buf *bytes.Buffer) []map[string]any {
+	t.Helper()
+
+	text := strings.TrimSpace(buf.String())
+	if text == "" {
 		t.Fatal("nothing was logged")
 	}
 
-	if strings.Contains(line, "\n") {
-		t.Fatalf("log = %q, want a single record", line)
+	lines := strings.Split(text, "\n")
+	entries := make([]map[string]any, 0, len(lines))
+
+	for _, line := range lines {
+		var entry map[string]any
+
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatalf("unmarshal %q: %v", line, err)
+		}
+
+		entries = append(entries, entry)
 	}
 
-	var entry map[string]any
-
-	if err := json.Unmarshal([]byte(line), &entry); err != nil {
-		t.Fatalf("unmarshal %q: %v", line, err)
-	}
-
-	return entry
+	return entries
 }
