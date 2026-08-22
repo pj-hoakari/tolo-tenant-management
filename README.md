@@ -126,10 +126,22 @@ JWKS は `INTERNAL_JWKS_URL` から取得する。未設定時は Gateway コン
 オーナー所属の書き込みは `application.MembershipWriter` ポートを通じて関係参照側（`internal/relation`）が担う。
 `internal/relation/infra/db` の所属リポジトリがこのポートを実装し、テナント側と同じ接続プールと context 上のトランザクションを共有するため、オーナー所属と `owned` への遷移は同時に確定する。
 
+### テナントの契約変更とアーカイブ
+
+`ChangeTenantContract` と `ArchiveTenant` はいずれも `tenant_access` の内部 JWT と scope `tenant.write` を要求する。
+`ChangeTenantContract` は契約プランを変更し、`contract_plan` の欠落は `invalid_argument` で拒否する。
+`ArchiveTenant` は論理削除で、テナントは識別子と名前（名前は解放しない）、イベント（状態は変えない）、所属をそのまま保持する。
+アーカイブ後はそのテナント配下の書き込み RPC を `failed_precondition` で拒否し、参照（`GetEvent`、`ListEvents`、`ListMemberships`）はそのまま利用できる。
+
+どちらの RPC も、JWT の scope 検証に加えて、呼び出し元の現在の所属とロールを書き込みと同じ DB トランザクション内で読み直す（`docs/tenant_management_spec.md` の「管理系書き込みの現在権限確認」）。
+再確認はテナント側の `application.CurrentPermissionChecker` ポートを通じて行い、関係参照側の `Authorizer`（`internal/relation/application/authorizer.go`）がこれを実装する。
+所属が存在しない場合、または現在のロールがオーナーでなく `tenant.write` を発行できない場合は `permission_denied` を返す。
+`pending_owner` のテナントへの操作は `failed_precondition`、存在しないテナントは `not_found` で拒否する。
+
 ### 関係参照（所属とロール）
 
 所属とロールの真実の源は `internal/relation` 配下に置き、テナント側（`internal/domain`、`internal/application`）とはパッケージを分ける。
-テナント側から関係参照側への参照は `MembershipWriter` ポートに限り、逆方向の参照は作らない。
+テナント側から関係参照側への参照は `MembershipWriter` と `CurrentPermissionChecker` の 2 つのポートに限り、逆方向の参照は作らない。
 
 - スキーマ: `tenant_memberships`（テナント×ユーザーで一意）と `event_roles`。`event∈tenant` は `events (id, tenant_id)` への複合外部キー、`event-role⇒tenant-role` は `tenant_memberships` への外部キーで担保し、所属の削除はイベントロールへ連鎖する
 - ロール: `owner`／`staff`。`admin` は予約値で付与できない

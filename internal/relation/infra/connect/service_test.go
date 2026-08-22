@@ -144,7 +144,7 @@ func newFixture(t *testing.T) fixture {
 	settings.JWKSURL = jwksServer.URL
 
 	handler, err := tenantconnect.NewHandlerWithJWTSettings(
-		tenantapplication.NewTenantService(tenants, tenants, memberships),
+		tenantapplication.NewTenantService(tenants, tenants, memberships, application.NewAuthorizer(memberships)),
 		settings,
 		Mount(application.NewRelationService(tenants, memberships, memberships)),
 	)

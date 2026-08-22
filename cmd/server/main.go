@@ -73,7 +73,10 @@ func run() error {
 	// The membership repository shares the pool, so the owner membership of
 	// ClaimTenantOwnership commits in the tenant repository's transaction.
 	membershipRepository := relationdb.NewPostgresMembershipRepository(db)
-	tenantService := application.NewTenantService(tenantRepository, tenantRepository, membershipRepository)
+	// The relation side's Authorizer implements the tenant side's
+	// CurrentPermissionChecker port, so the administrative tenant writes
+	// re-read the caller's membership in their own transaction.
+	tenantService := application.NewTenantService(tenantRepository, tenantRepository, membershipRepository, relationapplication.NewAuthorizer(membershipRepository))
 	// The membership repository is also the transactor of the relation use
 	// cases, so the caller's current-permission check and the write it guards
 	// run in one transaction.

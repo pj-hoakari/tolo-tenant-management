@@ -90,6 +90,28 @@ type ClaimTenantOwnershipUseCase interface {
 	ClaimTenantOwnership(context.Context, ClaimTenantOwnershipInput) (domain.Tenant, error)
 }
 
+// ChangeTenantContractInput contains the values accepted by the
+// ChangeTenantContract use case.
+type ChangeTenantContractInput struct {
+	TenantPublicID string
+	ContractPlan   string
+}
+
+// ArchiveTenantInput names the tenant the ArchiveTenant use case archives.
+type ArchiveTenantInput struct {
+	TenantPublicID string
+}
+
+// ChangeTenantContractUseCase moves a tenant to another contract plan.
+type ChangeTenantContractUseCase interface {
+	ChangeTenantContract(context.Context, ChangeTenantContractInput) (domain.Tenant, error)
+}
+
+// ArchiveTenantUseCase soft-deletes a tenant.
+type ArchiveTenantUseCase interface {
+	ArchiveTenant(context.Context, ArchiveTenantInput) (domain.Tenant, error)
+}
+
 // CreateEventUseCase creates an event for a tenant.
 type CreateEventUseCase interface {
 	CreateEvent(context.Context, CreateEventInput) (domain.Event, error)
@@ -120,6 +142,8 @@ type ListEventsUseCase interface {
 type TenantUseCases interface {
 	StartTenantRegistrationUseCase
 	ClaimTenantOwnershipUseCase
+	ChangeTenantContractUseCase
+	ArchiveTenantUseCase
 	CreateEventUseCase
 	AssignEventTypeUseCase
 	TransitionEventStatusUseCase
@@ -132,6 +156,7 @@ type TenantService struct {
 	tenantRepository  repository.TenantRepository
 	transactor        repository.Transactor
 	memberships       MembershipWriter
+	permissions       CurrentPermissionChecker
 	now               func() time.Time
 	ownershipClaimTTL time.Duration
 }
@@ -149,11 +174,12 @@ func WithOwnershipClaimTTL(ttl time.Duration) Option {
 	return func(s *TenantService) { s.ownershipClaimTTL = ttl }
 }
 
-func NewTenantService(tenantRepository repository.TenantRepository, transactor repository.Transactor, memberships MembershipWriter, options ...Option) *TenantService {
+func NewTenantService(tenantRepository repository.TenantRepository, transactor repository.Transactor, memberships MembershipWriter, permissions CurrentPermissionChecker, options ...Option) *TenantService {
 	service := &TenantService{
 		tenantRepository:  tenantRepository,
 		transactor:        transactor,
 		memberships:       memberships,
+		permissions:       permissions,
 		now:               time.Now,
 		ownershipClaimTTL: DefaultOwnershipClaimTTL,
 	}
@@ -261,6 +287,82 @@ func (s *TenantService) ClaimTenantOwnership(ctx context.Context, input ClaimTen
 	}
 
 	return owned, nil
+}
+
+// ChangeTenantContract moves the tenant to another contract plan.
+func (s *TenantService) ChangeTenantContract(ctx context.Context, input ChangeTenantContractInput) (domain.Tenant, error) {
+	if input.ContractPlan == "" {
+		return domain.Tenant{}, ErrTenantContractPlanRequired
+	}
+
+	return s.administerTenant(ctx, input.TenantPublicID, func(tenant domain.Tenant) (domain.Tenant, error) {
+		return tenant.ChangeContractPlan(input.ContractPlan), nil
+	})
+}
+
+// ArchiveTenant soft-deletes the tenant: it keeps its identifier, its name,
+// its events (whose status is unchanged) and its memberships, and from now on
+// refuses writes while reads keep working.
+func (s *TenantService) ArchiveTenant(ctx context.Context, input ArchiveTenantInput) (domain.Tenant, error) {
+	return s.administerTenant(ctx, input.TenantPublicID, func(tenant domain.Tenant) (domain.Tenant, error) {
+		return tenant.Archive()
+	})
+}
+
+// administerTenant runs one of the administrative tenant writes. In one
+// transaction it locks the tenant row, refuses a tenant that is not usable
+// (still pending an owner, or already archived), re-reads the caller's current
+// permission from the database
+// (tenant_management_spec.md「管理系書き込みの現在権限確認」) and finally
+// persists the mutation. Sharing the transaction with the write is what keeps
+// the verdict from going stale: a revoked or downgraded caller cannot slip a
+// write past the check.
+func (s *TenantService) administerTenant(ctx context.Context, tenantPublicID string, mutate func(domain.Tenant) (domain.Tenant, error)) (domain.Tenant, error) {
+	if tenantPublicID == "" {
+		return domain.Tenant{}, ErrTenantIDRequired
+	}
+
+	if err := tenantctx.Ensure(ctx, tenantPublicID); err != nil {
+		return domain.Tenant{}, err
+	}
+
+	var updated domain.Tenant
+
+	err := s.transactor.WithinTransaction(ctx, func(ctx context.Context) error {
+		tenant, _, err := s.tenantRepository.FindTenantByPublicIDForUpdate(ctx, tenantPublicID)
+		if err != nil {
+			return err
+		}
+
+		if !tenant.Owned() {
+			return ErrTenantPendingOwner
+		}
+
+		if tenant.Archived() {
+			return repository.ErrTenantArchived
+		}
+
+		allowed, err := s.permissions.Allowed(ctx, tenant.ID(), ScopeTenantWrite)
+		if err != nil {
+			return err
+		}
+
+		if !allowed {
+			return ErrPermissionDenied
+		}
+
+		updated, err = mutate(tenant)
+		if err != nil {
+			return err
+		}
+
+		return s.tenantRepository.UpdateTenant(ctx, updated)
+	})
+	if err != nil {
+		return domain.Tenant{}, err
+	}
+
+	return updated, nil
 }
 
 // resolveTenant loads the tenant named in the request after verifying that it

@@ -11,6 +11,7 @@ import (
 
 	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/repository"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 	"go.uber.org/mock/gomock"
 )
@@ -38,8 +39,24 @@ func (r *membershipRecorder) AddOwner(_ context.Context, tenantID, userID string
 	return r.err
 }
 
+// permissionStub stands in for the relation side's current-permission check.
+type permissionStub struct {
+	err      error
+	tenantID string
+	scope    string
+	calls    int
+	allowed  bool
+}
+
+func (s *permissionStub) Allowed(_ context.Context, tenantID, scope string) (bool, error) {
+	s.calls++
+	s.tenantID, s.scope = tenantID, scope
+
+	return s.allowed, s.err
+}
+
 func newService(repo *MockTenantRepository, options ...application.Option) *application.TenantService {
-	return application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{}, options...)
+	return application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{}, &permissionStub{allowed: true}, options...)
 }
 
 func TestCreateEvent(t *testing.T) {
@@ -473,7 +490,7 @@ func TestClaimTenantOwnership(t *testing.T) {
 			return nil
 		}),
 	)
-	service := application.NewTenantService(repo, passthroughTransactor{}, memberships, application.WithClock(func() time.Time { return now }))
+	service := application.NewTenantService(repo, passthroughTransactor{}, memberships, &permissionStub{allowed: true}, application.WithClock(func() time.Time { return now }))
 
 	ctx := tenantctx.WithSubject(context.Background(), "user-1")
 
@@ -538,7 +555,7 @@ func TestClaimTenantOwnershipRejections(t *testing.T) {
 				repo.EXPECT().FindTenantByPublicIDForUpdate(gomock.Any(), pending.PublicID()).Return(tt.tenant, tt.claim, nil)
 			}
 
-			service := application.NewTenantService(repo, passthroughTransactor{}, memberships, application.WithClock(func() time.Time { return now }))
+			service := application.NewTenantService(repo, passthroughTransactor{}, memberships, &permissionStub{allowed: true}, application.WithClock(func() time.Time { return now }))
 
 			_, err := service.ClaimTenantOwnership(tt.ctx, application.ClaimTenantOwnershipInput{TenantPublicID: pending.PublicID(), ClaimToken: tt.token})
 			if !errors.Is(err, tt.want) {
@@ -568,10 +585,184 @@ func TestClaimTenantOwnershipDoesNotMarkOwnedWhenMembershipFails(t *testing.T) {
 	repo.EXPECT().FindTenantByPublicIDForUpdate(gomock.Any(), pending.PublicID()).Return(pending, domain.OwnershipClaim{TokenHash: hash, ExpiresAt: now.Add(time.Hour)}, nil)
 	// MarkTenantOwned must not be called: the transaction fails before it.
 	errStore := errors.New("membership store down")
-	service := application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{err: errStore}, application.WithClock(func() time.Time { return now }))
+	service := application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{err: errStore}, &permissionStub{allowed: true}, application.WithClock(func() time.Time { return now }))
 
 	_, err = service.ClaimTenantOwnership(tenantctx.WithSubject(context.Background(), "user-1"), application.ClaimTenantOwnershipInput{TenantPublicID: pending.PublicID(), ClaimToken: token})
 	if !errors.Is(err, errStore) {
 		t.Fatalf("ClaimTenantOwnership() error = %v, want %v", err, errStore)
+	}
+}
+
+func TestChangeTenantContract(t *testing.T) {
+	t.Parallel()
+
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, false)
+	ctrl := gomock.NewController(t)
+	repo := NewMockTenantRepository(ctrl)
+	permissions := &permissionStub{allowed: true}
+
+	var stored domain.Tenant
+
+	gomock.InOrder(
+		repo.EXPECT().FindTenantByPublicIDForUpdate(gomock.Any(), tenant.PublicID()).Return(tenant, domain.OwnershipClaim{}, nil),
+		repo.EXPECT().UpdateTenant(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, updated domain.Tenant) error {
+			stored = updated
+
+			if permissions.calls != 1 {
+				t.Error("UpdateTenant() called before the caller's current permission was checked")
+			}
+
+			return nil
+		}),
+	)
+	service := application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{}, permissions)
+
+	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
+
+	updated, err := service.ChangeTenantContract(ctx, application.ChangeTenantContractInput{TenantPublicID: tenant.PublicID(), ContractPlan: "enterprise"})
+	if err != nil {
+		t.Fatalf("ChangeTenantContract() error = %v", err)
+	}
+
+	if got, want := updated.ContractPlan(), "enterprise"; got != want {
+		t.Errorf("ContractPlan() = %q, want %q", got, want)
+	}
+
+	if got, want := stored, updated; got != want {
+		t.Errorf("stored tenant = %#v, want %#v", got, want)
+	}
+
+	// The permission is re-checked for the tenant's internal ID and the scope
+	// the administrative writes require.
+	if permissions.tenantID != tenant.ID() || permissions.scope != application.ScopeTenantWrite {
+		t.Errorf("permission check = (%q, %q), want (%q, %q)", permissions.tenantID, permissions.scope, tenant.ID(), application.ScopeTenantWrite)
+	}
+}
+
+func TestChangeTenantContractRequiresContractPlan(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	// The plan is validated before the tenant is even looked up.
+	service := newService(NewMockTenantRepository(ctrl))
+
+	ctx := tenantctx.WithTenantPublicID(context.Background(), "tenant-public-id")
+
+	_, err := service.ChangeTenantContract(ctx, application.ChangeTenantContractInput{TenantPublicID: "tenant-public-id"})
+	if !errors.Is(err, application.ErrTenantContractPlanRequired) {
+		t.Fatalf("ChangeTenantContract() error = %v, want %v", err, application.ErrTenantContractPlanRequired)
+	}
+}
+
+func TestArchiveTenant(t *testing.T) {
+	t.Parallel()
+
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, false)
+	ctrl := gomock.NewController(t)
+	repo := NewMockTenantRepository(ctrl)
+	permissions := &permissionStub{allowed: true}
+
+	var stored domain.Tenant
+
+	gomock.InOrder(
+		repo.EXPECT().FindTenantByPublicIDForUpdate(gomock.Any(), tenant.PublicID()).Return(tenant, domain.OwnershipClaim{}, nil),
+		repo.EXPECT().UpdateTenant(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, updated domain.Tenant) error {
+			stored = updated
+
+			if permissions.calls != 1 {
+				t.Error("UpdateTenant() called before the caller's current permission was checked")
+			}
+
+			return nil
+		}),
+	)
+	service := application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{}, permissions)
+
+	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
+
+	archived, err := service.ArchiveTenant(ctx, application.ArchiveTenantInput{TenantPublicID: tenant.PublicID()})
+	if err != nil {
+		t.Fatalf("ArchiveTenant() error = %v", err)
+	}
+
+	if !archived.Archived() {
+		t.Error("Archived() = false, want true")
+	}
+
+	// The soft delete keeps the identifier, the name and the plan.
+	if got, want := archived, domain.NewTenant(tenant.ID(), tenant.PublicID(), tenant.Name(), tenant.ContractPlan(), tenant.OwnershipState(), true); got != want {
+		t.Errorf("archived tenant = %#v, want %#v", got, want)
+	}
+
+	if got, want := stored, archived; got != want {
+		t.Errorf("stored tenant = %#v, want %#v", got, want)
+	}
+}
+
+// TestAdministrativeTenantWriteRejections covers the gates both administrative
+// writes share: the state of the tenant and the caller's current permission.
+// UpdateTenant is expected on none of them, so a rejected write reaching the
+// repository fails the test.
+func TestAdministrativeTenantWriteRejections(t *testing.T) {
+	t.Parallel()
+
+	owned := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, false)
+	pending := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStatePendingOwner, false)
+	archived := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, true)
+	errPermissions := errors.New("membership store down")
+
+	rpcs := []struct {
+		name string
+		call func(context.Context, *application.TenantService, string) error
+	}{
+		{name: "ChangeTenantContract", call: func(ctx context.Context, service *application.TenantService, tenantPublicID string) error {
+			_, err := service.ChangeTenantContract(ctx, application.ChangeTenantContractInput{TenantPublicID: tenantPublicID, ContractPlan: "enterprise"})
+
+			return err
+		}},
+		{name: "ArchiveTenant", call: func(ctx context.Context, service *application.TenantService, tenantPublicID string) error {
+			_, err := service.ArchiveTenant(ctx, application.ArchiveTenantInput{TenantPublicID: tenantPublicID})
+
+			return err
+		}},
+	}
+
+	tests := []struct {
+		name          string
+		tenant        domain.Tenant
+		permissionErr error
+		requestID     string
+		allowed       bool
+		lookup        bool
+		want          error
+	}{
+		{name: "pending owner", tenant: pending, requestID: owned.PublicID(), allowed: true, lookup: true, want: application.ErrTenantPendingOwner},
+		{name: "archived tenant", tenant: archived, requestID: owned.PublicID(), allowed: true, lookup: true, want: repository.ErrTenantArchived},
+		{name: "revoked or downgraded caller", tenant: owned, requestID: owned.PublicID(), allowed: false, lookup: true, want: application.ErrPermissionDenied},
+		{name: "permission check fails", tenant: owned, permissionErr: errPermissions, requestID: owned.PublicID(), allowed: false, lookup: true, want: errPermissions},
+		{name: "tenant other than the authenticated one", tenant: owned, requestID: "other-tenant-public-id", allowed: true, lookup: false, want: tenantctx.ErrMismatch},
+		{name: "missing tenant ID", tenant: owned, requestID: "", allowed: true, lookup: false, want: application.ErrTenantIDRequired},
+	}
+
+	for _, tt := range tests {
+		for _, rpc := range rpcs {
+			t.Run(tt.name+"/"+rpc.name, func(t *testing.T) {
+				t.Parallel()
+
+				ctrl := gomock.NewController(t)
+				repo := NewMockTenantRepository(ctrl)
+
+				if tt.lookup {
+					repo.EXPECT().FindTenantByPublicIDForUpdate(gomock.Any(), owned.PublicID()).Return(tt.tenant, domain.OwnershipClaim{}, nil)
+				}
+
+				service := application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{}, &permissionStub{allowed: tt.allowed, err: tt.permissionErr})
+				ctx := tenantctx.WithTenantPublicID(context.Background(), owned.PublicID())
+
+				if err := rpc.call(ctx, service, tt.requestID); !errors.Is(err, tt.want) {
+					t.Fatalf("%s() error = %v, want %v", rpc.name, err, tt.want)
+				}
+			})
+		}
 	}
 }

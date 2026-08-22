@@ -16,6 +16,7 @@ import (
 	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
+	relationapplication "github.com/pj-hoakari/tolo-tenant-management/internal/relation/application"
 	relationdomain "github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	relationdb "github.com/pj-hoakari/tolo-tenant-management/internal/relation/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/repository"
@@ -33,9 +34,18 @@ type transportFixture struct {
 func newTransportFixture(t *testing.T, options ...application.Option) transportFixture {
 	t.Helper()
 
+	return newTransportFixtureWithPermissions(t, permissionStub{allowed: true}, options...)
+}
+
+// newTransportFixtureWithPermissions builds the fixture with a specific
+// current-permission checker, so that a test can decide what the
+// administrative writes are told about the caller's current membership.
+func newTransportFixtureWithPermissions(t *testing.T, permissions application.CurrentPermissionChecker, options ...application.Option) transportFixture {
+	t.Helper()
+
 	repository := newIntegrationTenantRepository(t)
 	memberships := &membershipRecorder{}
-	handler, jwks := newDynamicTestHandler(t, application.NewTenantService(repository, repository, memberships, options...))
+	handler, jwks := newDynamicTestHandler(t, application.NewTenantService(repository, repository, memberships, permissions, options...))
 	httpServer := httptest.NewServer(handler)
 	t.Cleanup(httpServer.Close)
 
@@ -45,6 +55,31 @@ func newTransportFixture(t *testing.T, options ...application.Option) transportF
 		jwks:        jwks,
 		client:      tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL),
 	}
+}
+
+// newAdministrationFixture wires the relation model's real repository as both
+// the membership writer and — through the relation side's Authorizer — the
+// current-permission checker, exactly as the server does. The administrative
+// writes re-read the caller's membership from the database, so they need the
+// real one. The repository is returned as well, so a test can seed the
+// caller's membership and change its role.
+func newAdministrationFixture(t *testing.T) (transportFixture, *relationdb.PostgresMembershipRepository) {
+	t.Helper()
+
+	repository := newIntegrationTenantRepository(t)
+	memberships := relationdb.NewPostgresMembershipRepository(integrationDB)
+	handler, jwks := newDynamicTestHandler(t, application.NewTenantService(repository, repository, memberships, relationapplication.NewAuthorizer(memberships)))
+	httpServer := httptest.NewServer(handler)
+	t.Cleanup(httpServer.Close)
+
+	fixture := transportFixture{
+		repository:  repository,
+		memberships: nil,
+		jwks:        jwks,
+		client:      tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL),
+	}
+
+	return fixture, memberships
 }
 
 // createTenant stores an owned tenant directly, standing in for the onboarding
@@ -241,12 +276,7 @@ func TestClaimTenantOwnershipOverTransport(t *testing.T) {
 // repository, as the server does, and checks that claiming ownership leaves an
 // owner membership for the claiming subject.
 func TestClaimTenantOwnershipRecordsOwnerMembership(t *testing.T) {
-	repository := newIntegrationTenantRepository(t)
-	memberships := relationdb.NewPostgresMembershipRepository(integrationDB)
-	handler, jwks := newDynamicTestHandler(t, application.NewTenantService(repository, repository, memberships))
-	httpServer := httptest.NewServer(handler)
-	t.Cleanup(httpServer.Close)
-	fixture := transportFixture{repository: repository, memberships: nil, jwks: jwks, client: tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL)}
+	fixture, memberships := newAdministrationFixture(t)
 
 	registration := fixture.startRegistration(t, "Acme")
 	tenantID := registration.GetTenant().GetTenantId()
@@ -255,7 +285,7 @@ func TestClaimTenantOwnershipRecordsOwnerMembership(t *testing.T) {
 		t.Fatalf("ClaimTenantOwnership() error = %v", err)
 	}
 
-	stored, err := repository.FindTenantByPublicID(context.Background(), tenantID)
+	stored, err := fixture.repository.FindTenantByPublicID(context.Background(), tenantID)
 	if err != nil {
 		t.Fatalf("FindTenantByPublicID() error = %v", err)
 	}
@@ -608,5 +638,227 @@ func TestTransitionEventStatusOverTransportRejectsInvalidRequest(t *testing.T) {
 	_, err = fixture.client.TransitionEventStatus(context.Background(), req)
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodeNotFound; got != want {
 		t.Fatalf("TransitionEventStatus() error code = %v, want %v", got, want)
+	}
+}
+
+// addTenantMember records the membership of "test-subject" — the subject every
+// test token carries — so the administrative writes find a current permission.
+func addTenantMember(t *testing.T, memberships *relationdb.PostgresMembershipRepository, tenantID string, role relationdomain.Role) {
+	t.Helper()
+
+	if _, err := memberships.AddTenantMember(context.Background(), tenantID, "test-subject", role); err != nil {
+		t.Fatalf("AddTenantMember(%v) error = %v", role, err)
+	}
+}
+
+func changeTenantRole(t *testing.T, memberships *relationdb.PostgresMembershipRepository, tenantID string, role relationdomain.Role) {
+	t.Helper()
+
+	if _, err := memberships.ChangeTenantRole(context.Background(), tenantID, "test-subject", role); err != nil {
+		t.Fatalf("ChangeTenantRole(%v) error = %v", role, err)
+	}
+}
+
+func (f transportFixture) changeTenantContract(tenantID, contractPlan, token string) error {
+	req := connectrpc.NewRequest(&tenantv1.ChangeTenantContractRequest{TenantId: tenantID, ContractPlan: contractPlan})
+	req.Header().Set("Authorization", token)
+
+	_, err := f.client.ChangeTenantContract(context.Background(), req)
+
+	return err
+}
+
+func (f transportFixture) archiveTenant(tenantID, token string) (*tenantv1.Tenant, error) {
+	req := connectrpc.NewRequest(&tenantv1.ArchiveTenantRequest{TenantId: tenantID})
+	req.Header().Set("Authorization", token)
+
+	res, err := f.client.ArchiveTenant(context.Background(), req)
+	if err != nil {
+		return nil, err
+	}
+
+	return res.Msg.GetTenant(), nil
+}
+
+func TestChangeTenantContractOverTransport(t *testing.T) {
+	fixture, memberships := newAdministrationFixture(t)
+	tenant := fixture.createTenant(t, "0123456789abcdef", "Contract Host")
+	addTenantMember(t, memberships, tenant.ID(), relationdomain.RoleOwner)
+	token := mintTenantAccessToken(t, fixture.jwks, tenant.PublicID())
+
+	req := connectrpc.NewRequest(&tenantv1.ChangeTenantContractRequest{TenantId: tenant.PublicID(), ContractPlan: "enterprise"})
+	req.Header().Set("Authorization", token)
+
+	res, err := fixture.client.ChangeTenantContract(context.Background(), req)
+	if err != nil {
+		t.Fatalf("ChangeTenantContract() error = %v", err)
+	}
+
+	if got, want := res.Msg.GetTenant().GetContractPlan(), "enterprise"; got != want {
+		t.Errorf("Tenant.ContractPlan = %q, want %q", got, want)
+	}
+
+	if got, want := res.Msg.GetTenant().GetTenantId(), tenant.PublicID(); got != want {
+		t.Errorf("Tenant.TenantId = %q, want %q", got, want)
+	}
+
+	stored, err := fixture.repository.FindTenantByPublicID(context.Background(), tenant.PublicID())
+	if err != nil {
+		t.Fatalf("FindTenantByPublicID() error = %v", err)
+	}
+
+	if got, want := stored.ContractPlan(), "enterprise"; got != want {
+		t.Errorf("stored contract plan = %q, want %q", got, want)
+	}
+
+	if stored.Archived() {
+		t.Error("stored tenant is archived after a contract change, want not archived")
+	}
+}
+
+// TestArchiveTenantOverTransport covers the soft delete: the tenant keeps its
+// identifier, name and events, writes are refused afterwards, and reads keep
+// working.
+func TestArchiveTenantOverTransport(t *testing.T) {
+	fixture, memberships := newAdministrationFixture(t)
+	tenant := fixture.createTenant(t, "0123456789abcdef", "Archive Host")
+	addTenantMember(t, memberships, tenant.ID(), relationdomain.RoleOwner)
+	token := mintTenantAccessToken(t, fixture.jwks, tenant.PublicID())
+	event := fixture.createEvent(t, token, tenant.PublicID(), "Festival")
+
+	archived, err := fixture.archiveTenant(tenant.PublicID(), token)
+	if err != nil {
+		t.Fatalf("ArchiveTenant() error = %v", err)
+	}
+
+	if !archived.GetArchived() {
+		t.Error("Tenant.Archived = false, want true")
+	}
+
+	// The identifier and the name survive the soft delete.
+	if got, want := archived.GetTenantId(), tenant.PublicID(); got != want {
+		t.Errorf("Tenant.TenantId = %q, want %q", got, want)
+	}
+
+	if got, want := archived.GetName(), tenant.Name(); got != want {
+		t.Errorf("Tenant.Name = %q, want %q", got, want)
+	}
+
+	t.Run("writes are refused", func(t *testing.T) {
+		createReq := connectrpc.NewRequest(&tenantv1.CreateEventRequest{TenantId: tenant.PublicID(), Name: "Second Festival"})
+		createReq.Header().Set("Authorization", token)
+
+		_, err := fixture.client.CreateEvent(context.Background(), createReq)
+		if got, want := connectrpc.CodeOf(err), connectrpc.CodeFailedPrecondition; got != want {
+			t.Errorf("CreateEvent() error code = %v, want %v", got, want)
+		}
+
+		_, err = fixture.archiveTenant(tenant.PublicID(), token)
+		if got, want := connectrpc.CodeOf(err), connectrpc.CodeFailedPrecondition; got != want {
+			t.Errorf("second ArchiveTenant() error code = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("reads keep working", func(t *testing.T) {
+		listReq := connectrpc.NewRequest(&tenantv1.ListEventsRequest{TenantId: tenant.PublicID()})
+		listReq.Header().Set("Authorization", token)
+
+		list, err := fixture.client.ListEvents(context.Background(), listReq)
+		if err != nil {
+			t.Fatalf("ListEvents() after archiving error = %v", err)
+		}
+
+		if got, want := len(list.Msg.GetEvents()), 1; got != want {
+			t.Fatalf("event count = %d, want %d", got, want)
+		}
+
+		getReq := connectrpc.NewRequest(&tenantv1.GetEventRequest{EventId: event.GetEventId()})
+		getReq.Header().Set("Authorization", mintServiceToken(t, fixture.jwks, tenant.PublicID()))
+
+		got, err := fixture.client.GetEvent(context.Background(), getReq)
+		if err != nil {
+			t.Fatalf("GetEvent() after archiving error = %v", err)
+		}
+
+		// The events of an archived tenant keep their status.
+		if got, want := got.Msg.GetEvent().GetStatus(), event.GetStatus(); got != want {
+			t.Errorf("Event.Status after archiving = %v, want %v", got, want)
+		}
+	})
+}
+
+// TestAdministrativeTenantWritesOverTransportRejections covers the current
+// permission check and the request-level gates of both administrative writes.
+// The subtests run in order: they change the caller's membership as they go.
+func TestAdministrativeTenantWritesOverTransportRejections(t *testing.T) {
+	fixture, memberships := newAdministrationFixture(t)
+	tenant := fixture.createTenant(t, "0123456789abcdef", "Contract Host")
+	other := fixture.createTenant(t, "fedcba9876543210", "Other Tenant")
+	token := mintTenantAccessToken(t, fixture.jwks, tenant.PublicID())
+	otherToken := mintTenantAccessToken(t, fixture.jwks, other.PublicID())
+	pending := fixture.startRegistration(t, "Pending Tenant").GetTenant().GetTenantId()
+
+	t.Run("subject without a membership", func(t *testing.T) {
+		// The token's scope says tenant.write, but the caller belongs to no
+		// tenant, so the current permission check refuses the write.
+		err := fixture.changeTenantContract(tenant.PublicID(), "enterprise", token)
+		if got, want := connectrpc.CodeOf(err), connectrpc.CodePermissionDenied; got != want {
+			t.Errorf("ChangeTenantContract() error code = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("role that cannot issue tenant.write", func(t *testing.T) {
+		addTenantMember(t, memberships, tenant.ID(), relationdomain.RoleOwner)
+		changeTenantRole(t, memberships, tenant.ID(), relationdomain.RoleStaff)
+
+		err := fixture.changeTenantContract(tenant.PublicID(), "enterprise", token)
+		if got, want := connectrpc.CodeOf(err), connectrpc.CodePermissionDenied; got != want {
+			t.Errorf("ChangeTenantContract() error code = %v, want %v", got, want)
+		}
+
+		_, err = fixture.archiveTenant(tenant.PublicID(), token)
+		if got, want := connectrpc.CodeOf(err), connectrpc.CodePermissionDenied; got != want {
+			t.Errorf("ArchiveTenant() error code = %v, want %v", got, want)
+		}
+	})
+
+	// The caller owns the tenant from here on: what is left are the gates on
+	// the request and on the tenant itself.
+	changeTenantRole(t, memberships, tenant.ID(), relationdomain.RoleOwner)
+
+	tests := []struct {
+		name         string
+		tenantID     string
+		contractPlan string
+		token        string
+		want         connectrpc.Code
+	}{
+		{name: "missing contract plan", tenantID: tenant.PublicID(), contractPlan: "", token: token, want: connectrpc.CodeInvalidArgument},
+		{name: "token of another tenant", tenantID: tenant.PublicID(), contractPlan: "enterprise", token: otherToken, want: connectrpc.CodePermissionDenied},
+		{name: "pending_owner tenant", tenantID: pending, contractPlan: "enterprise", token: mintTenantAccessToken(t, fixture.jwks, pending), want: connectrpc.CodeFailedPrecondition},
+		{name: "unknown tenant", tenantID: "0000000000000000", contractPlan: "enterprise", token: mintTenantAccessToken(t, fixture.jwks, "0000000000000000"), want: connectrpc.CodeNotFound},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := fixture.changeTenantContract(tt.tenantID, tt.contractPlan, tt.token)
+			if got := connectrpc.CodeOf(err); got != tt.want {
+				t.Fatalf("ChangeTenantContract() error code = %v, want %v", got, tt.want)
+			}
+		})
+	}
+
+	// None of the rejections changed the tenant.
+	stored, err := fixture.repository.FindTenantByPublicID(context.Background(), tenant.PublicID())
+	if err != nil {
+		t.Fatalf("FindTenantByPublicID() error = %v", err)
+	}
+
+	if got, want := stored.ContractPlan(), "standard"; got != want {
+		t.Errorf("stored contract plan = %q, want %q", got, want)
+	}
+
+	if stored.Archived() {
+		t.Error("stored tenant is archived after the rejected writes, want not archived")
 	}
 }

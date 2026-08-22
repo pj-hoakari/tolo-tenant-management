@@ -48,6 +48,17 @@ func (r *membershipRecorder) owner() (string, string, int) {
 	return r.tenantID, r.userID, r.calls
 }
 
+// permissionStub stands in for the relation side's current-permission check.
+// It holds no mutable state, so the handler goroutines can share one.
+type permissionStub struct {
+	err     error
+	allowed bool
+}
+
+func (s permissionStub) Allowed(context.Context, string, string) (bool, error) {
+	return s.allowed, s.err
+}
+
 func TestEventStatusConversions(t *testing.T) {
 	t.Parallel()
 
@@ -187,5 +198,5 @@ func newReadService(t *testing.T) (*Service, domain.Tenant, []domain.Event) {
 	repository.EXPECT().ListEventsByTenantID(gomock.Any(), tenant.ID()).Return(events, nil).AnyTimes()
 	repository.EXPECT().UpdateEvent(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
-	return NewService(application.NewTenantService(repository, passthroughTransactor{}, &membershipRecorder{})), tenant, events
+	return NewService(application.NewTenantService(repository, passthroughTransactor{}, &membershipRecorder{}, permissionStub{allowed: true})), tenant, events
 }
