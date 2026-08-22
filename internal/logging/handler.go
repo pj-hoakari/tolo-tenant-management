@@ -6,6 +6,12 @@
 // attached with the logging.googleapis.com/* fields it correlates on. Nothing
 // here is specific to Google Cloud at run time, so the same output stays
 // readable as plain JSON elsewhere.
+//
+// Those keys are reserved: a top-level attribute named after one of them (time,
+// severity, message, msg, level, source, or anything under
+// logging.googleapis.com/) would take its place in the JSON object and hide the
+// real value. Such an attribute is written with an attr_ prefix instead, so both
+// survive. Inside a group the names collide with nothing and are left alone.
 package logging
 
 import (
@@ -13,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -28,14 +35,32 @@ const LevelCritical = slog.LevelError + 4
 // the place of slog's own time, level and message keys; the rest are the
 // special-purpose fields it recognises inside the JSON payload.
 const (
+	cloudLoggingPrefix = "logging.googleapis.com/"
+
 	keyTime           = "time"
 	keySeverity       = "severity"
 	keyMessage        = "message"
-	keySourceLocation = "logging.googleapis.com/sourceLocation"
-	keyTrace          = "logging.googleapis.com/trace"
-	keySpanID         = "logging.googleapis.com/spanId"
-	keyTraceSampled   = "logging.googleapis.com/trace_sampled"
+	keySourceLocation = cloudLoggingPrefix + "sourceLocation"
+	keyTrace          = cloudLoggingPrefix + "trace"
+	keySpanID         = cloudLoggingPrefix + "spanId"
+	keyTraceSampled   = cloudLoggingPrefix + "trace_sampled"
 )
+
+// reservedPrefix marks an attribute that was renamed out of the way of a key
+// this handler writes itself.
+const reservedPrefix = "attr_"
+
+// reservedKeys are the top-level keys of a record. An attribute of the same
+// name would replace the value the handler wrote there, so it is renamed
+// instead. Everything under cloudLoggingPrefix is reserved as well.
+var reservedKeys = map[string]struct{}{
+	keyTime:         {}, // also slog.TimeKey
+	keySeverity:     {},
+	keyMessage:      {},
+	slog.LevelKey:   {},
+	slog.MessageKey: {},
+	slog.SourceKey:  {},
+}
 
 // Options configures the handler NewHandler builds.
 type Options struct {
@@ -97,6 +122,13 @@ func replaceAttr(groups []string, a slog.Attr) slog.Attr {
 
 	switch a.Key {
 	case slog.TimeKey:
+		// The key is reserved, but a caller can still reach this branch through
+		// a group-free handler built elsewhere, and Value.Time panics on
+		// anything but a time.
+		if a.Value.Kind() != slog.KindTime {
+			return a
+		}
+
 		return slog.String(keyTime, a.Value.Time().UTC().Format(time.RFC3339Nano))
 	case slog.LevelKey:
 		level, ok := a.Value.Any().(slog.Level)
@@ -142,6 +174,69 @@ func severityOf(level slog.Level) string {
 	}
 }
 
+// isReserved reports whether a top-level attribute of this key would take the
+// place of one of the keys the handler writes itself.
+func isReserved(key string) bool {
+	if strings.HasPrefix(key, cloudLoggingPrefix) {
+		return true
+	}
+
+	_, ok := reservedKeys[key]
+
+	return ok
+}
+
+// renameReserved moves a colliding attribute out of the way, so that it still
+// reaches the entry under a name of its own.
+func renameReserved(a slog.Attr) slog.Attr {
+	if !isReserved(a.Key) {
+		return a
+	}
+
+	return slog.Attr{Key: reservedPrefix + a.Key, Value: a.Value}
+}
+
+// renameReservedAttrs returns attrs with the colliding keys renamed, keeping the
+// original slice when there is nothing to rename.
+func renameReservedAttrs(attrs []slog.Attr) []slog.Attr {
+	if !slices.ContainsFunc(attrs, func(a slog.Attr) bool { return isReserved(a.Key) }) {
+		return attrs
+	}
+
+	renamed := make([]slog.Attr, len(attrs))
+	for i, a := range attrs {
+		renamed[i] = renameReserved(a)
+	}
+
+	return renamed
+}
+
+// renameReservedRecord returns record with the colliding keys of its own
+// attributes renamed, rebuilding it only when there is something to rename.
+func renameReservedRecord(record slog.Record) slog.Record {
+	collides := false
+
+	record.Attrs(func(a slog.Attr) bool {
+		collides = isReserved(a.Key)
+
+		return !collides
+	})
+
+	if !collides {
+		return record
+	}
+
+	renamed := slog.NewRecord(record.Time, record.Level, record.Message, record.PC)
+
+	record.Attrs(func(a slog.Attr) bool {
+		renamed.AddAttrs(renameReserved(a))
+
+		return true
+	})
+
+	return renamed
+}
+
 // traceHandler adds the trace fields of a record's context to what the inner
 // handler writes, so that an entry and the span it happened in line up in Cloud
 // Logging without any call site passing the trace itself.
@@ -156,6 +251,9 @@ type traceHandler struct {
 	inner     slog.Handler
 	ops       []handlerOp
 	projectID string
+	// grouped records whether a group is open, in which case an attribute
+	// collides with nothing at the top level and keeps its name.
+	grouped bool
 }
 
 // handlerOp is one WithAttrs or WithGroup call made on the base handler. A
@@ -178,11 +276,14 @@ func (o handlerOp) apply(handler slog.Handler) slog.Handler {
 // without a span logs through a handler that is already built.
 func newTraceHandler(base slog.Handler, ops []handlerOp, projectID string) *traceHandler {
 	inner := base
+	grouped := false
+
 	for _, op := range ops {
 		inner = op.apply(inner)
+		grouped = grouped || op.group != ""
 	}
 
-	return &traceHandler{base: base, inner: inner, ops: ops, projectID: projectID}
+	return &traceHandler{base: base, inner: inner, ops: ops, projectID: projectID, grouped: grouped}
 }
 
 func (h *traceHandler) Enabled(ctx context.Context, level slog.Level) bool {
@@ -190,6 +291,10 @@ func (h *traceHandler) Enabled(ctx context.Context, level slog.Level) bool {
 }
 
 func (h *traceHandler) Handle(ctx context.Context, record slog.Record) error {
+	if !h.grouped {
+		record = renameReservedRecord(record)
+	}
+
 	spanContext := trace.SpanFromContext(ctx).SpanContext()
 	if !spanContext.IsValid() {
 		return h.inner.Handle(ctx, record)
@@ -216,6 +321,10 @@ func (h *traceHandler) Handle(ctx context.Context, record slog.Record) error {
 func (h *traceHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	if len(attrs) == 0 {
 		return h
+	}
+
+	if !h.grouped {
+		attrs = renameReservedAttrs(attrs)
 	}
 
 	return newTraceHandler(h.base, h.appendOp(handlerOp{attrs: attrs, group: ""}), h.projectID)

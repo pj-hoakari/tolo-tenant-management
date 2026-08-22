@@ -277,6 +277,135 @@ func TestParseLevel(t *testing.T) {
 	}
 }
 
+func TestReservedTopLevelAttrsAreRenamed(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+
+	logger := NewLogger(&buf, Options{Level: slog.LevelInfo, AddSource: false, ProjectID: "tolo-example"})
+	logger.ErrorContext(contextWithSampledSpan(t), "internal error",
+		// A string under the time key must be written, not turned into a time.
+		"time", "2020-01-01",
+		"msg", "shadow message",
+		"severity", "DEBUG",
+		"level", "shadow level",
+		"source", "shadow source",
+		keyTrace, "shadow trace",
+	)
+
+	entry := decodeLine(t, &buf)
+
+	if got, want := entry[keyMessage], "internal error"; got != want {
+		t.Errorf("%s = %v, want %q", keyMessage, got, want)
+	}
+
+	if got, want := entry[keySeverity], "ERROR"; got != want {
+		t.Errorf("%s = %v, want %q", keySeverity, got, want)
+	}
+
+	assertTraceFields(t, entry, "projects/tolo-example/traces/"+testTraceID)
+
+	timestamp, ok := entry[keyTime].(string)
+	if !ok {
+		t.Fatalf("%s = %#v, want a string", keyTime, entry[keyTime])
+	}
+
+	if _, err := time.Parse(time.RFC3339Nano, timestamp); err != nil {
+		t.Errorf("%s = %q, want the record's own timestamp: %v", keyTime, timestamp, err)
+	}
+
+	renamed := map[string]string{
+		reservedPrefix + "time":     "2020-01-01",
+		reservedPrefix + "msg":      "shadow message",
+		reservedPrefix + "severity": "DEBUG",
+		reservedPrefix + "level":    "shadow level",
+		reservedPrefix + "source":   "shadow source",
+		reservedPrefix + keyTrace:   "shadow trace",
+	}
+
+	for key, want := range renamed {
+		if got := entry[key]; got != want {
+			t.Errorf("%s = %v, want %q", key, got, want)
+		}
+	}
+}
+
+func TestReservedHandlerAttrsAreRenamed(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+
+	logger := NewLogger(&buf, Options{Level: slog.LevelInfo, AddSource: false, ProjectID: ""}).With("msg", "shadow message")
+	logger.Info("server listening")
+
+	entry := decodeLine(t, &buf)
+
+	if got, want := entry[keyMessage], "server listening"; got != want {
+		t.Errorf("%s = %v, want %q", keyMessage, got, want)
+	}
+
+	if got, want := entry[reservedPrefix+"msg"], "shadow message"; got != want {
+		t.Errorf("%s = %v, want %q", reservedPrefix+"msg", got, want)
+	}
+}
+
+func TestReservedAttrsInsideAGroupKeepTheirNames(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+
+	logger := NewLogger(&buf, Options{Level: slog.LevelInfo, AddSource: false, ProjectID: "tolo-example"}).WithGroup("payload")
+	logger.ErrorContext(contextWithSampledSpan(t), "internal error", "msg", "inner", "time", "2020-01-01", keyTrace, "inner trace")
+
+	entry := decodeLine(t, &buf)
+
+	if got, want := entry[keyMessage], "internal error"; got != want {
+		t.Errorf("%s = %v, want %q", keyMessage, got, want)
+	}
+
+	assertTraceFields(t, entry, "projects/tolo-example/traces/"+testTraceID)
+
+	group, ok := entry["payload"].(map[string]any)
+	if !ok {
+		t.Fatalf("payload = %#v, want a group", entry["payload"])
+	}
+
+	// A name inside a group collides with nothing, so it is left alone.
+	inGroup := map[string]string{"msg": "inner", "time": "2020-01-01", keyTrace: "inner trace"}
+
+	for key, want := range inGroup {
+		if got := group[key]; got != want {
+			t.Errorf("payload.%s = %v, want %q", key, got, want)
+		}
+	}
+
+	for key := range group {
+		if strings.HasPrefix(key, reservedPrefix) {
+			t.Errorf("payload has key %q, want nothing renamed inside a group", key)
+		}
+	}
+}
+
+func TestReplaceAttrLeavesANonTimeTimeAttrAlone(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]slog.Attr{
+		"string":   slog.String(slog.TimeKey, "2020-01-01"),
+		"duration": slog.Duration(slog.TimeKey, time.Second),
+	}
+
+	for name, attr := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got := replaceAttr(nil, attr)
+			if got.Key != attr.Key || got.Value.String() != attr.Value.String() {
+				t.Errorf("replaceAttr(%v) = %v, want it unchanged", attr, got)
+			}
+		})
+	}
+}
+
 // assertTraceFields checks the three fields Cloud Logging correlates on.
 func assertTraceFields(t *testing.T, entry map[string]any, wantTrace string) {
 	t.Helper()

@@ -90,6 +90,7 @@ OTLP のエクスポート先がどちらも未設定の場合、トレースは
 ログは標準出力へ 1 行 1 件の JSON で書き出し、Cloud Logging がそのまま解釈する構造化フォーマット（`severity`、`message`、`time`）に合わせている。
 トレースが有効なリクエストでは、その文脈からトレース ID とスパン ID を自動で読み取り、`logging.googleapis.com/trace` などのフィールドとして各レコードに付与する。
 このハンドラは `internal/logging` が提供し、最小レベルは `LOG_LEVEL`、トレースの相関先プロジェクトは `GOOGLE_CLOUD_PROJECT` で指定する。
+`message` や `severity` のような予約キーと同じ名前の属性は、値が上書きされないように `attr_` 接頭辞付きで出力する。
 
 ### テスト用内部 JWT の生成
 
