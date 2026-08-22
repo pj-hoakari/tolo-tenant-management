@@ -4,7 +4,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
-	"log"
+	"log/slog"
 	"os"
 	"time"
 
@@ -24,12 +24,16 @@ func main() {
 
 	flag.Parse()
 
+	// A local CLI reports its failures to a person on stderr, so plain text
+	// is more useful here than the service's structured output.
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
 	output, err := jwtgen.Generate(jwtgen.Config{
 		Issuer: *issuer, Audience: *audience, TokenUse: *tokenUse,
 		TenantPublicID: *tenantPublicID, Scope: *scope, OriginSub: *originSub, KeyID: *kid, TTL: *ttl,
 	})
 	if err != nil {
-		log.Print("jwtgen: ", err)
+		logger.Error("generate token failed", "error", err)
 		os.Exit(1)
 	}
 
@@ -37,7 +41,7 @@ func main() {
 	encoder.SetIndent("", "  ")
 
 	if err := encoder.Encode(output); err != nil {
-		log.Print("jwtgen: encode output: ", err)
+		logger.Error("encode output failed", "error", err)
 		os.Exit(1)
 	}
 }
