@@ -164,6 +164,11 @@ func (s *Service) CreateEvent(ctx context.Context, req *connectrpc.Request[tenan
 			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
 		}
 
+		// A public ID collision is a conflict, not an internal failure.
+		if errors.Is(err, repository.ErrEventPublicIDExists) {
+			return nil, connectrpc.NewError(connectrpc.CodeAlreadyExists, err)
+		}
+
 		if errors.Is(err, repository.ErrTenantNotFound) {
 			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
 		}

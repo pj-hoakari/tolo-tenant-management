@@ -11,6 +11,7 @@ import (
 	tenantv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/repository"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 	"go.uber.org/mock/gomock"
 )
@@ -179,6 +180,31 @@ func TestListEvents(t *testing.T) {
 		if got, want := response.Msg.GetEvents()[i].GetEventId(), event.PublicID(); got != want {
 			t.Errorf("Events[%d].EventId = %q, want %q", i, got, want)
 		}
+	}
+}
+
+// TestCreateEventPublicIDCollision pins an event public ID collision to
+// already_exists rather than internal (tenant_management_spec.md「エラー」).
+func TestCreateEventPublicIDCollision(t *testing.T) {
+	t.Parallel()
+
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, false)
+
+	ctrl := gomock.NewController(t)
+	repo := NewMockTenantRepository(ctrl)
+	repo.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(tenant, nil).AnyTimes()
+	repo.EXPECT().CreateEvent(gomock.Any(), gomock.Any()).Return(repository.ErrEventPublicIDExists)
+
+	service := NewService(application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{}, permissionStub{allowed: true}))
+	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
+
+	_, err := service.CreateEvent(ctx, connectrpc.NewRequest(&tenantv1.CreateEventRequest{
+		TenantId: tenant.PublicID(),
+		Name:     "Festival",
+		Type:     tenantv1.EventType_EVENT_TYPE_SHORT_TERM,
+	}))
+	if got, want := connectrpc.CodeOf(err), connectrpc.CodeAlreadyExists; got != want {
+		t.Fatalf("CreateEvent() error code = %v, want %v", got, want)
 	}
 }
 
