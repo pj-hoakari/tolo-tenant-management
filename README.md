@@ -23,7 +23,7 @@ Docker Compose で PostgreSQL、golang-migrate によるマイグレーション
 docker compose up --build
 ```
 
-もしくは次を実行する。
+もしくは次を実行すると、同じ構成をデタッチモード（`-d`）で起動する。
 
 ```bash
 task up:build
@@ -51,7 +51,7 @@ Jaeger が起動し、`server` に OTLP エクスポート用の環境変数（`
 docker compose -f compose.yml -f compose.o11y.yml up --build
 ```
 
-もしくは次を実行する。
+もしくは次を実行すると、同じ構成をデタッチモード（`-d`）で起動する。
 
 ```bash
 task up:build:o11y
@@ -95,6 +95,7 @@ go run ./cmd/jwtgen -tenant-public-id 0123456789abcdef -scope events.read
 `tenant_access` では `-tenant-public-id`（ランダムな 16 文字 hex）と `-scope` が必須、`registration` では `-scope` が必須である。
 `service` は既定でマシン起点（`scope`、`src_jti`、`tenant_id` を持たない）として生成し、`-origin-sub <user_id>` を指定するとユーザー起点（`scope`、`src_jti`、`origin_sub` を持ち、`-tenant-public-id` で `tenant_id` を付与できる）になる。
 いずれの場合も `txn` には UUIDv7 を自動で付与する。
+そのほかのフラグは `-ttl`（既定 2 分）、`-kid`（既定 `test-key`）、`-issuer`／`-audience`（既定は `INTERNAL_JWT_ISSUER`／`INTERNAL_JWT_AUDIENCE` の既定値と同じ）である。
 
 ```bash
 # マシン起点の service トークン
@@ -147,7 +148,7 @@ proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16
 イベントを対象にする RPC（`AssignEventType`、`TransitionEventStatus`）は、読み込んだイベントの所属テナントをクレームと突合する。
 
 サービス間の参照系 RPC は境界の扱いが異なる。
-`GetEvent` はテナント文脈を持つ `service` トークン（ユーザー起点。`tenant_id` クレームあり）を要求し、クレームがなければ `unauthenticated`、イベントの所属テナントと不一致なら `permission_denied` を返す。
+`GetEvent` はテナント文脈を持つ `service` トークン（ユーザー起点で `tenant_id` クレームを持つもの）を要求し、クレームがなければ `unauthenticated`、イベントの所属テナントと不一致なら `permission_denied` を返す。
 `GetObservationSettings` はテナント文脈のない `service` トークン（マシン起点）も受け付け、クレームがある場合だけ突合する。
 
 ### RPC ごとの認可
@@ -188,8 +189,10 @@ proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16
 
 テナントは未認証の仮登録と、認証済みユーザーによる所有権取得の二段階で作成する（`docs/tenant_management_spec.md` の「オンボーディング」）。
 
-1. `StartTenantRegistration`（未認証）が `pending_owner` のテナントを作成し、所有権取得トークンの平文をこの応答でのみ返す。永続化するのは SHA-256 ハッシュだけで、トークンの有効期限は既定 1 時間（`application.DefaultOwnershipClaimTTL`）である。
-2. `ClaimTenantOwnership`（`registration` トークン、scope `tenant.claim`）が、対象が期限内の `pending_owner` であることとトークンのハッシュ一致を検証し、内部 JWT の `sub` をオーナーとして所属させ、`owned` へ遷移させ、トークンを消費する。これらは 1 つの DB トランザクションで確定する。
+1. `StartTenantRegistration`（未認証）が `pending_owner` のテナントを作成し、所有権取得トークンの平文をこの応答でのみ返す。
+   永続化するのは SHA-256 ハッシュだけで、トークンの有効期限は既定 1 時間（`application.DefaultOwnershipClaimTTL`）である。
+2. `ClaimTenantOwnership`（`registration` トークン、scope `tenant.claim`）が、対象が期限内の `pending_owner` であることとトークンのハッシュ一致を検証し、内部 JWT の `sub` をオーナーとして所属させ、`owned` へ遷移させ、トークンを消費する。
+   これらは 1 つの DB トランザクションで確定する。
 3. 以降は `tenantId` 指定で再認可した `tenant_access` でテナント配下を操作する。
 
 `pending_owner` のテナントは `ClaimTenantOwnership` 以外のテナント配下の RPC（`CreateEvent`、`ListEvents` など）を `failed_precondition` で拒否する。
@@ -230,7 +233,7 @@ draft はそのままアーカイブでき、これは作成した draft を破�
 
 ### 観測設定値
 
-イベントの観測設定値は `history_window_days` のみを持つ（`docs/tenant_management_spec.md` の「観測設定値」）。
+イベントの観測設定値は `history_window_days` のみを持つ（`docs/tenant_management_spec.md` の「その他」）。
 既定は 30 で、1 以上の値でなければならない。
 値は `events` テーブルの列として保持し、イベントの作成時に既定値が入る。
 
@@ -252,6 +255,7 @@ draft はそのままアーカイブでき、これは作成した draft を破�
 前者は `internal/relation/infra/db` の所属リポジトリが、後者は `internal/relation/application` の `Authorizer` が実装する。
 所属リポジトリはテナント側と同じ接続プールと context 上のトランザクションを共有するため、オーナー所属と `owned` への遷移は同時に確定する。
 関係参照側は、公開 ID の解決と書き込み可否を決めるテナントの状態（`pending_owner`、アーカイブ済み）の判定のために、テナント側のリポジトリを読み取り専用で参照する。
+読み取りに加えて、`internal/infra/db` のトランザクション実行器と `internal/infra/connect` の検証器の中核および interceptor もテナント側のものを再利用する。
 
 ### スキーマとロール
 
