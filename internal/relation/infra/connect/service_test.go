@@ -1,10 +1,12 @@
 package connect
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -509,10 +511,11 @@ func TestConnectError(t *testing.T) {
 }
 
 // TestConnectErrorHidesInternalDetail keeps the cause of an internal failure
-// out of the response, as the tenant transport does
-// (service_gateway.md「エラー方針」).
+// out of the response and puts it in the server log instead, as the tenant
+// transport does (service_gateway.md「エラー方針」). It cannot run in parallel:
+// it reads the log back through the standard library's process-wide logger.
 func TestConnectErrorHidesInternalDetail(t *testing.T) {
-	t.Parallel()
+	logs := captureLog(t)
 
 	err := connectError(context.Background(), errors.New("secret detail"))
 
@@ -528,6 +531,43 @@ func TestConnectErrorHidesInternalDetail(t *testing.T) {
 	if strings.Contains(err.Error(), "secret detail") {
 		t.Errorf("error = %q, want it to omit the underlying failure", err)
 	}
+
+	if got, want := logs.String(), "tenant-management: internal error: secret detail"; !strings.Contains(got, want) {
+		t.Errorf("log = %q, want it to contain %q", got, want)
+	}
+}
+
+// TestConnectErrorReportsCanceledWithoutLogging pins a client that goes away to
+// canceled: it is not a server fault, so nothing is logged. It shares the
+// process-wide logger with TestConnectErrorHidesInternalDetail and so cannot
+// run in parallel either.
+func TestConnectErrorReportsCanceledWithoutLogging(t *testing.T) {
+	logs := captureLog(t)
+
+	err := connectError(context.Background(), context.Canceled)
+	if got, want := connectrpc.CodeOf(err), connectrpc.CodeCanceled; got != want {
+		t.Errorf("connectError(context.Canceled) code = %v, want %v", got, want)
+	}
+
+	if logs.Len() != 0 {
+		t.Errorf("log = %q, want nothing logged", logs.String())
+	}
+}
+
+// captureLog redirects the standard library's global logger into a buffer for
+// the duration of the test. The logger is process-wide, so a test that calls
+// this one must not call t.Parallel().
+func captureLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+
+	var logs bytes.Buffer
+
+	previous := log.Writer()
+
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(previous) })
+
+	return &logs
 }
 
 // membershipOf returns the listed membership of userID, or nil.
