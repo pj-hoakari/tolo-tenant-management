@@ -13,6 +13,16 @@ import (
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
 
+// The write reached no row even though the tenant is present and not archived,
+// so the cause is unknown. The messages name no identifier: an error message
+// carries no internal primary key, tenant name, or user ID
+// (tenant_management_spec.md「エラー」). The transport logs the cause
+// server-side and answers the client with a fixed message.
+var (
+	errCreateEventNoRow = errors.New("create event: no row inserted")
+	errUpdateEventNoRow = errors.New("update event: no row updated")
+)
+
 func (r *PostgresTenantRepository) CreateEvent(ctx context.Context, event domain.Event) error {
 	result, err := r.executor(ctx).ExecContext(ctx, `
 		INSERT INTO events (id, public_id, tenant_id, tenant_public_id, name, event_type, status)
@@ -42,10 +52,7 @@ func (r *PostgresTenantRepository) CreateEvent(ctx context.Context, event domain
 		return repository.ErrTenantArchived
 	}
 
-	// Error messages carry no internal identifiers: primary keys, tenant names,
-	// and user IDs must not reach clients or logs
-	// (tenant_management_spec.md「エラー」).
-	return errors.New("create event: no row inserted")
+	return errCreateEventNoRow
 }
 
 func (r *PostgresTenantRepository) FindEventByPublicID(ctx context.Context, publicID string) (domain.Event, error) {
@@ -128,7 +135,7 @@ func (r *PostgresTenantRepository) UpdateEvent(ctx context.Context, event domain
 		return repository.ErrTenantArchived
 	}
 
-	return errors.New("update event: no row updated")
+	return errUpdateEventNoRow
 }
 
 type eventRow struct {

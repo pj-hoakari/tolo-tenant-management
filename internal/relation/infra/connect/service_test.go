@@ -501,7 +501,7 @@ func TestConnectError(t *testing.T) {
 		t.Run(tt.err.Error(), func(t *testing.T) {
 			t.Parallel()
 
-			if got := connectrpc.CodeOf(connectError(tt.err)); got != tt.want {
+			if got := connectrpc.CodeOf(connectError(context.Background(), tt.err)); got != tt.want {
 				t.Errorf("connectError(%v) code = %v, want %v", tt.err, got, tt.want)
 			}
 		})
@@ -514,7 +514,7 @@ func TestConnectError(t *testing.T) {
 func TestConnectErrorHidesInternalDetail(t *testing.T) {
 	t.Parallel()
 
-	err := connectError(errors.New("secret detail"))
+	err := connectError(context.Background(), errors.New("secret detail"))
 
 	var connectErr *connectrpc.Error
 	if !errors.As(err, &connectErr) {
