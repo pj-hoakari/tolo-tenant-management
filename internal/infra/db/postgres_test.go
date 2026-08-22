@@ -529,3 +529,36 @@ func TestPostgresTenantRepositoryOwnershipClaim(t *testing.T) {
 		t.Errorf("FindTenantByPublicIDForUpdate(unknown) error = %v, want %v", err, repositorypkg.ErrTenantNotFound)
 	}
 }
+
+func TestPostgresTenantRepositoryUpdateTenant(t *testing.T) {
+	repository := newTestRepository(t)
+	ctx := context.Background()
+
+	tenant := newTenant("00000000-0000-0000-0000-000000000001", "tenant-001", "Acme", false)
+	if err := repository.CreateTenant(ctx, tenant); err != nil {
+		t.Fatalf("CreateTenant() error = %v", err)
+	}
+
+	updated, err := tenant.ChangeContractPlan("enterprise").Archive()
+	if err != nil {
+		t.Fatalf("Archive() error = %v", err)
+	}
+
+	if err := repository.UpdateTenant(ctx, updated); err != nil {
+		t.Fatalf("UpdateTenant() error = %v", err)
+	}
+
+	got, err := repository.FindTenantByID(ctx, tenant.ID())
+	if err != nil {
+		t.Fatalf("FindTenantByID() after update error = %v", err)
+	}
+
+	if got != updated {
+		t.Errorf("updated tenant = %#v, want %#v", got, updated)
+	}
+
+	missing := newTenant("00000000-0000-0000-0000-000000000099", "tenant-099", "Missing", false)
+	if err := repository.UpdateTenant(ctx, missing); !errors.Is(err, repositorypkg.ErrTenantNotFound) {
+		t.Errorf("UpdateTenant(unknown) error = %v, want %v", err, repositorypkg.ErrTenantNotFound)
+	}
+}

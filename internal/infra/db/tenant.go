@@ -117,6 +117,31 @@ func (r *PostgresTenantRepository) MarkTenantOwned(ctx context.Context, tenant d
 	return nil
 }
 
+// UpdateTenant persists the administrative attributes of a tenant: its
+// contract plan and whether it is archived. The ownership columns stay
+// untouched, so an administrative write can never undo an ownership claim.
+func (r *PostgresTenantRepository) UpdateTenant(ctx context.Context, tenant domain.Tenant) error {
+	result, err := r.executor(ctx).ExecContext(ctx, `
+		UPDATE tenants
+		SET contract_plan = $2, archived = $3
+		WHERE id = $1`,
+		tenant.ID(), tenant.ContractPlan(), tenant.Archived())
+	if err != nil {
+		return fmt.Errorf("update tenant: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("get updated tenant row count: %w", err)
+	}
+
+	if rows == 0 {
+		return repository.ErrTenantNotFound
+	}
+
+	return nil
+}
+
 func (r *PostgresTenantRepository) FindTenantByID(ctx context.Context, tenantID string) (domain.Tenant, error) {
 	return r.findTenant(ctx, `SELECT id, public_id, name, contract_plan, ownership_state, archived FROM tenants WHERE id = $1`, tenantID)
 }

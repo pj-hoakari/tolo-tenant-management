@@ -47,6 +47,11 @@ type TenantRepository interface {
 	// MarkTenantOwned records the ownership transition of a pending_owner
 	// tenant and consumes its claim token.
 	MarkTenantOwned(context.Context, domain.Tenant) error
+	// UpdateTenant persists the contract plan and the archived flag of an
+	// existing tenant. The ownership columns are left untouched, because they
+	// are owned by the onboarding writes. It returns ErrTenantNotFound when no
+	// tenant carries the given internal ID.
+	UpdateTenant(context.Context, domain.Tenant) error
 	FindTenantByID(context.Context, string) (domain.Tenant, error)
 	FindTenantByPublicID(context.Context, string) (domain.Tenant, error)
 	CreateEvent(context.Context, domain.Event) error
