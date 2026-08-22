@@ -143,7 +143,7 @@ func (s *Service) ClaimTenantOwnership(ctx context.Context, req *connectrpc.Requ
 // re-check the caller's current membership, so a caller whose permission has
 // been revoked or downgraded is answered with permission_denied even though
 // the scope of its token still says otherwise.
-func administrativeTenantWriteError(err error) error {
+func administrativeTenantWriteError(ctx context.Context, err error) error {
 	switch {
 	case errors.Is(err, application.ErrTenantIDRequired), errors.Is(err, application.ErrTenantContractPlanRequired):
 		return connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
@@ -165,7 +165,7 @@ func administrativeTenantWriteError(err error) error {
 			return connectrpc.NewError(code, err)
 		}
 
-		return connectrpc.NewError(connectrpc.CodeInternal, err)
+		return InternalError(ctx, err)
 	}
 }
 
@@ -175,7 +175,7 @@ func (s *Service) ChangeTenantContract(ctx context.Context, req *connectrpc.Requ
 		ContractPlan:   req.Msg.GetContractPlan(),
 	})
 	if err != nil {
-		return nil, administrativeTenantWriteError(err)
+		return nil, administrativeTenantWriteError(ctx, err)
 	}
 
 	return connectrpc.NewResponse(&tenantv1.ChangeTenantContractResponse{Tenant: tenantProto(tenant)}), nil
@@ -184,7 +184,7 @@ func (s *Service) ChangeTenantContract(ctx context.Context, req *connectrpc.Requ
 func (s *Service) ArchiveTenant(ctx context.Context, req *connectrpc.Request[tenantv1.ArchiveTenantRequest]) (*connectrpc.Response[tenantv1.ArchiveTenantResponse], error) {
 	tenant, err := s.tenantService.ArchiveTenant(ctx, application.ArchiveTenantInput{TenantPublicID: req.Msg.GetTenantId()})
 	if err != nil {
-		return nil, administrativeTenantWriteError(err)
+		return nil, administrativeTenantWriteError(ctx, err)
 	}
 
 	return connectrpc.NewResponse(&tenantv1.ArchiveTenantResponse{Tenant: tenantProto(tenant)}), nil
@@ -430,7 +430,7 @@ func (s *Service) GetObservationSettings(ctx context.Context, req *connectrpc.Re
 			return nil, connectrpc.NewError(code, err)
 		}
 
-		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
+		return nil, InternalError(ctx, err)
 	}
 
 	return connectrpc.NewResponse(&tenantv1.GetObservationSettingsResponse{Settings: observationSettingsProto(settings)}), nil
@@ -462,7 +462,7 @@ func (s *Service) UpdateObservationSettings(ctx context.Context, req *connectrpc
 			return nil, connectrpc.NewError(code, err)
 		}
 
-		return nil, connectrpc.NewError(connectrpc.CodeInternal, err)
+		return nil, InternalError(ctx, err)
 	}
 
 	return connectrpc.NewResponse(&tenantv1.UpdateObservationSettingsResponse{Settings: observationSettingsProto(settings)}), nil
