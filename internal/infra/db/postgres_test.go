@@ -132,9 +132,10 @@ func TestPostgresTenantRepositoryEvents(t *testing.T) {
 	}
 
 	event2 := newEvent("00000000-0000-0000-0000-000000000012", "event-002", tenant, "Festival 2", domain.EventTypeLongTerm, domain.EventStatusOpen)
+	event3 := newEvent("00000000-0000-0000-0000-000000000013", "event-003", tenant, "Festival 3", domain.EventTypeShortTerm, domain.EventStatusArchived)
 
 	event1 := newEvent("00000000-0000-0000-0000-000000000011", "event-001", tenant, "Festival 1", domain.EventTypeShortTerm, domain.EventStatusDraft)
-	for _, event := range []domain.Event{event2, event1} {
+	for _, event := range []domain.Event{event2, event3, event1} {
 		if err := repository.CreateEvent(ctx, event); err != nil {
 			t.Fatalf("CreateEvent(%q) error = %v", event.ID(), err)
 		}
@@ -149,13 +150,29 @@ func TestPostgresTenantRepositoryEvents(t *testing.T) {
 		t.Errorf("found event = %#v, want %#v", got, event1)
 	}
 
-	events, err := repository.ListEventsByTenantID(ctx, tenant.ID())
-	if err != nil {
-		t.Fatalf("ListEventsByTenantID() error = %v", err)
+	// The events carry UUIDv7 keys, so the listing order is creation order
+	// regardless of the order the rows were inserted in.
+	listTests := []struct {
+		name   string
+		filter repositorypkg.ListEventsFilter
+		want   []domain.Event
+	}{
+		{name: "default", filter: repositorypkg.ListEventsFilter{}, want: []domain.Event{event1, event2}},
+		{name: "include archived", filter: repositorypkg.ListEventsFilter{IncludeArchived: true}, want: []domain.Event{event1, event2, event3}},
+		{name: "limit", filter: repositorypkg.ListEventsFilter{Limit: 1}, want: []domain.Event{event1}},
 	}
 
-	if want := []domain.Event{event1, event2}; !slices.Equal(events, want) {
-		t.Errorf("ListEventsByTenantID() = %#v, want %#v", events, want)
+	for _, tt := range listTests {
+		t.Run(tt.name, func(t *testing.T) {
+			events, err := repository.ListEventsByTenantID(ctx, tenant.ID(), tt.filter)
+			if err != nil {
+				t.Fatalf("ListEventsByTenantID() error = %v", err)
+			}
+
+			if !slices.Equal(events, tt.want) {
+				t.Errorf("ListEventsByTenantID() = %#v, want %#v", events, tt.want)
+			}
+		})
 	}
 
 	updated := event1.AssignType(domain.EventTypeLongTerm)
@@ -298,7 +315,7 @@ func TestPostgresTenantRepositoryRejectsForeignTenantOnReconstitution(t *testing
 		t.Errorf("FindEventByPublicID(foreign) error = %v, want %v", err, tenantctx.ErrMismatch)
 	}
 
-	if _, err := repository.ListEventsByTenantID(foreignCtx, tenantB.ID()); !errors.Is(err, tenantctx.ErrMismatch) {
+	if _, err := repository.ListEventsByTenantID(foreignCtx, tenantB.ID(), repositorypkg.ListEventsFilter{}); !errors.Is(err, tenantctx.ErrMismatch) {
 		t.Errorf("ListEventsByTenantID(foreign) error = %v, want %v", err, tenantctx.ErrMismatch)
 	}
 

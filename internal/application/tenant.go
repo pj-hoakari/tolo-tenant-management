@@ -35,6 +35,10 @@ var (
 // ClaimTenantOwnership before it expires and its name is released.
 const DefaultOwnershipClaimTTL = time.Hour
 
+// MaxListEvents is the number of events ListEvents returns at most. The spec
+// caps the list at 1000 events and defines no paging.
+const MaxListEvents = 1000
+
 // StartTenantRegistrationInput contains the values accepted by the
 // StartTenantRegistration use case.
 type StartTenantRegistrationInput struct {
@@ -132,9 +136,10 @@ type GetEventUseCase interface {
 	GetEvent(context.Context, string) (domain.Event, error)
 }
 
-// ListEventsUseCase lists events belonging to the requested tenant.
+// ListEventsUseCase lists events belonging to the requested tenant. The bool
+// argument asks for archived events to be included.
 type ListEventsUseCase interface {
-	ListEvents(context.Context, string) ([]domain.Event, error)
+	ListEvents(context.Context, string, bool) ([]domain.Event, error)
 }
 
 // TenantUseCases groups the tenant operations exposed by the Connect
@@ -501,11 +506,16 @@ func (s *TenantService) GetEvent(ctx context.Context, eventPublicID string) (dom
 	return s.resolveEvent(ctx, eventPublicID)
 }
 
-func (s *TenantService) ListEvents(ctx context.Context, tenantPublicID string) ([]domain.Event, error) {
+// ListEvents returns the tenant's events in creation order. Archived events
+// are left out unless includeArchived asks for them, and the list is capped at
+// MaxListEvents.
+func (s *TenantService) ListEvents(ctx context.Context, tenantPublicID string, includeArchived bool) ([]domain.Event, error) {
 	tenant, err := s.resolveTenant(ctx, tenantPublicID)
 	if err != nil {
 		return nil, err
 	}
 
-	return s.tenantRepository.ListEventsByTenantID(ctx, tenant.ID())
+	filter := repository.ListEventsFilter{IncludeArchived: includeArchived, Limit: MaxListEvents}
+
+	return s.tenantRepository.ListEventsByTenantID(ctx, tenant.ID(), filter)
 }

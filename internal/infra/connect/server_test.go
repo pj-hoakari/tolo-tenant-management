@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http/httptest"
 	"regexp"
+	"slices"
 	"testing"
 	"time"
 
@@ -455,20 +456,31 @@ func TestListEventsOverTransport(t *testing.T) {
 	second := fixture.createEvent(t, token, tenant.PublicID(), "Festival 2")
 	fixture.createEvent(t, otherToken, other.PublicID(), "Other Festival")
 
-	req := connectrpc.NewRequest(&tenantv1.ListEventsRequest{TenantId: tenant.PublicID()})
-	req.Header().Set("Authorization", token)
+	list := func(t *testing.T, includeArchived bool) []*tenantv1.Event {
+		t.Helper()
 
-	res, err := fixture.client.ListEvents(context.Background(), req)
-	if err != nil {
-		t.Fatalf("ListEvents() error = %v", err)
+		req := connectrpc.NewRequest(&tenantv1.ListEventsRequest{
+			TenantId:        tenant.PublicID(),
+			IncludeArchived: includeArchived,
+		})
+		req.Header().Set("Authorization", token)
+
+		res, err := fixture.client.ListEvents(context.Background(), req)
+		if err != nil {
+			t.Fatalf("ListEvents(include_archived=%t) error = %v", includeArchived, err)
+		}
+
+		return res.Msg.GetEvents()
 	}
+
+	events := list(t, false)
 
 	want := []string{first.GetEventId(), second.GetEventId()}
-	if got := res.Msg.GetEvents(); len(got) != len(want) {
-		t.Fatalf("event count = %d, want %d", len(got), len(want))
+	if len(events) != len(want) {
+		t.Fatalf("event count = %d, want %d", len(events), len(want))
 	}
 
-	for i, event := range res.Msg.GetEvents() {
+	for i, event := range events {
 		if got := event.GetEventId(); got != want[i] {
 			t.Errorf("Events[%d].EventId = %q, want %q", i, got, want[i])
 		}
@@ -478,13 +490,49 @@ func TestListEventsOverTransport(t *testing.T) {
 		}
 	}
 
+	// Archiving the second event takes it out of the default listing; only
+	// include_archived brings it back.
+	archive := connectrpc.NewRequest(&tenantv1.TransitionEventStatusRequest{
+		EventId: second.GetEventId(),
+		To:      tenantv1.EventStatus_EVENT_STATUS_ARCHIVED,
+	})
+	archive.Header().Set("Authorization", token)
+
+	if _, err := fixture.client.TransitionEventStatus(context.Background(), archive); err != nil {
+		t.Fatalf("TransitionEventStatus(archived) error = %v", err)
+	}
+
+	t.Run("omits archived events by default", func(t *testing.T) {
+		want := []string{first.GetEventId()}
+		if got := eventIDs(list(t, false)); !slices.Equal(got, want) {
+			t.Errorf("ListEvents() = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("includes archived events when asked", func(t *testing.T) {
+		want := []string{first.GetEventId(), second.GetEventId()}
+		if got := eventIDs(list(t, true)); !slices.Equal(got, want) {
+			t.Errorf("ListEvents(include_archived) = %v, want %v", got, want)
+		}
+	})
+
 	foreign := connectrpc.NewRequest(&tenantv1.ListEventsRequest{TenantId: other.PublicID()})
 	foreign.Header().Set("Authorization", token)
 
-	_, err = fixture.client.ListEvents(context.Background(), foreign)
+	_, err := fixture.client.ListEvents(context.Background(), foreign)
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodePermissionDenied; got != want {
 		t.Fatalf("ListEvents(foreign tenant) error code = %v, want %v", got, want)
 	}
+}
+
+// eventIDs projects a listing onto the public IDs its order is asserted on.
+func eventIDs(events []*tenantv1.Event) []string {
+	ids := make([]string, 0, len(events))
+	for _, event := range events {
+		ids = append(ids, event.GetEventId())
+	}
+
+	return ids
 }
 
 func TestGetEventOverTransport(t *testing.T) {

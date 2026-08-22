@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"strings"
 	"sync"
@@ -167,23 +168,46 @@ func TestAssignEventType(t *testing.T) {
 func TestListEvents(t *testing.T) {
 	t.Parallel()
 
-	service, tenant, events := newReadService(t)
-
-	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
-
-	response, err := service.ListEvents(ctx, connectrpc.NewRequest(&tenantv1.ListEventsRequest{TenantId: tenant.PublicID()}))
-	if err != nil {
-		t.Fatalf("ListEvents() error = %v", err)
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, false)
+	events := []domain.Event{
+		domain.NewEvent("event-1", "event-public-id-1", tenant.ID(), tenant.PublicID(), "Festival 1", domain.EventTypeShortTerm, domain.EventStatusDraft),
+		domain.NewEvent("event-2", "event-public-id-2", tenant.ID(), tenant.PublicID(), "Festival 2", domain.EventTypeLongTerm, domain.EventStatusDraft),
 	}
 
-	if got, want := len(response.Msg.GetEvents()), len(events); got != want {
-		t.Fatalf("event count = %d, want %d", got, want)
-	}
+	for _, includeArchived := range []bool{false, true} {
+		t.Run(fmt.Sprintf("include archived = %t", includeArchived), func(t *testing.T) {
+			t.Parallel()
 
-	for i, event := range events {
-		if got, want := response.Msg.GetEvents()[i].GetEventId(), event.PublicID(); got != want {
-			t.Errorf("Events[%d].EventId = %q, want %q", i, got, want)
-		}
+			// include_archived comes straight off the request, and the listing
+			// carries the cap the spec sets.
+			wantFilter := repository.ListEventsFilter{IncludeArchived: includeArchived, Limit: application.MaxListEvents}
+
+			ctrl := gomock.NewController(t)
+			repo := NewMockTenantRepository(ctrl)
+			repo.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(tenant, nil)
+			repo.EXPECT().ListEventsByTenantID(gomock.Any(), tenant.ID(), wantFilter).Return(events, nil)
+			service := NewService(application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{}, permissionStub{allowed: true}))
+
+			ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
+
+			response, err := service.ListEvents(ctx, connectrpc.NewRequest(&tenantv1.ListEventsRequest{
+				TenantId:        tenant.PublicID(),
+				IncludeArchived: includeArchived,
+			}))
+			if err != nil {
+				t.Fatalf("ListEvents() error = %v", err)
+			}
+
+			if got, want := len(response.Msg.GetEvents()), len(events); got != want {
+				t.Fatalf("event count = %d, want %d", got, want)
+			}
+
+			for i, event := range events {
+				if got, want := response.Msg.GetEvents()[i].GetEventId(), event.PublicID(); got != want {
+					t.Errorf("Events[%d].EventId = %q, want %q", i, got, want)
+				}
+			}
+		})
 	}
 }
 
@@ -303,11 +327,11 @@ func newReadService(t *testing.T) (*Service, domain.Tenant, []domain.Event) {
 	}
 
 	ctrl := gomock.NewController(t)
-	repository := NewMockTenantRepository(ctrl)
-	repository.EXPECT().FindEventByPublicID(gomock.Any(), events[0].PublicID()).Return(events[0], nil).AnyTimes()
-	repository.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(tenant, nil).AnyTimes()
-	repository.EXPECT().ListEventsByTenantID(gomock.Any(), tenant.ID()).Return(events, nil).AnyTimes()
-	repository.EXPECT().UpdateEvent(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	repo := NewMockTenantRepository(ctrl)
+	repo.EXPECT().FindEventByPublicID(gomock.Any(), events[0].PublicID()).Return(events[0], nil).AnyTimes()
+	repo.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(tenant, nil).AnyTimes()
+	repo.EXPECT().ListEventsByTenantID(gomock.Any(), tenant.ID(), gomock.Any()).Return(events, nil).AnyTimes()
+	repo.EXPECT().UpdateEvent(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
-	return NewService(application.NewTenantService(repository, passthroughTransactor{}, &membershipRecorder{}, permissionStub{allowed: true})), tenant, events
+	return NewService(application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{}, permissionStub{allowed: true})), tenant, events
 }

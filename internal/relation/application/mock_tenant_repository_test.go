@@ -15,6 +15,7 @@ import (
 	time "time"
 
 	domain "github.com/pj-hoakari/tolo-tenant-management/internal/domain"
+	repository "github.com/pj-hoakari/tolo-tenant-management/internal/repository"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -199,18 +200,18 @@ func (mr *MockTenantRepositoryMockRecorder) FindTenantByPublicIDForUpdate(arg0, 
 }
 
 // ListEventsByTenantID mocks base method.
-func (m *MockTenantRepository) ListEventsByTenantID(arg0 context.Context, arg1 string) ([]domain.Event, error) {
+func (m *MockTenantRepository) ListEventsByTenantID(ctx context.Context, tenantID string, filter repository.ListEventsFilter) ([]domain.Event, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListEventsByTenantID", arg0, arg1)
+	ret := m.ctrl.Call(m, "ListEventsByTenantID", ctx, tenantID, filter)
 	ret0, _ := ret[0].([]domain.Event)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListEventsByTenantID indicates an expected call of ListEventsByTenantID.
-func (mr *MockTenantRepositoryMockRecorder) ListEventsByTenantID(arg0, arg1 any) *gomock.Call {
+func (mr *MockTenantRepositoryMockRecorder) ListEventsByTenantID(ctx, tenantID, filter any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListEventsByTenantID", reflect.TypeOf((*MockTenantRepository)(nil).ListEventsByTenantID), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListEventsByTenantID", reflect.TypeOf((*MockTenantRepository)(nil).ListEventsByTenantID), ctx, tenantID, filter)
 }
 
 // MarkTenantOwned mocks base method.

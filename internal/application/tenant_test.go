@@ -5,6 +5,7 @@ package application_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -362,21 +363,40 @@ func TestListEvents(t *testing.T) {
 		domain.NewEvent("event-1", "event-public-id-1", tenant.ID(), tenant.PublicID(), "Festival 1", domain.EventTypeShortTerm, domain.EventStatusDraft),
 		domain.NewEvent("event-2", "event-public-id-2", tenant.ID(), tenant.PublicID(), "Festival 2", domain.EventTypeLongTerm, domain.EventStatusDraft),
 	}
-	ctrl := gomock.NewController(t)
-	repository := NewMockTenantRepository(ctrl)
-	repository.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(tenant, nil)
-	repository.EXPECT().ListEventsByTenantID(gomock.Any(), tenant.ID()).Return(events, nil)
-	service := newService(repository)
 
-	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
+	for _, includeArchived := range []bool{false, true} {
+		t.Run(fmt.Sprintf("include archived = %t", includeArchived), func(t *testing.T) {
+			t.Parallel()
 
-	got, err := service.ListEvents(ctx, tenant.PublicID())
-	if err != nil {
-		t.Fatalf("ListEvents() error = %v", err)
+			// The caller's flag reaches the repository unchanged, and the
+			// listing is always capped at the limit the spec sets.
+			wantFilter := repository.ListEventsFilter{IncludeArchived: includeArchived, Limit: application.MaxListEvents}
+
+			ctrl := gomock.NewController(t)
+			repo := NewMockTenantRepository(ctrl)
+			repo.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(tenant, nil)
+			repo.EXPECT().ListEventsByTenantID(gomock.Any(), tenant.ID(), wantFilter).Return(events, nil)
+			service := newService(repo)
+
+			ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
+
+			got, err := service.ListEvents(ctx, tenant.PublicID(), includeArchived)
+			if err != nil {
+				t.Fatalf("ListEvents() error = %v", err)
+			}
+
+			if want := events; !slices.Equal(got, want) {
+				t.Errorf("ListEvents() = %#v, want %#v", got, want)
+			}
+		})
 	}
+}
 
-	if got, want := got, events; !slices.Equal(got, want) {
-		t.Errorf("ListEvents() = %#v, want %#v", got, want)
+func TestListEventsCapMatchesTheSpec(t *testing.T) {
+	t.Parallel()
+
+	if got, want := application.MaxListEvents, 1000; got != want {
+		t.Errorf("MaxListEvents = %d, want %d", got, want)
 	}
 }
 
@@ -388,7 +408,7 @@ func TestListEventsRejectsMismatchedRequestTenant(t *testing.T) {
 
 	ctx := tenantctx.WithTenantPublicID(context.Background(), "tenant-public-id")
 
-	_, err := service.ListEvents(ctx, "other-tenant-public-id")
+	_, err := service.ListEvents(ctx, "other-tenant-public-id", false)
 	if !errors.Is(err, tenantctx.ErrMismatch) {
 		t.Fatalf("ListEvents() error = %v, want %v", err, tenantctx.ErrMismatch)
 	}

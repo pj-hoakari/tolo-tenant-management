@@ -144,6 +144,28 @@ JWKS は `INTERNAL_JWKS_URL` から取得する。未設定時は Gateway コン
 所属が存在しない場合、または現在のロールがオーナーでなく `tenant.write` を発行できない場合は `permission_denied` を返す。
 `pending_owner` のテナントへの操作は `failed_precondition`、存在しないテナントは `not_found` で拒否する。
 
+### イベントの状態遷移と一覧
+
+`TransitionEventStatus` が許容する状態遷移は次の 8 つだけで、自状態への遷移を含むそれ以外はすべて `failed_precondition` で拒否する（`docs/tenant_management_spec.md` の「イベント」）。
+
+| from → to | 意味 |
+|---|---|
+| draft → open | イベントを公開する |
+| draft → archived | 作成した draft を破棄する |
+| open → locked | 受付を締め切る |
+| locked → open | 締め切りを解除する |
+| locked → closed | イベントを終了する |
+| closed → open | 終了したイベントを再開する |
+| closed → archived | 終了したイベントを論理削除する |
+| archived → closed | 論理削除を取り消す |
+
+draft はそのままアーカイブでき、これは作成した draft を破棄する経路である。
+アーカイブからの復元は `archived → closed` のみで、draft へは戻らない。
+
+`ListEvents` はテナント配下のイベントを作成順（内部主キーの UUIDv7 順）に返す。
+アーカイブ済みイベントは既定では返さず、`include_archived` を指定したときだけ含める。
+返却件数の上限は 1000 件（`application.MaxListEvents`）で、ページングは設けない。
+
 ### 関係参照（所属とロール）
 
 所属とロールの真実の源は `internal/relation` 配下に置き、テナント側（`internal/domain`、`internal/application`）とはパッケージを分ける。
