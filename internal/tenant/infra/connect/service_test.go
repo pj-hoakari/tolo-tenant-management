@@ -15,10 +15,10 @@ import (
 
 	connectrpc "connectrpc.com/connect"
 	tenantv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1"
-	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
-	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/logging"
-	"github.com/pj-hoakari/tolo-tenant-management/internal/repository"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/application"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/domain"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/repository"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/mock/gomock"

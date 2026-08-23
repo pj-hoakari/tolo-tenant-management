@@ -13,9 +13,9 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"
 
-	infradb "github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/repository"
+	infradb "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
 

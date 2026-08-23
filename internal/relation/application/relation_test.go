@@ -1,5 +1,5 @@
 //go:generate go tool mockgen -source=../repository/membership.go -destination=mock_membership_repository_test.go -package=application_test
-//go:generate go tool mockgen -source=../../repository/tenant.go -destination=mock_tenant_repository_test.go -package=application_test
+//go:generate go tool mockgen -source=../../tenant/repository/tenant.go -destination=mock_tenant_repository_test.go -package=application_test
 
 package application_test
 
@@ -10,11 +10,11 @@ import (
 
 	"go.uber.org/mock/gomock"
 
-	tenantdomain "github.com/pj-hoakari/tolo-tenant-management/internal/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/repository"
-	tenantrepository "github.com/pj-hoakari/tolo-tenant-management/internal/repository"
+	tenantdomain "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/domain"
+	tenantrepository "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/repository"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
 

@@ -123,7 +123,7 @@ go run ./cmd/jwtgen -token-use service -origin-sub user-1 -scope events.read -te
 
 Service Gateway が発行した内部 JWT を Authorization ヘッダーで受け付ける。
 サービス側では ES256 の署名、`kid`、`iss`、`aud`、`exp`／`nbf`、`token_use`、scope を検証する。
-`internal/jwks` の JWKS validator を、`internal/infra/connect` の認可 verifier とテナント ID interceptor で共有する。
+`internal/jwks` の JWKS validator を、`internal/tenant/infra/connect` の認可 verifier とテナント ID interceptor で共有する。
 
 ```text
 Authorization: Bearer <Service Gateway 発行の内部 JWT>
@@ -167,7 +167,7 @@ proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16
 ### RPC ごとの認可
 
 どちらのサービスも proto の policy annotation（`authz.v1.auth_policy`）で RPC ごとの公開面と要求 scope を宣言する。
-生成された authz verifier は `internal/infra/connect` の `AuthorizeCall` を共有し、procedure ごとに定めた `token_use` と宣言された scope を検証する。
+生成された authz verifier は `internal/tenant/infra/connect` の `AuthorizeCall` を共有し、procedure ごとに定めた `token_use` と宣言された scope を検証する。
 
 | RPC | サービス | 公開面 | 要求する `token_use` | 要求 scope |
 |---|---|---|---|---|
@@ -265,13 +265,13 @@ draft はそのままアーカイブでき、これは作成した draft を破�
 
 ### パッケージ境界とポート
 
-所属とロールの真実の源は `internal/relation` 配下に置き、テナント側（`internal/domain`、`internal/application`）とはパッケージを分ける。
+所属とロールの真実の源は `internal/relation` 配下に置き、テナント側（`internal/tenant/domain`、`internal/tenant/application`）とはパッケージを分ける。
 テナント側は `internal/relation` を直接参照せず、自身が宣言する `application.MembershipWriter` と `application.CurrentPermissionChecker` の 2 つのポートを通じてのみ関係参照側に到達する。
 `MembershipWriter` は `ClaimTenantOwnership` のオーナー所属の書き込みに、`CurrentPermissionChecker` は管理系書き込みの現在権限確認に使う。
 前者は `internal/relation/infra/db` の所属リポジトリが、後者は `internal/relation/application` の `Authorizer` が実装する。
 所属リポジトリはテナント側と同じ接続プールと context 上のトランザクションを共有するため、オーナー所属と `owned` への遷移は同時に確定する。
 関係参照側は、公開 ID の解決と書き込み可否を決めるテナントの状態（`pending_owner`、アーカイブ済み）の判定のために、テナント側のリポジトリを読み取り専用で参照する。
-読み取りに加えて、`internal/infra/db` のトランザクション実行器と `internal/infra/connect` の検証器の中核および interceptor もテナント側のものを再利用する。
+読み取りに加えて、`internal/tenant/infra/db` のトランザクション実行器と `internal/tenant/infra/connect` の検証器の中核および interceptor もテナント側のものを再利用する。
 
 ### スキーマとロール
 

@@ -11,15 +11,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
-	connectinfra "github.com/pj-hoakari/tolo-tenant-management/internal/infra/connect"
-	dbinfra "github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/jwks"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/logging"
 	relationapplication "github.com/pj-hoakari/tolo-tenant-management/internal/relation/application"
 	relationconnect "github.com/pj-hoakari/tolo-tenant-management/internal/relation/infra/connect"
 	relationdb "github.com/pj-hoakari/tolo-tenant-management/internal/relation/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/telemetry"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/application"
+	connectinfra "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/infra/connect"
+	dbinfra "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/infra/db"
 )
 
 const (

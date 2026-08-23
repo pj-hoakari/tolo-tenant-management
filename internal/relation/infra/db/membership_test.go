@@ -16,10 +16,10 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 
-	tenantdomain "github.com/pj-hoakari/tolo-tenant-management/internal/domain"
-	infradb "github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/repository"
+	tenantdomain "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/domain"
+	infradb "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
 

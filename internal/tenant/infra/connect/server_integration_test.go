@@ -13,9 +13,9 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
-	"github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/jwks"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/jwtgen"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/infra/db"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -143,7 +143,7 @@ func integrationMigrationPaths() []string {
 		panic("locate integration test source file")
 	}
 
-	paths, err := filepath.Glob(filepath.Join(filepath.Dir(filename), "..", "..", "..", "migrations", "*.up.sql"))
+	paths, err := filepath.Glob(filepath.Join(filepath.Dir(filename), "..", "..", "..", "..", "migrations", "*.up.sql"))
 	if err != nil || len(paths) == 0 {
 		panic("locate migration files")
 	}
