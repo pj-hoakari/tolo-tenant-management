@@ -19,8 +19,9 @@ import (
 // (tenant_management_spec.md「エラー」). The transport logs the cause
 // server-side and answers the client with a fixed message.
 var (
-	errCreateEventNoRow = errors.New("create event: no row inserted")
-	errUpdateEventNoRow = errors.New("update event: no row updated")
+	errCreateEventNoRow               = errors.New("create event: no row inserted")
+	errUpdateEventNoRow               = errors.New("update event: no row updated")
+	errUpdateObservationSettingsNoRow = errors.New("update observation settings: no row updated")
 )
 
 func (r *PostgresTenantRepository) CreateEvent(ctx context.Context, event domain.Event) error {
@@ -202,7 +203,7 @@ func (r *PostgresTenantRepository) UpdateObservationSettings(ctx context.Context
 		return repository.ErrTenantArchived
 	}
 
-	return fmt.Errorf("update observation settings of event %q: no row updated", eventID)
+	return errUpdateObservationSettingsNoRow
 }
 
 type observationSettingsRow struct {
