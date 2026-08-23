@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -174,4 +175,139 @@ func staticJWKSClient(t *testing.T, document jwtgen.JWKS) *http.Client {
 	return &http.Client{Transport: roundTripperFunc(func(_ *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body)), Header: make(http.Header)}, nil
 	})}
+}
+
+// TestJWKSValidatorRateLimitsUnknownKeyIDRefresh covers the refresh rate limit
+// an unknown kid is subject to (service_gateway.md「署名鍵」): within the
+// cooldown the JWKS is not fetched again, and once it has passed the newly
+// published key is picked up.
+func TestJWKSValidatorRateLimitsUnknownKeyIDRefresh(t *testing.T) {
+	t.Parallel()
+
+	current := generateWithKeyID(t, "key-1")
+	rotated := generateWithKeyID(t, "key-2")
+
+	jwks := &countingJWKS{document: current.JWKS}
+	server := httptest.NewServer(jwks)
+
+	t.Cleanup(server.Close)
+
+	clock := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	validator := newJWKSValidator(server.URL, DefaultInternalJWTIssuer, "tenant-management", server.Client())
+	validator.now = func() time.Time { return clock }
+
+	if _, err := validator.Claims(context.Background(), "Bearer "+current.Token); err != nil {
+		t.Fatalf("Claims() error = %v", err)
+	}
+
+	if got, want := jwks.fetches(), 1; got != want {
+		t.Fatalf("JWKS fetches after the first token = %d, want %d", got, want)
+	}
+
+	for range 3 {
+		if _, err := validator.Claims(context.Background(), "Bearer "+rotated.Token); err == nil {
+			t.Fatal("Claims() error = nil, want an error while the unknown kid is rate limited")
+		}
+	}
+
+	if got, want := jwks.fetches(), 1; got != want {
+		t.Errorf("JWKS fetches within the cooldown = %d, want %d", got, want)
+	}
+
+	jwks.serve(jwtgen.JWKS{Keys: append(append([]jwtgen.JWK{}, current.JWKS.Keys...), rotated.JWKS.Keys...)})
+
+	clock = clock.Add(jwksRefreshCooldown)
+
+	if _, err := validator.Claims(context.Background(), "Bearer "+rotated.Token); err != nil {
+		t.Fatalf("Claims() after the cooldown error = %v", err)
+	}
+
+	if got, want := jwks.fetches(), 2; got != want {
+		t.Errorf("JWKS fetches after the cooldown = %d, want %d", got, want)
+	}
+}
+
+// TestJWKSValidatorRefreshesExpiredCacheDuringCooldown pins the precedence of
+// the cache TTL over the refresh cooldown: an expired cache is refreshed even
+// when the last refresh is more recent than the cooldown.
+func TestJWKSValidatorRefreshesExpiredCacheDuringCooldown(t *testing.T) {
+	t.Parallel()
+
+	current := generateWithKeyID(t, "key-1")
+
+	jwks := &countingJWKS{document: current.JWKS}
+	server := httptest.NewServer(jwks)
+
+	t.Cleanup(server.Close)
+
+	clock := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	validator := newJWKSValidator(server.URL, DefaultInternalJWTIssuer, "tenant-management", server.Client())
+	validator.now = func() time.Time { return clock }
+
+	if _, err := validator.Claims(context.Background(), "Bearer "+current.Token); err != nil {
+		t.Fatalf("Claims() error = %v", err)
+	}
+
+	// A successful refresh always sets the TTL beyond the cooldown, so the two
+	// never overlap on their own. The last refresh is moved forward by hand to
+	// reach the state where the cache has expired but the cooldown is running.
+	clock = clock.Add(jwksCacheTTL)
+
+	validator.mu.Lock()
+	validator.lastRefresh = clock
+	validator.mu.Unlock()
+
+	if _, err := validator.Claims(context.Background(), "Bearer "+current.Token); err != nil {
+		t.Fatalf("Claims() after the cache expired error = %v", err)
+	}
+
+	if got, want := jwks.fetches(), 2; got != want {
+		t.Errorf("JWKS fetches after the cache expired = %d, want %d", got, want)
+	}
+}
+
+// countingJWKS serves a swappable JWKS document and counts the fetches.
+type countingJWKS struct {
+	mu       sync.Mutex
+	document jwtgen.JWKS
+	requests int
+}
+
+func (s *countingJWKS) ServeHTTP(writer http.ResponseWriter, _ *http.Request) {
+	s.mu.Lock()
+	document := s.document
+	s.requests++
+	s.mu.Unlock()
+
+	writer.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(writer).Encode(document)
+}
+
+func (s *countingJWKS) serve(document jwtgen.JWKS) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.document = document
+}
+
+func (s *countingJWKS) fetches() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.requests
+}
+
+// generateWithKeyID mints a tenant_access token signed by a fresh key.
+func generateWithKeyID(t *testing.T, keyID string) jwtgen.Output {
+	t.Helper()
+
+	generated, err := jwtgen.Generate(jwtgen.Config{
+		Issuer: DefaultInternalJWTIssuer, Audience: "tenant-management", TokenUse: "tenant_access",
+		TenantPublicID: "0123456789abcdef", Scope: "events.read", KeyID: keyID, TTL: time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+
+	return generated
 }

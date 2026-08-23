@@ -131,6 +131,7 @@ Authorization: Bearer <Service Gateway 発行の内部 JWT>
 
 JWKS の取得先は `INTERNAL_JWKS_URL`、`iss`／`aud` の期待値は `INTERNAL_JWT_ISSUER` と `INTERNAL_JWT_AUDIENCE` で設定する（既定値は「環境変数」）。
 取得した鍵は 5 分間キャッシュし、未知の `kid` を受信した場合は直ちに再取得する。
+再取得には 30 秒のレート制限を設け、直近の再取得から 30 秒未満で受信した未知の `kid` は再取得せずに検証を失敗させる（キャッシュの TTL 切れはレート制限に関わらず再取得する）。
 
 クレーム構造の正本は `docs/internal_jwt.md` である。
 すべての内部 JWT に `sub`、`client_id`、`jti`、`iat`／`nbf`／`exp`、`token_use`、`txn` を要求し、`token_use` ごとに次を追加で要求する。
