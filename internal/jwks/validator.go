@@ -33,6 +33,21 @@ const jwksCacheTTL = 5 * time.Minute
 // service will never learn about would fetch the JWKS on every request.
 const jwksRefreshCooldown = 30 * time.Second
 
+// jwksFetchTimeout bounds one attempt of a JWKS fetch. The Service Gateway is
+// on the internal network, so an attempt that takes longer is a failure a
+// later attempt may recover from rather than a slow success worth waiting for.
+const jwksFetchTimeout = 5 * time.Second
+
+// jwksFailureCooldown holds the JWKS fetch off after a refresh has failed
+// every attempt. Without it a gateway that is down would be fetched from once
+// per request, and every request would wait out the retries first.
+const jwksFailureCooldown = 5 * time.Second
+
+// jwksRefreshRetryBackoff is the wait before each retry within one refresh, so
+// a Service Gateway that is briefly unreachable does not fail verification
+// outright. Its length is how many retries follow the first attempt.
+var jwksRefreshRetryBackoff = []time.Duration{100 * time.Millisecond, 200 * time.Millisecond}
+
 // JWKSValidator validates internal JWTs against the Service Gateway's published keys.
 // One instance is shared by authorization and tenant ID extraction.
 type JWKSValidator struct {
@@ -46,9 +61,16 @@ type JWKSValidator struct {
 	// lastRefresh is the time of the last successful refresh. A failed refresh
 	// leaves it alone so the next request may retry at once.
 	lastRefresh time.Time
+	// lastFailure is the time of the last refresh that failed every attempt,
+	// and lastError the error it failed with. A successful refresh resets both.
+	lastFailure time.Time
+	lastError   error
 	// now is time.Now in production and is replaced in tests to control the
 	// cache TTL and the refresh cooldown.
 	now func() time.Time
+	// sleep waits out the retry backoff and is replaced in tests so the
+	// retries cost no wall-clock time.
+	sleep func(context.Context, time.Duration) error
 }
 
 // InternalJWTClaims is the claim set of an internal JWT (internal_jwt.md).
@@ -107,7 +129,10 @@ func newJWKSValidator(url, issuer, audience string, client *http.Client) *JWKSVa
 		keys:        make(map[string]*ecdsa.PublicKey),
 		expiry:      time.Time{},
 		lastRefresh: time.Time{},
+		lastFailure: time.Time{},
+		lastError:   nil,
 		now:         time.Now,
+		sleep:       sleepContext,
 	}
 }
 
@@ -223,9 +248,21 @@ func (v *JWKSValidator) key(ctx context.Context, kid string) (*ecdsa.PublicKey, 
 		}
 	}
 
+	// A refresh that failed every attempt holds the fetch off for a moment, so
+	// a Service Gateway that is down is not fetched from once per request.
+	if !v.lastFailure.IsZero() && now.Sub(v.lastFailure) < jwksFailureCooldown {
+		return nil, fmt.Errorf("JWKS fetch is in its failure cooldown: %w", v.lastError)
+	}
+
 	if err := v.refresh(ctx); err != nil {
+		v.lastFailure = now
+		v.lastError = err
+
 		return nil, err
 	}
+
+	v.lastFailure = time.Time{}
+	v.lastError = nil
 
 	key, ok := v.keys[kid]
 	if !ok {
@@ -235,15 +272,50 @@ func (v *JWKSValidator) key(ctx context.Context, kid string) (*ecdsa.PublicKey, 
 	return key, nil
 }
 
+// refresh replaces the cached keys, retrying the attempts a transient failure
+// may recover from. A failure the retries cannot help - a status other than 429
+// and 5xx, a malformed document - is returned at once.
 func (v *JWKSValidator) refresh(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.url, nil)
+	var err error
+
+	for attempt := range len(jwksRefreshRetryBackoff) + 1 {
+		if attempt > 0 {
+			if waited := v.sleep(ctx, jwksRefreshRetryBackoff[attempt-1]); waited != nil {
+				return fmt.Errorf("fetch JWKS: %w", waited)
+			}
+		}
+
+		var retryable bool
+
+		retryable, err = v.refreshOnce(ctx)
+		if err == nil {
+			return nil
+		}
+
+		// A cancelled or expired parent context fails every further attempt
+		// the same way, so it ends the refresh with the error it produced.
+		if !retryable || ctx.Err() != nil {
+			return err
+		}
+	}
+
+	return err
+}
+
+// refreshOnce runs one JWKS fetch and reports whether its failure is one a
+// later attempt may recover from.
+func (v *JWKSValidator) refreshOnce(ctx context.Context) (bool, error) {
+	attemptCtx, cancel := context.WithTimeout(ctx, jwksFetchTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(attemptCtx, http.MethodGet, v.url, nil)
 	if err != nil {
-		return fmt.Errorf("create JWKS request: %w", err)
+		return false, fmt.Errorf("create JWKS request: %w", err)
 	}
 
 	response, err := v.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("fetch JWKS: %w", err)
+		return true, fmt.Errorf("fetch JWKS: %w", err)
 	}
 	defer func() {
 		if err := response.Body.Close(); err != nil {
@@ -252,19 +324,19 @@ func (v *JWKSValidator) refresh(ctx context.Context) error {
 	}()
 
 	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("fetch JWKS: unexpected status %s", response.Status)
+		return retryableStatus(response.StatusCode), fmt.Errorf("fetch JWKS: unexpected status %s", response.Status)
 	}
 
 	document := jwksDocument{Keys: nil}
 	if err := json.NewDecoder(response.Body).Decode(&document); err != nil {
-		return fmt.Errorf("decode JWKS: %w", err)
+		return false, fmt.Errorf("decode JWKS: %w", err)
 	}
 
 	keys := make(map[string]*ecdsa.PublicKey, len(document.Keys))
 	for _, value := range document.Keys {
 		key, err := publicKeyFromJWK(value)
 		if err != nil {
-			return err
+			return false, err
 		}
 
 		keys[value.KeyID] = key
@@ -275,7 +347,26 @@ func (v *JWKSValidator) refresh(ctx context.Context) error {
 	v.expiry = refreshed.Add(jwksCacheTTL)
 	v.lastRefresh = refreshed
 
-	return nil
+	return false, nil
+}
+
+// retryableStatus reports the statuses that say the Service Gateway could not
+// answer this time rather than that the request itself is wrong.
+func retryableStatus(status int) bool {
+	return status == http.StatusTooManyRequests || status >= http.StatusInternalServerError
+}
+
+// sleepContext waits for the duration and gives up as soon as ctx is done.
+func sleepContext(ctx context.Context, duration time.Duration) error {
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func publicKeyFromJWK(value jwk) (*ecdsa.PublicKey, error) {

@@ -311,3 +311,286 @@ func generateWithKeyID(t *testing.T, keyID string) jwtgen.Output {
 
 	return generated
 }
+
+// TestJWKSValidatorRetriesTransientFetchFailures covers the retries one
+// refresh makes: a Service Gateway that answers 5xx twice before it recovers
+// still yields a valid token rather than failing verification.
+func TestJWKSValidatorRetriesTransientFetchFailures(t *testing.T) {
+	t.Parallel()
+
+	current := generateWithKeyID(t, "key-1")
+
+	jwks := &scriptedJWKS{
+		document: current.JWKS,
+		replies:  []jwksReply{{status: http.StatusServiceUnavailable}, {status: http.StatusServiceUnavailable}},
+	}
+	server := httptest.NewServer(jwks)
+
+	t.Cleanup(server.Close)
+
+	validator := newJWKSValidator(server.URL, DefaultInternalJWTIssuer, "tenant-management", server.Client())
+
+	sleeps := 0
+	validator.sleep = countingSleep(&sleeps)
+
+	if _, err := validator.Claims(context.Background(), "Bearer "+current.Token); err != nil {
+		t.Fatalf("Claims() error = %v", err)
+	}
+
+	if got, want := jwks.fetches(), 3; got != want {
+		t.Errorf("JWKS fetches = %d, want %d", got, want)
+	}
+
+	if got, want := sleeps, len(jwksRefreshRetryBackoff); got != want {
+		t.Errorf("retry waits = %d, want %d", got, want)
+	}
+}
+
+// TestJWKSValidatorCoolsDownAfterAFailedRefresh covers the cooldown a refresh
+// that failed every attempt starts: within it the JWKS is not fetched again,
+// and once it has passed the fetch is retried.
+func TestJWKSValidatorCoolsDownAfterAFailedRefresh(t *testing.T) {
+	t.Parallel()
+
+	current := generateWithKeyID(t, "key-1")
+
+	jwks := &scriptedJWKS{document: current.JWKS, rest: jwksReply{status: http.StatusServiceUnavailable}}
+	server := httptest.NewServer(jwks)
+
+	t.Cleanup(server.Close)
+
+	clock := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	validator := newJWKSValidator(server.URL, DefaultInternalJWTIssuer, "tenant-management", server.Client())
+	validator.now = func() time.Time { return clock }
+
+	sleeps := 0
+	validator.sleep = countingSleep(&sleeps)
+
+	if _, err := validator.Claims(context.Background(), "Bearer "+current.Token); err == nil {
+		t.Fatal("Claims() error = nil, want an error once every attempt has failed")
+	}
+
+	attempts := len(jwksRefreshRetryBackoff) + 1
+	if got, want := jwks.fetches(), attempts; got != want {
+		t.Fatalf("JWKS fetches after the failed refresh = %d, want %d", got, want)
+	}
+
+	clock = clock.Add(jwksFailureCooldown - time.Second)
+
+	if _, err := validator.Claims(context.Background(), "Bearer "+current.Token); err == nil {
+		t.Fatal("Claims() error = nil, want an error while the failure cooldown is running")
+	}
+
+	if got, want := jwks.fetches(), attempts; got != want {
+		t.Errorf("JWKS fetches within the failure cooldown = %d, want %d", got, want)
+	}
+
+	jwks.serveRest(jwksReply{status: http.StatusOK})
+
+	clock = clock.Add(time.Second)
+
+	if _, err := validator.Claims(context.Background(), "Bearer "+current.Token); err != nil {
+		t.Fatalf("Claims() after the failure cooldown error = %v", err)
+	}
+
+	if got, want := jwks.fetches(), attempts+1; got != want {
+		t.Errorf("JWKS fetches after the failure cooldown = %d, want %d", got, want)
+	}
+}
+
+// TestJWKSValidatorDoesNotRetryPermanentFailures pins which failures the
+// retries are for: a response a later attempt would only repeat is returned on
+// the first attempt.
+func TestJWKSValidatorDoesNotRetryPermanentFailures(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		reply jwksReply
+	}{
+		{name: "unexpected status", reply: jwksReply{status: http.StatusNotFound}},
+		{name: "malformed document", reply: jwksReply{status: http.StatusOK, body: `{"keys":`}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			current := generateWithKeyID(t, "key-1")
+
+			jwks := &scriptedJWKS{document: current.JWKS, rest: tt.reply}
+			server := httptest.NewServer(jwks)
+
+			t.Cleanup(server.Close)
+
+			validator := newJWKSValidator(server.URL, DefaultInternalJWTIssuer, "tenant-management", server.Client())
+
+			sleeps := 0
+			validator.sleep = countingSleep(&sleeps)
+
+			if _, err := validator.Claims(context.Background(), "Bearer "+current.Token); err == nil {
+				t.Fatal("Claims() error = nil, want an error")
+			}
+
+			if got, want := jwks.fetches(), 1; got != want {
+				t.Errorf("JWKS fetches = %d, want %d", got, want)
+			}
+
+			if got, want := sleeps, 0; got != want {
+				t.Errorf("retry waits = %d, want %d", got, want)
+			}
+		})
+	}
+}
+
+// TestJWKSValidatorDoesNotRetryACancelledContext covers the parent context:
+// once it is done the retries are pointless, so the first failure ends the
+// refresh.
+func TestJWKSValidatorDoesNotRetryACancelledContext(t *testing.T) {
+	t.Parallel()
+
+	current := generateWithKeyID(t, "key-1")
+
+	jwks := &scriptedJWKS{document: current.JWKS}
+	server := httptest.NewServer(jwks)
+
+	t.Cleanup(server.Close)
+
+	validator := newJWKSValidator(server.URL, DefaultInternalJWTIssuer, "tenant-management", server.Client())
+
+	sleeps := 0
+	validator.sleep = countingSleep(&sleeps)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := validator.Claims(ctx, "Bearer "+current.Token); err == nil {
+		t.Fatal("Claims() error = nil, want an error for a cancelled context")
+	}
+
+	if got, want := sleeps, 0; got != want {
+		t.Errorf("retry waits = %d, want %d", got, want)
+	}
+
+	if got, want := jwks.fetches(), 0; got != want {
+		t.Errorf("JWKS fetches = %d, want %d", got, want)
+	}
+}
+
+// TestJWKSValidatorServesKnownKeyIDDuringFailureCooldown pins the reach of the
+// failure cooldown: a fetch that failed says nothing about the keys already
+// cached, so a token signed by a known kid is still verified.
+func TestJWKSValidatorServesKnownKeyIDDuringFailureCooldown(t *testing.T) {
+	t.Parallel()
+
+	current := generateWithKeyID(t, "key-1")
+	rotated := generateWithKeyID(t, "key-2")
+
+	jwks := &scriptedJWKS{document: current.JWKS}
+	server := httptest.NewServer(jwks)
+
+	t.Cleanup(server.Close)
+
+	clock := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	validator := newJWKSValidator(server.URL, DefaultInternalJWTIssuer, "tenant-management", server.Client())
+	validator.now = func() time.Time { return clock }
+
+	sleeps := 0
+	validator.sleep = countingSleep(&sleeps)
+
+	if _, err := validator.Claims(context.Background(), "Bearer "+current.Token); err != nil {
+		t.Fatalf("Claims() error = %v", err)
+	}
+
+	// The unknown kid is past its refresh cooldown and the cache is still
+	// within its TTL, so the refresh it triggers is the one that fails.
+	jwks.serveRest(jwksReply{status: http.StatusServiceUnavailable})
+
+	clock = clock.Add(jwksRefreshCooldown)
+
+	if _, err := validator.Claims(context.Background(), "Bearer "+rotated.Token); err == nil {
+		t.Fatal("Claims() error = nil, want an error once every attempt has failed")
+	}
+
+	failed := len(jwksRefreshRetryBackoff) + 2
+	if got, want := jwks.fetches(), failed; got != want {
+		t.Fatalf("JWKS fetches after the failed refresh = %d, want %d", got, want)
+	}
+
+	if _, err := validator.Claims(context.Background(), "Bearer "+current.Token); err != nil {
+		t.Fatalf("Claims() for the cached kid error = %v", err)
+	}
+
+	if got, want := jwks.fetches(), failed; got != want {
+		t.Errorf("JWKS fetches for the cached kid = %d, want %d", got, want)
+	}
+}
+
+// scriptedJWKS serves one scripted reply per fetch and falls back to rest once
+// the script runs out. It counts the fetches.
+type scriptedJWKS struct {
+	mu       sync.Mutex
+	document jwtgen.JWKS
+	replies  []jwksReply
+	rest     jwksReply
+	requests int
+}
+
+// jwksReply is one response of the script. The zero value and any 200 without
+// a body serve the JWKS document.
+type jwksReply struct {
+	status int
+	body   string
+}
+
+func (s *scriptedJWKS) ServeHTTP(writer http.ResponseWriter, _ *http.Request) {
+	s.mu.Lock()
+	s.requests++
+	document := s.document
+	reply := s.rest
+
+	if len(s.replies) > 0 {
+		reply, s.replies = s.replies[0], s.replies[1:]
+	}
+	s.mu.Unlock()
+
+	writer.Header().Set("Content-Type", "application/json")
+
+	if reply.status != 0 && reply.status != http.StatusOK {
+		writer.WriteHeader(reply.status)
+
+		return
+	}
+
+	if reply.body != "" {
+		io.WriteString(writer, reply.body)
+
+		return
+	}
+
+	json.NewEncoder(writer).Encode(document)
+}
+
+func (s *scriptedJWKS) serveRest(reply jwksReply) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.rest = reply
+}
+
+func (s *scriptedJWKS) fetches() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.requests
+}
+
+// countingSleep replaces the retry backoff with an instant wait, so the tests
+// spend no wall-clock time on it, and counts how often it was waited out.
+func countingSleep(count *int) func(context.Context, time.Duration) error {
+	return func(ctx context.Context, _ time.Duration) error {
+		*count++
+
+		return ctx.Err()
+	}
+}
