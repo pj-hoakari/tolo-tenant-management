@@ -106,7 +106,7 @@ message ObservationSettings {
 // tenant_id／event_id はいずれも公開 ID。内部主キー（UUIDv7）は proto に現れない
 message StartTenantRegistrationRequest {
   string name = 1;
-  string contract_plan = 2;
+  string contract_plan = 2;  // 必須。欠落は invalid_argument
 }
 message StartTenantRegistrationResponse {
   Tenant tenant = 1;                    // ownership_state は PENDING_OWNER
@@ -285,6 +285,7 @@ message ListMembershipsResponse {
 
 - ロール種別の定義はテナントコンテキストが所有し、所属の読み書きは関係参照（RelationAdminService）が所有する。どちらも本サービスが実装する
 - StartTenantRegistration は未認証で呼び出し、`pending_owner` のテナントを作成する
+  `contract_plan` は必須とし、欠落は `invalid_argument` を返す
   この時点では所属を作らず、TenantRegistered も成立させない
   所有権取得トークンは暗号論的に推測困難な一回限りの値とし、平文を応答で一度だけ返す
   永続化層にはトークンのハッシュだけを保存し、ログ、監査ログ、エラー本文へ平文を出さない

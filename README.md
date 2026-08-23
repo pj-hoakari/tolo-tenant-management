@@ -204,6 +204,7 @@ proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16
 
 1. `StartTenantRegistration`（未認証）が `pending_owner` のテナントを作成し、所有権取得トークンの平文をこの応答でのみ返す。
    永続化するのは SHA-256 ハッシュだけで、トークンの有効期限は既定 1 時間（`application.DefaultOwnershipClaimTTL`）である。
+   `contract_plan` の欠落は `invalid_argument` で拒否する。
 2. `ClaimTenantOwnership`（`registration` トークン、scope `tenant.claim`）が、対象が期限内の `pending_owner` であることとトークンのハッシュ一致を検証し、内部 JWT の `sub` をオーナーとして所属させ、`owned` へ遷移させ、トークンを消費する。
    これらは 1 つの DB トランザクションで確定する。
 3. 以降は `tenantId` 指定で再認可した `tenant_access` でテナント配下を操作する。
