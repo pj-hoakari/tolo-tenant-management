@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/jwks"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/jwtgen"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/application"
 )
 
 // jwksRegistry serves a mutable set of JWKs so tests can add a tenant_access

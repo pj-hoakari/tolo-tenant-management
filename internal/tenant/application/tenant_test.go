@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
-	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
-	"github.com/pj-hoakari/tolo-tenant-management/internal/repository"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/application"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/domain"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/repository"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 	"go.uber.org/mock/gomock"
 )

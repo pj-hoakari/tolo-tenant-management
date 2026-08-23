@@ -26,10 +26,6 @@ import (
 
 	relationv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/relation/v1"
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/relation/v1/relationv1connect"
-	tenantapplication "github.com/pj-hoakari/tolo-tenant-management/internal/application"
-	tenantdomain "github.com/pj-hoakari/tolo-tenant-management/internal/domain"
-	tenantconnect "github.com/pj-hoakari/tolo-tenant-management/internal/infra/connect"
-	infradb "github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/jwks"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/jwtgen"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/logging"
@@ -37,7 +33,11 @@ import (
 	relationdomain "github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	relationdb "github.com/pj-hoakari/tolo-tenant-management/internal/relation/infra/db"
 	relationrepository "github.com/pj-hoakari/tolo-tenant-management/internal/relation/repository"
-	tenantrepository "github.com/pj-hoakari/tolo-tenant-management/internal/repository"
+	tenantapplication "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/application"
+	tenantdomain "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/domain"
+	tenantconnect "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/infra/connect"
+	infradb "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/infra/db"
+	tenantrepository "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/repository"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
 

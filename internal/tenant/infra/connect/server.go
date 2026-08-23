@@ -10,8 +10,8 @@ import (
 	"connectrpc.com/otelconnect"
 
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1/tenantv1connect"
-	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/jwks"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/application"
 )
 
 // JWTSettings locates the Service Gateway's JWKS and names the issuer and

@@ -11,10 +11,10 @@ import (
 	"context"
 	"errors"
 
-	tenantdomain "github.com/pj-hoakari/tolo-tenant-management/internal/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/repository"
-	tenantrepository "github.com/pj-hoakari/tolo-tenant-management/internal/repository"
+	tenantdomain "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/domain"
+	tenantrepository "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/repository"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
 

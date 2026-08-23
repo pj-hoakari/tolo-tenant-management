@@ -14,8 +14,8 @@ import (
 	reflect "reflect"
 	time "time"
 
-	domain "github.com/pj-hoakari/tolo-tenant-management/internal/domain"
-	repository "github.com/pj-hoakari/tolo-tenant-management/internal/repository"
+	domain "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/domain"
+	repository "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/repository"
 	gomock "go.uber.org/mock/gomock"
 )
 

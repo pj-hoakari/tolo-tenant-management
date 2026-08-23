@@ -10,12 +10,12 @@ import (
 
 	relationv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/relation/v1"
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/relation/v1/relationv1connect"
-	tenantconnect "github.com/pj-hoakari/tolo-tenant-management/internal/infra/connect"
-	infradb "github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/repository"
-	tenantrepository "github.com/pj-hoakari/tolo-tenant-management/internal/repository"
+	tenantconnect "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/infra/connect"
+	infradb "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/infra/db"
+	tenantrepository "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/repository"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
 

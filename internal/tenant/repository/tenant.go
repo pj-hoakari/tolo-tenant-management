@@ -6,7 +6,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/domain"
 )
 
 var (

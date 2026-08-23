@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
-	"github.com/pj-hoakari/tolo-tenant-management/internal/repository"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/domain"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/repository"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
 

@@ -14,13 +14,13 @@ import (
 
 	tenantv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1"
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1/tenantv1connect"
-	"github.com/pj-hoakari/tolo-tenant-management/internal/application"
-	"github.com/pj-hoakari/tolo-tenant-management/internal/domain"
-	"github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
 	relationapplication "github.com/pj-hoakari/tolo-tenant-management/internal/relation/application"
 	relationdomain "github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	relationdb "github.com/pj-hoakari/tolo-tenant-management/internal/relation/infra/db"
-	"github.com/pj-hoakari/tolo-tenant-management/internal/repository"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/application"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/domain"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/infra/db"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/repository"
 )
 
 var publicIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
