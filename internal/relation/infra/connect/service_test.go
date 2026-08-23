@@ -103,6 +103,17 @@ func (r *jwksRegistry) document() jwtgen.JWKS {
 	return jwtgen.JWKS{Keys: append([]jwtgen.JWK(nil), r.keys...)}
 }
 
+// freshJWKSValidator validates every request with a newly built JWKS
+// validator. The real one caches the document and rate limits the refresh an
+// unknown kid triggers, so a key a test registers after the first request
+// would stay invisible for the length of that cooldown. These tests are about
+// the transport, not about the cache; internal/jwks covers the cache itself.
+type freshJWKSValidator tenantconnect.JWTSettings
+
+func (v freshJWKSValidator) Claims(ctx context.Context, authorization string) (jwks.InternalJWTClaims, error) {
+	return jwks.NewJWKSValidator(v.JWKSURL, v.Issuer, v.Audience).Claims(ctx, authorization)
+}
+
 // callerSubject is the subject of every token minted by jwtgen, and therefore
 // the caller whose current membership the write RPCs re-check.
 const callerSubject = "test-subject"
@@ -147,13 +158,13 @@ func newFixture(t *testing.T) fixture {
 	settings := tenantconnect.DefaultJWTSettings()
 	settings.JWKSURL = jwksServer.URL
 
-	handler, err := tenantconnect.NewHandlerWithJWTSettings(
+	handler, err := tenantconnect.NewHandlerWithValidator(
 		tenantapplication.NewTenantService(tenants, tenants, memberships, application.NewAuthorizer(memberships)),
-		settings,
+		freshJWKSValidator(settings),
 		Mount(application.NewRelationService(tenants, memberships, memberships)),
 	)
 	if err != nil {
-		t.Fatalf("NewHandlerWithJWTSettings() error = %v", err)
+		t.Fatalf("NewHandlerWithValidator() error = %v", err)
 	}
 
 	httpServer := httptest.NewServer(handler)

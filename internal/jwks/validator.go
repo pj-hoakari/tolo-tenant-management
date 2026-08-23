@@ -28,6 +28,11 @@ const (
 
 const jwksCacheTTL = 5 * time.Minute
 
+// jwksRefreshCooldown rate limits the immediate refresh an unknown kid triggers
+// (service_gateway.md「署名鍵」). Without it, tokens signed by a key this
+// service will never learn about would fetch the JWKS on every request.
+const jwksRefreshCooldown = 30 * time.Second
+
 // JWKSValidator validates internal JWTs against the Service Gateway's published keys.
 // One instance is shared by authorization and tenant ID extraction.
 type JWKSValidator struct {
@@ -38,6 +43,12 @@ type JWKSValidator struct {
 	mu       sync.Mutex
 	keys     map[string]*ecdsa.PublicKey
 	expiry   time.Time
+	// lastRefresh is the time of the last successful refresh. A failed refresh
+	// leaves it alone so the next request may retry at once.
+	lastRefresh time.Time
+	// now is time.Now in production and is replaced in tests to control the
+	// cache TTL and the refresh cooldown.
+	now func() time.Time
 }
 
 // InternalJWTClaims is the claim set of an internal JWT (internal_jwt.md).
@@ -88,13 +99,15 @@ func newJWKSValidator(url, issuer, audience string, client *http.Client) *JWKSVa
 	}
 
 	return &JWKSValidator{
-		url:      url,
-		issuer:   issuer,
-		audience: audience,
-		client:   client,
-		mu:       sync.Mutex{},
-		keys:     make(map[string]*ecdsa.PublicKey),
-		expiry:   time.Time{},
+		url:         url,
+		issuer:      issuer,
+		audience:    audience,
+		client:      client,
+		mu:          sync.Mutex{},
+		keys:        make(map[string]*ecdsa.PublicKey),
+		expiry:      time.Time{},
+		lastRefresh: time.Time{},
+		now:         time.Now,
 	}
 }
 
@@ -195,8 +208,19 @@ func (v *JWKSValidator) key(ctx context.Context, kid string) (*ecdsa.PublicKey, 
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
-	if key, ok := v.keys[kid]; ok && time.Now().Before(v.expiry) {
-		return key, nil
+	now := v.now()
+
+	if now.Before(v.expiry) {
+		if key, ok := v.keys[kid]; ok {
+			return key, nil
+		}
+
+		// The cache is still fresh but the kid is unknown, which is how an
+		// emergency key rotation reaches this service. Refresh at once unless
+		// the cooldown since the last successful refresh is still running.
+		if now.Sub(v.lastRefresh) < jwksRefreshCooldown {
+			return nil, fmt.Errorf("unknown JWT key ID %q", kid)
+		}
 	}
 
 	if err := v.refresh(ctx); err != nil {
@@ -246,8 +270,10 @@ func (v *JWKSValidator) refresh(ctx context.Context) error {
 		keys[value.KeyID] = key
 	}
 
+	refreshed := v.now()
 	v.keys = keys
-	v.expiry = time.Now().Add(jwksCacheTTL)
+	v.expiry = refreshed.Add(jwksCacheTTL)
+	v.lastRefresh = refreshed
 
 	return nil
 }
