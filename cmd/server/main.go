@@ -11,7 +11,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/pj-hoakari/tolo-tenant-management/internal/jwks"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/logging"
 	relationapplication "github.com/pj-hoakari/tolo-tenant-management/internal/relation/application"
 	relationconnect "github.com/pj-hoakari/tolo-tenant-management/internal/relation/infra/connect"
@@ -51,9 +50,9 @@ func run() error {
 
 	addr := getenv("SERVER_ADDR", defaultAddr)
 	jwtSettings := connectinfra.JWTSettings{
-		JWKSURL:  getenv("INTERNAL_JWKS_URL", jwks.DefaultInternalJWKSURL),
-		Issuer:   getenv("INTERNAL_JWT_ISSUER", jwks.DefaultInternalJWTIssuer),
-		Audience: getenv("INTERNAL_JWT_AUDIENCE", jwks.DefaultInternalJWTAudience),
+		JWKSURL:  getenv("INTERNAL_JWKS_URL", connectinfra.DefaultInternalJWKSURL),
+		Issuer:   getenv("INTERNAL_JWT_ISSUER", connectinfra.DefaultInternalJWTIssuer),
+		Audience: getenv("INTERNAL_JWT_AUDIENCE", connectinfra.DefaultInternalJWTAudience),
 	}
 
 	databaseURL := os.Getenv("DATABASE_URL")

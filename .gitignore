@@ -8,9 +8,8 @@
 *.so
 *.dylib
 
-# Left in the repository root by `go build ./cmd/server/` and `go build ./cmd/jwtgen/`.
+# Left in the repository root by `go build ./cmd/server/`.
 /server
-/jwtgen
 
 # Test binary, built with `go test -c`
 *.test

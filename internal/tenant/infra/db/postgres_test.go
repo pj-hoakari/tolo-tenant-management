@@ -15,6 +15,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"
+	internaljwt "github.com/pj-hoakari/internal-jwt-handling"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/domain"
 	repositorypkg "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/repository"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
@@ -24,6 +25,12 @@ import (
 )
 
 var testDB *sqlx.DB
+
+// withTenant returns a context carrying verified claims that authenticate the
+// given tenant, as the transport interceptor would.
+func withTenant(ctx context.Context, tenantPublicID string) context.Context {
+	return internaljwt.ContextWithClaims(ctx, internaljwt.Claims{TenantPublicID: tenantPublicID})
+}
 
 func TestMain(m *testing.M) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -352,12 +359,12 @@ func TestPostgresTenantRepositoryObservationSettings(t *testing.T) {
 	// A caller authenticated as another tenant is rejected on reconstitution;
 	// its own tenant is accepted. The reads above ran without tenant context,
 	// as a service-token read does, and were left unrestricted.
-	foreignCtx := tenantctx.WithTenantPublicID(ctx, archivedTenant.PublicID())
+	foreignCtx := withTenant(ctx, archivedTenant.PublicID())
 	if _, err := repository.FindObservationSettingsByEventPublicID(foreignCtx, event.PublicID()); !errors.Is(err, tenantctx.ErrMismatch) {
 		t.Errorf("FindObservationSettingsByEventPublicID(foreign) error = %v, want %v", err, tenantctx.ErrMismatch)
 	}
 
-	ownCtx := tenantctx.WithTenantPublicID(ctx, activeTenant.PublicID())
+	ownCtx := withTenant(ctx, activeTenant.PublicID())
 	if _, err := repository.FindObservationSettingsByEventPublicID(ownCtx, event.PublicID()); err != nil {
 		t.Errorf("FindObservationSettingsByEventPublicID(own) error = %v, want nil", err)
 	}
@@ -384,7 +391,7 @@ func TestPostgresTenantRepositoryRejectsForeignTenantOnReconstitution(t *testing
 	// The caller is authenticated as tenant A, so loading any of tenant B's
 	// records must be rejected even though the queries themselves succeed. This
 	// is the safety net for a repository query that fails to scope by tenant.
-	foreignCtx := tenantctx.WithTenantPublicID(ctx, tenantA.PublicID())
+	foreignCtx := withTenant(ctx, tenantA.PublicID())
 
 	if _, err := repository.FindTenantByID(foreignCtx, tenantB.ID()); !errors.Is(err, tenantctx.ErrMismatch) {
 		t.Errorf("FindTenantByID(foreign) error = %v, want %v", err, tenantctx.ErrMismatch)
@@ -403,7 +410,7 @@ func TestPostgresTenantRepositoryRejectsForeignTenantOnReconstitution(t *testing
 	}
 
 	// The caller may still load its own tenant's records.
-	ownCtx := tenantctx.WithTenantPublicID(ctx, tenantB.PublicID())
+	ownCtx := withTenant(ctx, tenantB.PublicID())
 	if _, err := repository.FindEventByPublicID(ownCtx, eventB.PublicID()); err != nil {
 		t.Errorf("FindEventByPublicID(own) error = %v, want nil", err)
 	}

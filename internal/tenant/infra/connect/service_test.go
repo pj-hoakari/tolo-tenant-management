@@ -14,12 +14,13 @@ import (
 	"testing"
 
 	connectrpc "connectrpc.com/connect"
+	"github.com/golang-jwt/jwt/v5"
+	internaljwt "github.com/pj-hoakari/internal-jwt-handling"
 	tenantv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/logging"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/repository"
-	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/mock/gomock"
 )
@@ -136,7 +137,7 @@ func TestGetEvent(t *testing.T) {
 
 	service, _, events := newReadService(t)
 
-	ctx := tenantctx.WithTenantPublicID(context.Background(), events[0].TenantPublicID())
+	ctx := internaljwt.ContextWithClaims(context.Background(), internaljwt.Claims{TenantPublicID: events[0].TenantPublicID()})
 
 	response, err := service.GetEvent(ctx, connectrpc.NewRequest(&tenantv1.GetEventRequest{EventId: events[0].PublicID()}))
 	if err != nil {
@@ -153,7 +154,7 @@ func TestAssignEventType(t *testing.T) {
 
 	service, _, events := newReadService(t)
 
-	ctx := tenantctx.WithTenantPublicID(context.Background(), events[0].TenantPublicID())
+	ctx := internaljwt.ContextWithClaims(context.Background(), internaljwt.Claims{TenantPublicID: events[0].TenantPublicID()})
 
 	response, err := service.AssignEventType(ctx, connectrpc.NewRequest(&tenantv1.AssignEventTypeRequest{
 		EventId: events[0].PublicID(),
@@ -191,7 +192,7 @@ func TestListEvents(t *testing.T) {
 			repo.EXPECT().ListEventsByTenantID(gomock.Any(), tenant.ID(), wantFilter).Return(events, nil)
 			service := NewService(application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{}, permissionStub{allowed: true}))
 
-			ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
+			ctx := internaljwt.ContextWithClaims(context.Background(), internaljwt.Claims{TenantPublicID: tenant.PublicID()})
 
 			response, err := service.ListEvents(ctx, connectrpc.NewRequest(&tenantv1.ListEventsRequest{
 				TenantId:        tenant.PublicID(),
@@ -227,7 +228,7 @@ func TestCreateEventPublicIDCollision(t *testing.T) {
 	repo.EXPECT().CreateEvent(gomock.Any(), gomock.Any()).Return(repository.ErrEventPublicIDExists)
 
 	service := NewService(application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{}, permissionStub{allowed: true}))
-	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
+	ctx := internaljwt.ContextWithClaims(context.Background(), internaljwt.Claims{TenantPublicID: tenant.PublicID()})
 
 	_, err := service.CreateEvent(ctx, connectrpc.NewRequest(&tenantv1.CreateEventRequest{
 		TenantId: tenant.PublicID(),
@@ -247,7 +248,7 @@ func TestInternalErrorHidesDetail(t *testing.T) {
 	logs := captureLog(t)
 	service, tenant := newFailingService(t, errors.New("secret detail"))
 
-	ctx := withSampledSpan(t, tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID()))
+	ctx := withSampledSpan(t, internaljwt.ContextWithClaims(context.Background(), internaljwt.Claims{TenantPublicID: tenant.PublicID()}))
 
 	_, err := service.ListEvents(ctx, connectrpc.NewRequest(&tenantv1.ListEventsRequest{TenantId: tenant.PublicID()}))
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodeInternal; got != want {
@@ -298,7 +299,7 @@ func TestCanceledRequestIsNotLogged(t *testing.T) {
 	logs := captureLog(t)
 	service, tenant := newFailingService(t, context.Canceled)
 
-	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
+	ctx := internaljwt.ContextWithClaims(context.Background(), internaljwt.Claims{TenantPublicID: tenant.PublicID()})
 
 	_, err := service.ListEvents(ctx, connectrpc.NewRequest(&tenantv1.ListEventsRequest{TenantId: tenant.PublicID()}))
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodeCanceled; got != want {
@@ -419,7 +420,7 @@ func TestEveryHandlerHidesInternalErrorDetail(t *testing.T) {
 	repo.EXPECT().DeleteExpiredPendingTenants(gomock.Any(), gomock.Any()).Return(int64(0), errDetail).AnyTimes()
 	service := NewService(application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{}, permissionStub{allowed: true}))
 
-	ctx := tenantctx.WithSubject(tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID()), "user-1")
+	ctx := internaljwt.ContextWithClaims(context.Background(), internaljwt.Claims{TenantPublicID: tenant.PublicID(), RegisteredClaims: jwt.RegisteredClaims{Subject: "user-1"}})
 	eventID := "0123456789abcdef"
 
 	calls := map[string]func() error{

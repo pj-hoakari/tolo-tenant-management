@@ -340,6 +340,22 @@ func TestClaimTenantOwnershipOverTransportRejections(t *testing.T) {
 	}
 }
 
+// TestClaimTenantOwnershipOverTransportRejectsMissingScope checks that a
+// procedure whose policy names its own token_uses still has its required
+// scopes enforced: the credential is of the accepted class (registration), but
+// tenant.claim was not granted to it.
+func TestClaimTenantOwnershipOverTransportRejectsMissingScope(t *testing.T) {
+	fixture := newTransportFixture(t)
+	registration := fixture.startRegistration(t, "Acme")
+
+	token := mintRegistrationTokenWithScope(t, fixture.jwks, "tenant.read")
+
+	_, err := fixture.claim(t, token, registration.GetTenant().GetTenantId(), registration.GetOwnershipClaimToken())
+	if got, want := connectrpc.CodeOf(err), connectrpc.CodePermissionDenied; got != want {
+		t.Fatalf("ClaimTenantOwnership() error code = %v, want %v", got, want)
+	}
+}
+
 func TestClaimTenantOwnershipOverTransportRollsBackWhenMembershipFails(t *testing.T) {
 	fixture := newTransportFixture(t)
 	registration := fixture.startRegistration(t, "Acme")
@@ -442,6 +458,23 @@ func TestCreateEventOverTransportRejectsInvalidTenantSelection(t *testing.T) {
 				t.Fatalf("CreateEvent() error code = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestCreateEventOverTransportRejectsMissingScope covers the scope half of the
+// generated policy table: a caller authenticated for the tenant it names, but
+// whose token was not granted the scope the procedure declares, is denied
+// rather than left unauthenticated.
+func TestCreateEventOverTransportRejectsMissingScope(t *testing.T) {
+	fixture := newTransportFixture(t)
+	tenant := fixture.createTenant(t, "0123456789abcdef", "Scope Host")
+
+	req := connectrpc.NewRequest(&tenantv1.CreateEventRequest{TenantId: tenant.PublicID(), Name: "Festival"})
+	req.Header().Set("Authorization", mintTenantAccessTokenWithScope(t, fixture.jwks, tenant.PublicID(), "events.read"))
+
+	_, err := fixture.client.CreateEvent(context.Background(), req)
+	if got, want := connectrpc.CodeOf(err), connectrpc.CodePermissionDenied; got != want {
+		t.Fatalf("CreateEvent() error code = %v, want %v", got, want)
 	}
 }
 
