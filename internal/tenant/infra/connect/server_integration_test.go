@@ -13,8 +13,8 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
-	"github.com/pj-hoakari/tolo-tenant-management/internal/jwks"
-	"github.com/pj-hoakari/tolo-tenant-management/internal/jwtgen"
+	internaljwt "github.com/pj-hoakari/internal-jwt-handling"
+	"github.com/pj-hoakari/internal-jwt-handling/jwtgen"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/infra/db"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -22,15 +22,15 @@ import (
 )
 
 const (
-	internalJWTIssuer   = jwks.DefaultInternalJWTIssuer
-	internalJWTAudience = jwks.DefaultInternalJWTAudience
+	internalJWTIssuer   = DefaultInternalJWTIssuer
+	internalJWTAudience = DefaultInternalJWTAudience
 )
 
 type testInternalJWTs struct {
 	tenantAccess string
 	registration string
 	service      string
-	jwks         jwtgen.JWKS
+	jwks         internaljwt.JWKS
 }
 
 var (
@@ -63,9 +63,9 @@ func internalJWTs(t *testing.T) testInternalJWTs {
 	t.Helper()
 	testTokensOnce.Do(func() {
 		configs := []jwtgen.Config{
-			{Issuer: internalJWTIssuer, Audience: internalJWTAudience, TokenUse: "tenant_access", TenantPublicID: "0123456789abcdef", Scope: "tenant.write events.read events.write", KeyID: "tenant-key", TTL: time.Hour},
-			{Issuer: internalJWTIssuer, Audience: internalJWTAudience, TokenUse: "registration", Scope: "tenant.claim", KeyID: "registration-key", TTL: time.Hour},
-			{Issuer: internalJWTIssuer, Audience: internalJWTAudience, TokenUse: "service", KeyID: "service-key", TTL: time.Hour},
+			{Issuer: internalJWTIssuer, Audience: internalJWTAudience, TokenUse: internaljwt.TokenUseTenantAccess, TenantPublicID: "0123456789abcdef", Scope: "tenant.write events.read events.write", KeyID: "tenant-key", TTL: time.Hour},
+			{Issuer: internalJWTIssuer, Audience: internalJWTAudience, TokenUse: internaljwt.TokenUseRegistration, Scope: "tenant.claim", KeyID: "registration-key", TTL: time.Hour},
+			{Issuer: internalJWTIssuer, Audience: internalJWTAudience, TokenUse: internaljwt.TokenUseService, KeyID: "service-key", TTL: time.Hour},
 		}
 
 		outputs := make([]jwtgen.Output, len(configs))

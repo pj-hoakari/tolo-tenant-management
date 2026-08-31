@@ -10,12 +10,28 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
+	internaljwt "github.com/pj-hoakari/internal-jwt-handling"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/repository"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 	"go.uber.org/mock/gomock"
 )
+
+// withTenant returns a context carrying verified claims that authenticate the
+// given tenant, as the transport interceptor would.
+func withTenant(ctx context.Context, tenantPublicID string) context.Context {
+	return internaljwt.ContextWithClaims(ctx, internaljwt.Claims{TenantPublicID: tenantPublicID})
+}
+
+// withSubject returns a context carrying verified claims that authenticate the
+// given subject but no tenant.
+func withSubject(ctx context.Context, subject string) context.Context {
+	return internaljwt.ContextWithClaims(ctx, internaljwt.Claims{
+		RegisteredClaims: jwt.RegisteredClaims{Subject: subject},
+	})
+}
 
 // passthroughTransactor runs the unit of work directly; the repository mocks
 // do not observe transactions.
@@ -77,7 +93,7 @@ func TestCreateEvent(t *testing.T) {
 	})
 	service := newService(repo)
 
-	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
+	ctx := withTenant(context.Background(), tenant.PublicID())
 
 	event, err := service.CreateEvent(ctx, application.CreateEventInput{
 		TenantPublicID: tenant.PublicID(),
@@ -115,7 +131,7 @@ func TestCreateEventKeepsUnspecifiedType(t *testing.T) {
 	repo.EXPECT().CreateEvent(gomock.Any(), gomock.Any()).Return(nil)
 	service := newService(repo)
 
-	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
+	ctx := withTenant(context.Background(), tenant.PublicID())
 
 	event, err := service.CreateEvent(ctx, application.CreateEventInput{TenantPublicID: tenant.PublicID(), Name: "Festival"})
 	if err != nil {
@@ -133,7 +149,7 @@ func TestCreateEventRequiresTenantID(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	service := newService(NewMockTenantRepository(ctrl))
 
-	ctx := tenantctx.WithTenantPublicID(context.Background(), "tenant-public-id")
+	ctx := withTenant(context.Background(), "tenant-public-id")
 
 	_, err := service.CreateEvent(ctx, application.CreateEventInput{Name: "Festival"})
 	if !errors.Is(err, application.ErrTenantIDRequired) {
@@ -150,7 +166,7 @@ func TestCreateEventRejectsPendingOwnerTenant(t *testing.T) {
 	repo.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(tenant, nil)
 	service := newService(repo)
 
-	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
+	ctx := withTenant(context.Background(), tenant.PublicID())
 
 	_, err := service.CreateEvent(ctx, application.CreateEventInput{TenantPublicID: tenant.PublicID(), Name: "Festival"})
 	if !errors.Is(err, application.ErrTenantPendingOwner) {
@@ -183,7 +199,7 @@ func TestCreateEventRejectsMismatchedRequestTenant(t *testing.T) {
 	// refuses before touching the repository.
 	service := newService(NewMockTenantRepository(ctrl))
 
-	ctx := tenantctx.WithTenantPublicID(context.Background(), "tenant-public-id")
+	ctx := withTenant(context.Background(), "tenant-public-id")
 
 	_, err := service.CreateEvent(ctx, application.CreateEventInput{
 		TenantPublicID: "other-tenant-public-id",
@@ -203,7 +219,7 @@ func TestTransitionEventStatusRejectsMismatchedContextTenant(t *testing.T) {
 	repo.EXPECT().FindEventByPublicID(gomock.Any(), event.PublicID()).Return(event, nil)
 	service := newService(repo)
 
-	ctx := tenantctx.WithTenantPublicID(context.Background(), "other-tenant-public-id")
+	ctx := withTenant(context.Background(), "other-tenant-public-id")
 
 	_, err := service.TransitionEventStatus(ctx, application.TransitionEventStatusInput{
 		EventPublicID: event.PublicID(),
@@ -231,7 +247,7 @@ func TestTransitionEventStatus(t *testing.T) {
 	})
 	service := newService(repo)
 
-	ctx := tenantctx.WithTenantPublicID(context.Background(), event.TenantPublicID())
+	ctx := withTenant(context.Background(), event.TenantPublicID())
 
 	updatedEvent, err := service.TransitionEventStatus(ctx, application.TransitionEventStatusInput{
 		EventPublicID: event.PublicID(),
@@ -255,7 +271,7 @@ func TestTransitionEventStatusValidatesInput(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	service := newService(NewMockTenantRepository(ctrl))
-	ctx := tenantctx.WithTenantPublicID(context.Background(), "tenant-public-id")
+	ctx := withTenant(context.Background(), "tenant-public-id")
 
 	_, err := service.TransitionEventStatus(ctx, application.TransitionEventStatusInput{To: domain.EventStatusOpen})
 	if !errors.Is(err, application.ErrEventIDRequired) {
@@ -285,7 +301,7 @@ func TestAssignEventType(t *testing.T) {
 	})
 	service := newService(repository)
 
-	ctx := tenantctx.WithTenantPublicID(context.Background(), event.TenantPublicID())
+	ctx := withTenant(context.Background(), event.TenantPublicID())
 
 	updatedEvent, err := service.AssignEventType(ctx, application.AssignEventTypeInput{
 		EventPublicID: event.PublicID(),
@@ -313,7 +329,7 @@ func TestGetEvent(t *testing.T) {
 	repository.EXPECT().FindEventByPublicID(gomock.Any(), event.PublicID()).Return(event, nil)
 	service := newService(repository)
 
-	ctx := tenantctx.WithTenantPublicID(context.Background(), event.TenantPublicID())
+	ctx := withTenant(context.Background(), event.TenantPublicID())
 
 	found, err := service.GetEvent(ctx, event.PublicID())
 	if err != nil {
@@ -335,7 +351,7 @@ func TestGetEventEnforcesTenantBoundary(t *testing.T) {
 		ctx  context.Context
 		want error
 	}{
-		{name: "other tenant", ctx: tenantctx.WithTenantPublicID(context.Background(), "other-tenant-public-id"), want: tenantctx.ErrMismatch},
+		{name: "other tenant", ctx: withTenant(context.Background(), "other-tenant-public-id"), want: tenantctx.ErrMismatch},
 		{name: "no tenant context", ctx: context.Background(), want: tenantctx.ErrMissing},
 	}
 
@@ -370,7 +386,7 @@ func TestGetObservationSettings(t *testing.T) {
 		// The boundary is optional here: a machine-origin service token
 		// carries no tenant, and the read still answers.
 		{name: "no tenant context", ctx: context.Background()},
-		{name: "tenant context", ctx: tenantctx.WithTenantPublicID(context.Background(), "tenant-public-id")},
+		{name: "tenant context", ctx: withTenant(context.Background(), "tenant-public-id")},
 	}
 
 	for _, tt := range tests {
@@ -438,7 +454,7 @@ func TestUpdateObservationSettings(t *testing.T) {
 	})
 	service := newService(repo)
 
-	ctx := tenantctx.WithTenantPublicID(context.Background(), event.TenantPublicID())
+	ctx := withTenant(context.Background(), event.TenantPublicID())
 
 	settings, err := service.UpdateObservationSettings(ctx, application.UpdateObservationSettingsInput{
 		EventPublicID:     event.PublicID(),
@@ -484,7 +500,7 @@ func TestUpdateObservationSettingsValidatesInput(t *testing.T) {
 			// The input is rejected before the repository is touched.
 			service := newService(NewMockTenantRepository(ctrl))
 
-			ctx := tenantctx.WithTenantPublicID(context.Background(), "tenant-public-id")
+			ctx := withTenant(context.Background(), "tenant-public-id")
 			if _, err := service.UpdateObservationSettings(ctx, tt.input); !errors.Is(err, tt.want) {
 				t.Fatalf("UpdateObservationSettings() error = %v, want %v", err, tt.want)
 			}
@@ -501,7 +517,7 @@ func TestUpdateObservationSettingsRejectsArchivedEvent(t *testing.T) {
 	repo.EXPECT().FindEventByPublicID(gomock.Any(), event.PublicID()).Return(event, nil)
 	service := newService(repo)
 
-	ctx := tenantctx.WithTenantPublicID(context.Background(), event.TenantPublicID())
+	ctx := withTenant(context.Background(), event.TenantPublicID())
 
 	_, err := service.UpdateObservationSettings(ctx, application.UpdateObservationSettingsInput{
 		EventPublicID:     event.PublicID(),
@@ -521,7 +537,7 @@ func TestUpdateObservationSettingsRejectsMismatchedContextTenant(t *testing.T) {
 	repo.EXPECT().FindEventByPublicID(gomock.Any(), event.PublicID()).Return(event, nil)
 	service := newService(repo)
 
-	ctx := tenantctx.WithTenantPublicID(context.Background(), "other-tenant-public-id")
+	ctx := withTenant(context.Background(), "other-tenant-public-id")
 
 	_, err := service.UpdateObservationSettings(ctx, application.UpdateObservationSettingsInput{
 		EventPublicID:     event.PublicID(),
@@ -555,7 +571,7 @@ func TestListEvents(t *testing.T) {
 			repo.EXPECT().ListEventsByTenantID(gomock.Any(), tenant.ID(), wantFilter).Return(events, nil)
 			service := newService(repo)
 
-			ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
+			ctx := withTenant(context.Background(), tenant.PublicID())
 
 			got, err := service.ListEvents(ctx, tenant.PublicID(), includeArchived)
 			if err != nil {
@@ -583,7 +599,7 @@ func TestListEventsRejectsMismatchedRequestTenant(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	service := newService(NewMockTenantRepository(ctrl))
 
-	ctx := tenantctx.WithTenantPublicID(context.Background(), "tenant-public-id")
+	ctx := withTenant(context.Background(), "tenant-public-id")
 
 	_, err := service.ListEvents(ctx, "other-tenant-public-id", false)
 	if !errors.Is(err, tenantctx.ErrMismatch) {
@@ -689,7 +705,7 @@ func TestClaimTenantOwnership(t *testing.T) {
 	)
 	service := application.NewTenantService(repo, passthroughTransactor{}, memberships, &permissionStub{allowed: true}, application.WithClock(func() time.Time { return now }))
 
-	ctx := tenantctx.WithSubject(context.Background(), "user-1")
+	ctx := withSubject(context.Background(), "user-1")
 
 	owned, err := service.ClaimTenantOwnership(ctx, application.ClaimTenantOwnershipInput{TenantPublicID: pending.PublicID(), ClaimToken: token})
 	if err != nil {
@@ -722,7 +738,7 @@ func TestClaimTenantOwnershipRejections(t *testing.T) {
 	pending := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStatePendingOwner, false)
 	owned := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, false)
 	live := domain.OwnershipClaim{TokenHash: hash, ExpiresAt: now.Add(time.Hour)}
-	subject := tenantctx.WithSubject(context.Background(), "user-1")
+	subject := withSubject(context.Background(), "user-1")
 
 	tests := []struct {
 		name   string
@@ -784,7 +800,7 @@ func TestClaimTenantOwnershipDoesNotMarkOwnedWhenMembershipFails(t *testing.T) {
 	errStore := errors.New("membership store down")
 	service := application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{err: errStore}, &permissionStub{allowed: true}, application.WithClock(func() time.Time { return now }))
 
-	_, err = service.ClaimTenantOwnership(tenantctx.WithSubject(context.Background(), "user-1"), application.ClaimTenantOwnershipInput{TenantPublicID: pending.PublicID(), ClaimToken: token})
+	_, err = service.ClaimTenantOwnership(withSubject(context.Background(), "user-1"), application.ClaimTenantOwnershipInput{TenantPublicID: pending.PublicID(), ClaimToken: token})
 	if !errors.Is(err, errStore) {
 		t.Fatalf("ClaimTenantOwnership() error = %v, want %v", err, errStore)
 	}
@@ -814,7 +830,7 @@ func TestChangeTenantContract(t *testing.T) {
 	)
 	service := application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{}, permissions)
 
-	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
+	ctx := withTenant(context.Background(), tenant.PublicID())
 
 	updated, err := service.ChangeTenantContract(ctx, application.ChangeTenantContractInput{TenantPublicID: tenant.PublicID(), ContractPlan: "enterprise"})
 	if err != nil {
@@ -843,7 +859,7 @@ func TestChangeTenantContractRequiresContractPlan(t *testing.T) {
 	// The plan is validated before the tenant is even looked up.
 	service := newService(NewMockTenantRepository(ctrl))
 
-	ctx := tenantctx.WithTenantPublicID(context.Background(), "tenant-public-id")
+	ctx := withTenant(context.Background(), "tenant-public-id")
 
 	_, err := service.ChangeTenantContract(ctx, application.ChangeTenantContractInput{TenantPublicID: "tenant-public-id"})
 	if !errors.Is(err, application.ErrTenantContractPlanRequired) {
@@ -875,7 +891,7 @@ func TestArchiveTenant(t *testing.T) {
 	)
 	service := application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{}, permissions)
 
-	ctx := tenantctx.WithTenantPublicID(context.Background(), tenant.PublicID())
+	ctx := withTenant(context.Background(), tenant.PublicID())
 
 	archived, err := service.ArchiveTenant(ctx, application.ArchiveTenantInput{TenantPublicID: tenant.PublicID()})
 	if err != nil {
@@ -954,7 +970,7 @@ func TestAdministrativeTenantWriteRejections(t *testing.T) {
 				}
 
 				service := application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{}, &permissionStub{allowed: tt.allowed, err: tt.permissionErr})
-				ctx := tenantctx.WithTenantPublicID(context.Background(), owned.PublicID())
+				ctx := withTenant(context.Background(), owned.PublicID())
 
 				if err := rpc.call(ctx, service, tt.requestID); !errors.Is(err, tt.want) {
 					t.Fatalf("%s() error = %v, want %v", rpc.name, err, tt.want)

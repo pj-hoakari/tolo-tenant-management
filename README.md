@@ -95,27 +95,29 @@ OTLP のエクスポート先がどちらも未設定の場合、トレースは
 
 ### テスト用内部 JWT の生成
 
-`cmd/jwtgen` は ES256 の鍵ペアを生成し、内部 JWT と対応する公開 JWKS を JSON で出力する。
+`internal-jwt-handling` の `jwtgen` CLI は ES256 の鍵ペアを生成し、内部 JWT と対応する公開 JWKS を JSON で出力する。
+`go.mod` の `tool` に登録してあるので `go tool jwtgen` で実行できる。
 
 ```bash
-go run ./cmd/jwtgen -tenant-public-id 0123456789abcdef -scope events.read
+go tool jwtgen -issuer service-gateway -audience tolo-tenant-management -tenant-public-id 0123456789abcdef -scope events.read
 ```
 
-`-token-use` は `tenant_access`（既定）、`registration`、`service` を取る。
+`-token-use` は `tenant_access`（既定）、`event_access`、`registration`、`service` を取る。
 `tenant_access` では `-tenant-public-id`（ランダムな 16 文字 hex）と `-scope` が必須、`registration` では `-scope` が必須である。
 `service` は既定でマシン起点（`scope`、`src_jti`、`tenant_id` を持たない）として生成し、`-origin-sub <user_id>` を指定するとユーザー起点（`scope`、`src_jti`、`origin_sub` を持ち、`-tenant-public-id` で `tenant_id` を付与できる）になる。
 いずれの場合も `txn` には UUIDv7 を自動で付与する。
-そのほかのフラグは `-ttl`（既定 2 分）、`-kid`（既定 `test-key`）、`-issuer`／`-audience`（既定は `INTERNAL_JWT_ISSUER`／`INTERNAL_JWT_AUDIENCE` の既定値と同じ）である。
+そのほかのフラグは `-ttl`（既定 2 分）、`-kid`（既定 `test-key`）、`-subject`、`-txn`（`service` のみ）である。
+`-issuer` の既定は `service-gateway`、`-audience` に既定はなく、`tolo-tenant-management` を明示する。
 
 ```bash
 # マシン起点の service トークン
-go run ./cmd/jwtgen -token-use service
+go tool jwtgen -issuer service-gateway -audience tolo-tenant-management -token-use service
 # ユーザー起点の service トークン（テナント文脈付き）
-go run ./cmd/jwtgen -token-use service -origin-sub user-1 -scope events.read -tenant-public-id 0123456789abcdef
+go tool jwtgen -issuer service-gateway -audience tolo-tenant-management -token-use service -origin-sub user-1 -scope events.read -tenant-public-id 0123456789abcdef
 ```
 
 出力された `jwks` を Service Gateway の JWKS スタブとして公開すると、出力された `token` を結合テストに利用できる。
-サービスのテストもこの CLI と同じ生成ロジックを使用する。
+サービスのテストもこの CLI と同じ生成ロジック（`internal-jwt-handling/jwtgen`）を使用する。
 
 ## 認証と認可
 
@@ -123,7 +125,7 @@ go run ./cmd/jwtgen -token-use service -origin-sub user-1 -scope events.read -te
 
 Service Gateway が発行した内部 JWT を Authorization ヘッダーで受け付ける。
 サービス側では ES256 の署名、`kid`、`iss`、`aud`、`exp`／`nbf`、`token_use`、scope を検証する。
-`internal/jwks` の JWKS validator を、`internal/tenant/infra/connect` の認可 verifier とテナント ID interceptor で共有する。
+検証は `internal-jwt-handling` に委ね、`jwks.Cache`（鍵の取得とキャッシュ）と `verifier.Verifier`（署名とクレームの検証）を、この process が提供するすべてのサービスの認証・認可 interceptor で共有する。
 
 ```text
 Authorization: Bearer <Service Gateway 発行の内部 JWT>
@@ -167,7 +169,9 @@ proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16
 ### RPC ごとの認可
 
 どちらのサービスも proto の policy annotation（`authz.v1.auth_policy`）で RPC ごとの公開面と要求 scope を宣言する。
-生成された authz verifier は `internal/tenant/infra/connect` の `AuthorizeCall` を共有し、procedure ごとに定めた `token_use` と宣言された scope を検証する。
+生成物は procedure ごとの policy 表（`<Service>Policies`）で、`internal-jwt-handling/interceptor` がこれを読んで内部 JWT を検証し、`token_use` と宣言された scope を突合する。
+既定の `token_use` は `AUTH_LEVEL_AUTHENTICATED` が `tenant_access`、`AUTH_LEVEL_INTERNAL` が `service` で、これと異なる RPC は proto の `token_uses` で宣言する（`ClaimTenantOwnership` の `registration`）。
+`service` トークンの scope は再発行元の権限を表すもので呼び出し元サービスの権限ではないため、scope の検査は行わない。
 
 | RPC | サービス | 公開面 | 要求する `token_use` | 要求 scope |
 |---|---|---|---|---|
@@ -271,7 +275,7 @@ draft はそのままアーカイブでき、これは作成した draft を破�
 前者は `internal/relation/infra/db` の所属リポジトリが、後者は `internal/relation/application` の `Authorizer` が実装する。
 所属リポジトリはテナント側と同じ接続プールと context 上のトランザクションを共有するため、オーナー所属と `owned` への遷移は同時に確定する。
 関係参照側は、公開 ID の解決と書き込み可否を決めるテナントの状態（`pending_owner`、アーカイブ済み）の判定のために、テナント側のリポジトリを読み取り専用で参照する。
-読み取りに加えて、`internal/tenant/infra/db` のトランザクション実行器と `internal/tenant/infra/connect` の検証器の中核および interceptor もテナント側のものを再利用する。
+読み取りに加えて、`internal/tenant/infra/db` のトランザクション実行器と、`internal/tenant/infra/connect` が公開する `AuthInterceptor`／`Mount`／`InternalError` および内部 JWT の token verifier インスタンスもテナント側のものを再利用する（検証そのものの中核は `internal-jwt-handling` にある）。
 
 ### スキーマとロール
 
@@ -281,7 +285,8 @@ draft はそのままアーカイブでき、これは作成した draft を破�
 
 ### RelationAdminService
 
-`tolo.relation.v1.RelationAdminService`（`proto/tolo/relation/v1/relation.proto`）は TenantService と同じプロセスで配信し、同じ検証器とテナント ID interceptor を共有する（`internal/relation/infra/connect`）。
+`tolo.relation.v1.RelationAdminService`（`proto/tolo/relation/v1/relation.proto`）は TenantService と同じプロセスで配信し、内部 JWT の token verifier を共有する（`internal/relation/infra/connect`）。
+認証・認可の interceptor は共有せず、サービスごとに自身の生成 policy 表（`relationv1connect.RelationAdminServicePolicies`）を `AuthInterceptor` に渡して組み立てる。
 すべての RPC が `tenant_access` を要求し、リクエストの `tenant_id`（`GrantEventRole` とイベント指定の `RevokeRole` はイベントの所属テナント）をクレームと突合する。
 
 | RPC | 要求 scope | 主な応答コード |

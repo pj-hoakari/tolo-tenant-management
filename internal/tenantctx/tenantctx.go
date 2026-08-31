@@ -1,17 +1,25 @@
-// Package tenantctx carries the authenticated principal's facts (the subject
-// and the tenant's public ID) through the request context and verifies that
+// Package tenantctx reads the authenticated principal's facts (the subject and
+// the tenant's public ID) from the request context and verifies that
 // tenant-scoped work targets that tenant.
 //
-// These are request-scoped authorization facts set by the transport
-// interceptor from the verified internal JWT. It is deliberately kept
-// out of the domain layer: whether a caller may act on a given tenant is
-// contextual authorization, not an intrinsic domain invariant, so domain value
-// objects stay free of request context.
+// The facts arrive as the claims of the internal JWT that the transport
+// interceptor (internal-jwt-handling/interceptor) verified for the call. This
+// package is read-only: it exposes only the claims that may drive an
+// authorization decision, keeping the raw claim set out of the application
+// layer, and pairs them with the tenant boundary checks Ensure and
+// VerifyOwnership.
+//
+// It is deliberately kept out of the domain layer: whether a caller may act on
+// a given tenant is contextual authorization, not an intrinsic domain
+// invariant, so domain value objects stay free of request context.
 package tenantctx
 
 import (
 	"context"
 	"errors"
+	"strings"
+
+	internaljwt "github.com/pj-hoakari/internal-jwt-handling"
 )
 
 var (
@@ -26,34 +34,36 @@ var (
 	ErrMismatch = errors.New("tenant ID does not match context")
 )
 
-type contextKey struct{}
-
-type subjectKey struct{}
-
-// WithSubject stores the authenticated subject (the internal JWT's sub) on
-// the context.
-func WithSubject(ctx context.Context, subject string) context.Context {
-	return context.WithValue(ctx, subjectKey{}, subject)
-}
-
-// SubjectFromContext returns the authenticated subject stored by WithSubject.
+// SubjectFromContext returns the authenticated subject carried in the verified
+// internal JWT's sub claim.
 func SubjectFromContext(ctx context.Context) (string, bool) {
-	subject, ok := ctx.Value(subjectKey{}).(string)
+	claims, ok := internaljwt.ClaimsFromContext(ctx)
+	if !ok {
+		return "", false
+	}
 
-	return subject, ok && subject != ""
-}
+	subject := strings.TrimSpace(claims.Subject)
+	if subject == "" {
+		return "", false
+	}
 
-// WithTenantPublicID stores the authenticated tenant's public ID on the context.
-func WithTenantPublicID(ctx context.Context, tenantPublicID string) context.Context {
-	return context.WithValue(ctx, contextKey{}, tenantPublicID)
+	return subject, true
 }
 
 // TenantPublicIDFromContext returns the authenticated tenant's public ID
-// stored by WithTenantPublicID.
+// carried in the verified internal JWT's tenant_id claim.
 func TenantPublicIDFromContext(ctx context.Context) (string, bool) {
-	tenantPublicID, ok := ctx.Value(contextKey{}).(string)
+	claims, ok := internaljwt.ClaimsFromContext(ctx)
+	if !ok {
+		return "", false
+	}
 
-	return tenantPublicID, ok
+	tenantPublicID := strings.TrimSpace(claims.TenantPublicID)
+	if tenantPublicID == "" {
+		return "", false
+	}
+
+	return tenantPublicID, true
 }
 
 // Ensure verifies that tenantPublicID matches the authenticated tenant carried

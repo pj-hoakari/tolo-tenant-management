@@ -24,6 +24,7 @@ service TenantService {
     option (authz.v1.auth_policy) = {
       level: AUTH_LEVEL_AUTHENTICATED
       required_scopes: "tenant.claim"
+      token_uses: "registration"
     };
   }
   rpc ChangeTenantContract(ChangeTenantContractRequest) returns (ChangeTenantContractResponse) {

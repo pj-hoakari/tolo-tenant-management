@@ -16,6 +16,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 
+	internaljwt "github.com/pj-hoakari/internal-jwt-handling"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/repository"
 	tenantdomain "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/domain"
@@ -288,7 +289,7 @@ func TestListMemberships(t *testing.T) {
 
 	// Under a tenant context, memberships of other tenants are never handed
 	// back, even by a query that is not scoped by tenant.
-	foreignCtx := tenantctx.WithTenantPublicID(ctx, f.tenantA.PublicID())
+	foreignCtx := internaljwt.ContextWithClaims(ctx, internaljwt.Claims{TenantPublicID: f.tenantA.PublicID()})
 	if _, err := f.memberships.ListMembershipsByUser(foreignCtx, "user-1"); !errors.Is(err, tenantctx.ErrMismatch) {
 		t.Errorf("ListMembershipsByUser(foreign context) error = %v, want %v", err, tenantctx.ErrMismatch)
 	}

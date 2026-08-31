@@ -24,10 +24,13 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 
+	internaljwt "github.com/pj-hoakari/internal-jwt-handling"
+	"github.com/pj-hoakari/internal-jwt-handling/jwks"
+	"github.com/pj-hoakari/internal-jwt-handling/jwtgen"
+	"github.com/pj-hoakari/internal-jwt-handling/verifier"
+
 	relationv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/relation/v1"
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/relation/v1/relationv1connect"
-	"github.com/pj-hoakari/tolo-tenant-management/internal/jwks"
-	"github.com/pj-hoakari/tolo-tenant-management/internal/jwtgen"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/logging"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/application"
 	relationdomain "github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
@@ -83,40 +86,49 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// jwksRegistry serves the keys of every token minted by a test.
+// testRefreshCooldown lets a key a test registers after the first request be
+// picked up at once. jwks.Config reads a non-positive duration as "use the
+// default", so the shortest cooldown a test can ask for is one nanosecond.
+// These tests are about the transport, not about the cache; the jwks package
+// covers the cache itself.
+const testRefreshCooldown = time.Nanosecond
+
+// jwksRegistry serves the keys of every token minted by a test. Every key it
+// hands out has its own kid, because a JWKS naming one kid twice is refused as
+// a whole.
 type jwksRegistry struct {
-	mu   sync.Mutex
-	keys []jwtgen.JWK
+	mu     sync.Mutex
+	keys   []internaljwt.JWK
+	minted int
 }
 
-func (r *jwksRegistry) add(keys ...jwtgen.JWK) {
+func (r *jwksRegistry) add(keys ...internaljwt.JWK) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	r.keys = append(r.keys, keys...)
 }
 
-func (r *jwksRegistry) document() jwtgen.JWKS {
+func (r *jwksRegistry) document() internaljwt.JWKS {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	return jwtgen.JWKS{Keys: append([]jwtgen.JWK(nil), r.keys...)}
+	return internaljwt.JWKS{Keys: append([]internaljwt.JWK(nil), r.keys...)}
 }
 
-// freshJWKSValidator validates every request with a newly built JWKS
-// validator. The real one caches the document and rate limits the refresh an
-// unknown kid triggers, so a key a test registers after the first request
-// would stay invisible for the length of that cooldown. These tests are about
-// the transport, not about the cache; internal/jwks covers the cache itself.
-type freshJWKSValidator tenantconnect.JWTSettings
+// nextKeyID names the signing key of the next token minted for the registry.
+func (r *jwksRegistry) nextKeyID(prefix string) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
-func (v freshJWKSValidator) Claims(ctx context.Context, authorization string) (jwks.InternalJWTClaims, error) {
-	return jwks.NewJWKSValidator(v.JWKSURL, v.Issuer, v.Audience).Claims(ctx, authorization)
+	r.minted++
+
+	return fmt.Sprintf("%s-%d", prefix, r.minted)
 }
 
 // callerSubject is the subject of every token minted by jwtgen, and therefore
 // the caller whose current membership the write RPCs re-check.
-const callerSubject = "test-subject"
+const callerSubject = jwtgen.DefaultSubject
 
 type fixture struct {
 	tenants     *infradb.PostgresTenantRepository
@@ -155,16 +167,27 @@ func newFixture(t *testing.T) fixture {
 	}))
 	t.Cleanup(jwksServer.Close)
 
-	settings := tenantconnect.DefaultJWTSettings()
-	settings.JWKSURL = jwksServer.URL
+	cache, err := jwks.New(jwks.Config{
+		URL:             jwksServer.URL,
+		RefreshCooldown: testRefreshCooldown,
+		FailureCooldown: testRefreshCooldown,
+	})
+	if err != nil {
+		t.Fatalf("jwks.New() error = %v", err)
+	}
 
-	handler, err := tenantconnect.NewHandlerWithValidator(
+	tokenVerifier, err := verifier.New(tenantconnect.DefaultInternalJWTIssuer, tenantconnect.DefaultInternalJWTAudience, cache)
+	if err != nil {
+		t.Fatalf("verifier.New() error = %v", err)
+	}
+
+	handler, err := tenantconnect.NewHandlerWithVerifier(
 		tenantapplication.NewTenantService(tenants, tenants, memberships, application.NewAuthorizer(memberships)),
-		freshJWKSValidator(settings),
+		tokenVerifier,
 		Mount(application.NewRelationService(tenants, memberships, memberships)),
 	)
 	if err != nil {
-		t.Fatalf("NewHandlerWithValidator() error = %v", err)
+		t.Fatalf("NewHandlerWithVerifier() error = %v", err)
 	}
 
 	httpServer := httptest.NewServer(handler)
@@ -211,12 +234,12 @@ func (f fixture) mintToken(t *testing.T, tenantPublicID, scope string) string {
 	t.Helper()
 
 	output, err := jwtgen.Generate(jwtgen.Config{
-		Issuer:         jwks.DefaultInternalJWTIssuer,
-		Audience:       jwks.DefaultInternalJWTAudience,
-		TokenUse:       jwtgen.TokenUseTenantAccess,
+		Issuer:         tenantconnect.DefaultInternalJWTIssuer,
+		Audience:       tenantconnect.DefaultInternalJWTAudience,
+		TokenUse:       internaljwt.TokenUseTenantAccess,
 		TenantPublicID: tenantPublicID,
 		Scope:          scope,
-		KeyID:          fmt.Sprintf("key-%s-%d", tenantPublicID, len(scope)),
+		KeyID:          f.jwks.nextKeyID("key-" + tenantPublicID),
 		TTL:            time.Hour,
 	})
 	if err != nil {

@@ -8,8 +8,10 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/mock/gomock"
 
+	internaljwt "github.com/pj-hoakari/internal-jwt-handling"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/repository"
@@ -30,8 +32,23 @@ var (
 // unless a test says otherwise.
 const callerID = "user-0"
 
+// withTenant returns a context carrying verified claims that authenticate the
+// given tenant but no subject, as the transport interceptor would.
+func withTenant(ctx context.Context, tenantPublicID string) context.Context {
+	return internaljwt.ContextWithClaims(ctx, internaljwt.Claims{TenantPublicID: tenantPublicID})
+}
+
+// withPrincipal returns a context carrying verified claims that authenticate
+// both the subject and the tenant.
+func withPrincipal(ctx context.Context, subject, tenantPublicID string) context.Context {
+	return internaljwt.ContextWithClaims(ctx, internaljwt.Claims{
+		RegisteredClaims: jwt.RegisteredClaims{Subject: subject},
+		TenantPublicID:   tenantPublicID,
+	})
+}
+
 func ownCtx() context.Context {
-	return tenantctx.WithSubject(tenantctx.WithTenantPublicID(context.Background(), ownedTenant.PublicID()), callerID)
+	return withPrincipal(context.Background(), callerID, ownedTenant.PublicID())
 }
 
 // passthroughTransactor runs the unit of work on the caller's context: the use
@@ -167,7 +184,7 @@ func TestGrantEventRoleGates(t *testing.T) {
 	}{
 		{name: "archived event", ctx: ownCtx(), event: archivedEvent, want: tenantrepository.ErrEventArchived},
 		{name: "archived tenant", ctx: ownCtx(), event: draftEvent, tenant: archivedTenant, want: tenantrepository.ErrTenantArchived},
-		{name: "event of another tenant", ctx: tenantctx.WithTenantPublicID(context.Background(), "other-tenant"), event: draftEvent, want: tenantctx.ErrMismatch},
+		{name: "event of another tenant", ctx: withTenant(context.Background(), "other-tenant"), event: draftEvent, want: tenantctx.ErrMismatch},
 	}
 
 	for _, tt := range tests {
@@ -244,7 +261,7 @@ func TestRevokeRole(t *testing.T) {
 func TestCurrentPermissionGates(t *testing.T) {
 	t.Parallel()
 
-	noSubjectCtx := tenantctx.WithTenantPublicID(context.Background(), ownedTenant.PublicID())
+	noSubjectCtx := withTenant(context.Background(), ownedTenant.PublicID())
 
 	tests := []struct {
 		name   string

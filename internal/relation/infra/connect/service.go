@@ -4,6 +4,7 @@ package connect
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 
 	connectrpc "connectrpc.com/connect"
@@ -20,26 +21,23 @@ import (
 )
 
 // Mount returns the mount of RelationAdminService for the process's handler.
-// The service runs with the same validator and interceptors as TenantService.
+// The service is guarded by an interceptor built from its own generated policy
+// table and runs with the same process-wide interceptors as TenantService.
 func Mount(relationService application.RelationUseCases) tenantconnect.Mount {
-	return func(mux *http.ServeMux, validator tenantconnect.JWTValidator, interceptors ...connectrpc.Interceptor) {
-		path, handler := relationv1connect.NewRelationAdminServiceHandlerWithAuthz(
-			NewService(relationService),
-			newAuthzVerifier(validator),
-			connectrpc.WithInterceptors(interceptors...),
-		)
-		mux.Handle(path, handler)
-	}
-}
-
-func newAuthzVerifier(validator tenantconnect.JWTValidator) relationv1connect.Verifier {
-	return relationv1connect.VerifierFunc(func(ctx context.Context, policy relationv1connect.AuthPolicy) error {
-		if policy.Level == relationv1connect.AuthLevelPublic {
-			return nil
+	return func(mux *http.ServeMux, auth tenantconnect.AuthInterceptor, interceptors ...connectrpc.Interceptor) error {
+		relationAuth, err := auth(relationv1connect.RelationAdminServicePolicies)
+		if err != nil {
+			return fmt.Errorf("create RelationAdminService authentication interceptor: %w", err)
 		}
 
-		return tenantconnect.AuthorizeCall(ctx, validator, policy.RequiredScopes)
-	})
+		path, handler := relationv1connect.NewRelationAdminServiceHandler(
+			NewService(relationService),
+			connectrpc.WithInterceptors(append(interceptors, relationAuth)...),
+		)
+		mux.Handle(path, handler)
+
+		return nil
+	}
 }
 
 // Service is the Connect transport implementation of RelationAdminService.
