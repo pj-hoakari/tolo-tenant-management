@@ -35,6 +35,11 @@ linters:
                 # its request context.
                 - pattern: '^log\.[A-Z]\w*$'
                   msg: "use log/slog (internal/logging) instead of the standard log package"
+                # Establishing the tenant boundary is the transport's job.
+                # Below it the boundary is only read, so a use case or a
+                # repository cannot widen the tenant it was called for.
+                - pattern: '^tenantctx\.WithTenantPublicID$'
+                  msg: "tenant binding is the transport's job; only the HTTP API handler may bind a tenant without a JWT"
         exhaustruct:
             exclude:
                 - 'crypto/tls\.Config'
@@ -48,6 +53,12 @@ linters:
             branch-max-lines: 2
     exclusions:
         rules:
+            # The one transport whose callers carry no internal JWT, and
+            # therefore the one place allowed to bind the tenant itself.
+            - path: internal/relation/infra/httpapi/handler\.go
+              linters:
+                  - forbidigo
+              text: WithTenantPublicID
             - path: _test\.go
               linters:
                   - errcheck

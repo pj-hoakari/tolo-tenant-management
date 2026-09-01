@@ -206,10 +206,6 @@ func (r *PostgresMembershipRepository) ListMembershipsByTenant(ctx context.Conte
 	return r.listMemberships(ctx, `WHERE m.tenant_id = $1`, tenantID)
 }
 
-func (r *PostgresMembershipRepository) ListMembershipsByUser(ctx context.Context, userID string) ([]domain.Membership, error) {
-	return r.listMemberships(ctx, `WHERE m.user_id = $1`, userID)
-}
-
 type membershipRow struct {
 	TenantID       string `db:"tenant_id"`
 	TenantPublicID string `db:"tenant_public_id"`

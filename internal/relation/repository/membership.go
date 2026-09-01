@@ -59,6 +59,4 @@ type MembershipRepository interface {
 	FindTenantRoleForShare(ctx context.Context, tenantID, userID string) (domain.Role, error)
 	// ListMembershipsByTenant lists every membership of the tenant.
 	ListMembershipsByTenant(ctx context.Context, tenantID string) ([]domain.Membership, error)
-	// ListMembershipsByUser lists the user's memberships across tenants.
-	ListMembershipsByUser(ctx context.Context, userID string) ([]domain.Membership, error)
 }
