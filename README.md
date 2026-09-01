@@ -306,6 +306,60 @@ draft はそのままアーカイブでき、これは作成した draft を破�
 
 書き込み 4 RPC は、JWT の scope 検証に加えて呼び出し元の現在権限を確認する（「管理系書き込みの現在権限確認」）。
 
+### 所属参照の HTTP API
+
+内部 JWT を持たない呼び出し元（想定は IdP）向けに、所属参照を素の HTTP でも提供する。
+`internal/relation/infra/httpapi` が提供し、`relationhttpapi.Mount` で Connect のサービスと同じハンドラ・同じポート（`SERVER_ADDR`）に登録する。
+
+| メソッドとパス | パスパラメータ |
+|---|---|
+| `GET /tenants/{tenant_id}/users/{user_id}/memberships` | `tenant_id`、`user_id` |
+
+```
+GET /tenants/0123456789abcdef/users/user-1/memberships
+```
+
+`tenant_id` と `user_id` はどちらも必須で、クエリではなくパスで表すため省略できない。
+どちらかを欠いたパスはこのルートに一致せず、ハンドラに届く前に mux が 404 を返す。
+
+テナント境界はトークンではなくリクエストの `tenant_id` が定める。
+ハンドラは `tenant_id` を `tenantctx.WithTenantPublicID` で context に束縛し、以後は Connect 経路とまったく同じ `ListMemberships`（`user_id` フィルタ）が答える。
+検証済み JWT の `tenant_id` クレームがある場合はそちらが優先されるため、束縛が認証済み呼び出しのテナントを広げることはない。
+
+したがって、指定したテナント内のそのユーザーの所属だけが返り、同じユーザーが他のテナントに持つ所属は返らない（リポジトリの行ごとの所有確認も同じ束縛を読む）。
+イベントロールも指定テナント内のものに限られる。
+そのユーザーがテナントに所属していない場合は 404 ではなく、空の配列を伴う 200 を返す。
+読み取りのため、アーカイブ済みテナントも参照できる。
+
+応答（200、`Content-Type: application/json; charset=utf-8`）。識別子はすべて公開 ID で、`memberships` と `event_roles` は 0 件でも `null` ではなく `[]` を返す。
+`memberships` の要素は 0 件または 1 件になる。
+
+```json
+{
+  "memberships": [
+    {
+      "user_id": "user-1",
+      "tenant_id": "0123456789abcdef",
+      "tenant_role": "owner",
+      "event_roles": [{ "event_id": "fedcba9876543210", "role": "staff" }]
+    }
+  ]
+}
+```
+
+エラーは `{"error": "..."}` の形で返す。
+
+| 状態 | ステータス |
+|---|---|
+| 存在しないテナント、ルートに一致しないパス | 404 |
+| パスセグメントが空白のみ | 400 |
+| タイムアウト | 504 |
+| その他の内部エラー | 500（原因はサーバーログにのみ出力し、本文は `internal error` 固定） |
+
+内部 JWT の検証も scope の確認もせず、`tenant_id` で指定されたテナントの所属をそのまま返す。
+テナント境界は保たれるが、呼び出し元がそのテナントの関係者であることは確認していない。
+到達できるのは想定した呼び出し元だけになるよう、ネットワーク（VPC・ファイアウォール）または前段のゲートウェイで制限すること。
+
 ## 仕様文書
 
 - `docs/tenant_management_spec.md`: 本サービスの入出力仕様。TenantService と RelationAdminService の RPC 一覧と振る舞いの正本

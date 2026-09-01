@@ -43,6 +43,7 @@ import (
 	relationdomain "github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	relationconnect "github.com/pj-hoakari/tolo-tenant-management/internal/relation/infra/connect"
 	relationdb "github.com/pj-hoakari/tolo-tenant-management/internal/relation/infra/db"
+	relationhttpapi "github.com/pj-hoakari/tolo-tenant-management/internal/relation/infra/httpapi"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/application"
 	tenantdomain "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/domain"
 	tenantconnect "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/infra/connect"
@@ -220,6 +221,10 @@ type process struct {
 	jwks           *jwksRegistry
 	tenantClient   tenantv1connect.TenantServiceClient
 	relationClient relationv1connect.RelationAdminServiceClient
+	// baseURL and httpClient reach the same handler without a generated
+	// client, for the plain HTTP API mounted next to the Connect services.
+	baseURL    string
+	httpClient *http.Client
 }
 
 // newProcess resets the database and serves both services on one handler. The
@@ -265,7 +270,7 @@ func newProcess(t *testing.T, options ...application.Option) *process {
 		t.Fatalf("verifier.New() error = %v", err)
 	}
 
-	handler, err := connect.NewHandlerWithVerifier(tokenVerifier, tenantconnect.Mount(tenantService), relationconnect.Mount(relationService))
+	handler, err := connect.NewHandlerWithVerifier(tokenVerifier, tenantconnect.Mount(tenantService), relationconnect.Mount(relationService), relationhttpapi.Mount(relationService))
 	if err != nil {
 		t.Fatalf("NewHandlerWithVerifier() error = %v", err)
 	}
@@ -279,6 +284,8 @@ func newProcess(t *testing.T, options ...application.Option) *process {
 		jwks:           registry,
 		tenantClient:   tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL),
 		relationClient: relationv1connect.NewRelationAdminServiceClient(httpServer.Client(), httpServer.URL),
+		baseURL:        httpServer.URL,
+		httpClient:     httpServer.Client(),
 	}
 }
 

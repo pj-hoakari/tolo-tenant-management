@@ -274,25 +274,17 @@ func TestListMemberships(t *testing.T) {
 		t.Errorf("user-1 event roles = %#v, want none", got)
 	}
 
-	byUser, err := f.memberships.ListMembershipsByUser(ctx, "user-1")
-	if err != nil {
-		t.Fatalf("ListMembershipsByUser() error = %v", err)
-	}
-
-	if len(byUser) != 2 || byUser[0].TenantPublicID() != f.tenantA.PublicID() || byUser[1].TenantPublicID() != f.tenantB.PublicID() {
-		t.Errorf("ListMembershipsByUser() = %#v, want memberships of both tenants", byUser)
-	}
-
-	empty, err := f.memberships.ListMembershipsByUser(ctx, "nobody")
+	// A tenant nobody belongs to answers an empty slice, not a failure.
+	empty, err := f.memberships.ListMembershipsByTenant(ctx, "00000000-0000-0000-0000-0000000000c1")
 	if err != nil || len(empty) != 0 {
-		t.Errorf("ListMembershipsByUser(nobody) = %#v, %v, want empty", empty, err)
+		t.Errorf("ListMembershipsByTenant(tenant without members) = %#v, %v, want empty", empty, err)
 	}
 
 	// Under a tenant context, memberships of other tenants are never handed
-	// back, even by a query that is not scoped by tenant.
+	// back, whatever the query asked for.
 	foreignCtx := internaljwt.ContextWithClaims(ctx, internaljwt.Claims{TenantPublicID: f.tenantA.PublicID()})
-	if _, err := f.memberships.ListMembershipsByUser(foreignCtx, "user-1"); !errors.Is(err, tenantctx.ErrMismatch) {
-		t.Errorf("ListMembershipsByUser(foreign context) error = %v, want %v", err, tenantctx.ErrMismatch)
+	if _, err := f.memberships.ListMembershipsByTenant(foreignCtx, f.tenantB.ID()); !errors.Is(err, tenantctx.ErrMismatch) {
+		t.Errorf("ListMembershipsByTenant(foreign context) error = %v, want %v", err, tenantctx.ErrMismatch)
 	}
 
 	if _, err := f.memberships.ListMembershipsByTenant(foreignCtx, f.tenantA.ID()); err != nil {

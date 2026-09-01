@@ -17,6 +17,7 @@ import (
 	relationapplication "github.com/pj-hoakari/tolo-tenant-management/internal/relation/application"
 	relationconnect "github.com/pj-hoakari/tolo-tenant-management/internal/relation/infra/connect"
 	relationdb "github.com/pj-hoakari/tolo-tenant-management/internal/relation/infra/db"
+	relationhttpapi "github.com/pj-hoakari/tolo-tenant-management/internal/relation/infra/httpapi"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/telemetry"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/application"
 	tenantconnect "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/infra/connect"
@@ -97,7 +98,12 @@ func run() error {
 
 	// Every service of the process is mounted on one handler; each one is
 	// guarded by an interceptor built from its own generated policy table.
-	handler, err := infraconnect.NewHandlerWithJWTSettings(jwtSettings, tenantconnect.Mount(tenantService), relationconnect.Mount(relationService))
+	//
+	// The memberships read is also served as a plain HTTP API on the same handler
+	// and port, for callers that carry no internal JWT: it is unauthenticated
+	// and bound to the tenant the request names, so its reachability has to be
+	// limited by the network in front of the service.
+	handler, err := infraconnect.NewHandlerWithJWTSettings(jwtSettings, tenantconnect.Mount(tenantService), relationconnect.Mount(relationService), relationhttpapi.Mount(relationService))
 	if err != nil {
 		return fmt.Errorf("build handler: %w", err)
 	}
