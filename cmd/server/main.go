@@ -11,14 +11,16 @@ import (
 	"syscall"
 	"time"
 
+	infraconnect "github.com/pj-hoakari/tolo-tenant-management/internal/infra/connect"
+	infradb "github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/logging"
 	relationapplication "github.com/pj-hoakari/tolo-tenant-management/internal/relation/application"
 	relationconnect "github.com/pj-hoakari/tolo-tenant-management/internal/relation/infra/connect"
 	relationdb "github.com/pj-hoakari/tolo-tenant-management/internal/relation/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/telemetry"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/application"
-	connectinfra "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/infra/connect"
-	dbinfra "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/infra/db"
+	tenantconnect "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/infra/connect"
+	tenantdb "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/infra/db"
 )
 
 const (
@@ -49,10 +51,10 @@ func run() error {
 	defer stop()
 
 	addr := getenv("SERVER_ADDR", defaultAddr)
-	jwtSettings := connectinfra.JWTSettings{
-		JWKSURL:  getenv("INTERNAL_JWKS_URL", connectinfra.DefaultInternalJWKSURL),
-		Issuer:   getenv("INTERNAL_JWT_ISSUER", connectinfra.DefaultInternalJWTIssuer),
-		Audience: getenv("INTERNAL_JWT_AUDIENCE", connectinfra.DefaultInternalJWTAudience),
+	jwtSettings := infraconnect.JWTSettings{
+		JWKSURL:  getenv("INTERNAL_JWKS_URL", infraconnect.DefaultInternalJWKSURL),
+		Issuer:   getenv("INTERNAL_JWT_ISSUER", infraconnect.DefaultInternalJWTIssuer),
+		Audience: getenv("INTERNAL_JWT_AUDIENCE", infraconnect.DefaultInternalJWTAudience),
 	}
 
 	databaseURL := os.Getenv("DATABASE_URL")
@@ -70,7 +72,7 @@ func run() error {
 		slog.Info("tracing enabled", "service", telemetry.ServiceName())
 	}
 
-	db, err := dbinfra.Open(ctx, databaseURL)
+	db, err := infradb.Open(ctx, databaseURL)
 	if err != nil {
 		return err
 	}
@@ -80,7 +82,7 @@ func run() error {
 		}
 	}()
 
-	tenantRepository := dbinfra.NewPostgresTenantRepository(db)
+	tenantRepository := tenantdb.NewPostgresTenantRepository(db)
 	// The membership repository shares the pool, so the owner membership of
 	// ClaimTenantOwnership commits in the tenant repository's transaction.
 	membershipRepository := relationdb.NewPostgresMembershipRepository(db)
@@ -93,7 +95,9 @@ func run() error {
 	// run in one transaction.
 	relationService := relationapplication.NewRelationService(tenantRepository, membershipRepository, membershipRepository)
 
-	handler, err := connectinfra.NewHandlerWithJWTSettings(tenantService, jwtSettings, relationconnect.Mount(relationService))
+	// Every service of the process is mounted on one handler; each one is
+	// guarded by an interceptor built from its own generated policy table.
+	handler, err := infraconnect.NewHandlerWithJWTSettings(jwtSettings, tenantconnect.Mount(tenantService), relationconnect.Mount(relationService))
 	if err != nil {
 		return fmt.Errorf("build handler: %w", err)
 	}

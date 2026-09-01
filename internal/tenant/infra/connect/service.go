@@ -1,19 +1,22 @@
+// Package connect provides the Connect transport of TenantService.
 package connect
 
 import (
 	"context"
 	"errors"
-	"log/slog"
+	"fmt"
 	"math"
+	"net/http"
 
 	connectrpc "connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	tenantv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1"
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1/tenantv1connect"
+	infraconnect "github.com/pj-hoakari/tolo-tenant-management/internal/infra/connect"
+	infradb "github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/domain"
-	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/repository"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
@@ -21,34 +24,6 @@ import (
 // errObservationSettingsRequired rejects an update that names no settings at
 // all; the request carries the whole value, not a patch.
 var errObservationSettingsRequired = errors.New("observation settings are required")
-
-// errInternal is the only detail a client learns about an internal failure.
-var errInternal = errors.New("internal error")
-
-// InternalError reports a failure the client can do nothing about. The cause is
-// written to the server log and replaced by a fixed message, so that no
-// internal detail leaves the service (service_gateway.md「エラー方針」). The log
-// handler names the trace of the request context on the record, so an operator
-// can find the failure in the trace it belongs to.
-//
-// A cancelled or timed-out request is the client going away rather than a
-// server fault, so it keeps its own code and is not logged.
-//
-// It is exported for the other transports of this process, so that every
-// service answers an internal failure the same way.
-func InternalError(ctx context.Context, err error) *connectrpc.Error {
-	if errors.Is(err, context.Canceled) {
-		return connectrpc.NewError(connectrpc.CodeCanceled, err)
-	}
-
-	if errors.Is(err, context.DeadlineExceeded) {
-		return connectrpc.NewError(connectrpc.CodeDeadlineExceeded, err)
-	}
-
-	slog.ErrorContext(ctx, "internal error", "error", err)
-
-	return connectrpc.NewError(connectrpc.CodeInternal, errInternal) //nolint:forbidigo // the one place that builds internal errors
-}
 
 // tenantContextErrorCode maps the tenant-context guard errors to Connect codes.
 // A mismatch between the requested tenant and the authenticated tenant is a
@@ -62,6 +37,26 @@ func tenantContextErrorCode(err error) (connectrpc.Code, bool) {
 		return connectrpc.CodeUnauthenticated, true
 	default:
 		return 0, false
+	}
+}
+
+// Mount returns the mount of TenantService for the process's handler. The
+// service is guarded by an interceptor built from its own generated policy
+// table and runs with the process-wide interceptors (tracing) before it.
+func Mount(tenantService application.TenantUseCases) infraconnect.Mount {
+	return func(mux *http.ServeMux, auth infraconnect.AuthInterceptor, interceptors ...connectrpc.Interceptor) error {
+		tenantAuth, err := auth(tenantv1connect.TenantServicePolicies)
+		if err != nil {
+			return fmt.Errorf("create TenantService authentication interceptor: %w", err)
+		}
+
+		path, handler := tenantv1connect.NewTenantServiceHandler(
+			NewService(tenantService),
+			connectrpc.WithInterceptors(append(interceptors, tenantAuth)...),
+		)
+		mux.Handle(path, handler)
+
+		return nil
 	}
 }
 
@@ -92,7 +87,7 @@ func (s *Service) StartTenantRegistration(ctx context.Context, req *connectrpc.R
 			return nil, connectrpc.NewError(connectrpc.CodeAlreadyExists, err)
 		}
 
-		return nil, InternalError(ctx, err)
+		return nil, infraconnect.InternalError(ctx, err)
 	}
 
 	// The plaintext claim token appears in this response only; it is never
@@ -123,11 +118,11 @@ func (s *Service) ClaimTenantOwnership(ctx context.Context, req *connectrpc.Requ
 		}
 
 		// The claim runs in a transaction; an aborted one can be retried.
-		if errors.Is(err, db.ErrTransactionAborted) {
+		if errors.Is(err, infradb.ErrTransactionAborted) {
 			return nil, connectrpc.NewError(connectrpc.CodeAborted, err)
 		}
 
-		return nil, InternalError(ctx, err)
+		return nil, infraconnect.InternalError(ctx, err)
 	}
 
 	return connectrpc.NewResponse(&tenantv1.ClaimTenantOwnershipResponse{Tenant: tenantProto(tenant)}), nil
@@ -153,14 +148,14 @@ func administrativeTenantWriteError(ctx context.Context, err error) error {
 	case errors.Is(err, tenantctx.ErrSubjectMissing):
 		return connectrpc.NewError(connectrpc.CodeUnauthenticated, err)
 	// The write runs in a transaction; an aborted one can be retried.
-	case errors.Is(err, db.ErrTransactionAborted):
+	case errors.Is(err, infradb.ErrTransactionAborted):
 		return connectrpc.NewError(connectrpc.CodeAborted, err)
 	default:
 		if code, ok := tenantContextErrorCode(err); ok {
 			return connectrpc.NewError(code, err)
 		}
 
-		return InternalError(ctx, err)
+		return infraconnect.InternalError(ctx, err)
 	}
 }
 
@@ -213,7 +208,7 @@ func (s *Service) CreateEvent(ctx context.Context, req *connectrpc.Request[tenan
 			return nil, connectrpc.NewError(code, err)
 		}
 
-		return nil, InternalError(ctx, err)
+		return nil, infraconnect.InternalError(ctx, err)
 	}
 
 	return connectrpc.NewResponse(&tenantv1.CreateEventResponse{Event: eventProto(event)}), nil
@@ -305,7 +300,7 @@ func (s *Service) AssignEventType(ctx context.Context, req *connectrpc.Request[t
 			return nil, connectrpc.NewError(code, err)
 		}
 
-		return nil, InternalError(ctx, err)
+		return nil, infraconnect.InternalError(ctx, err)
 	}
 
 	return connectrpc.NewResponse(&tenantv1.AssignEventTypeResponse{Event: eventProto(event)}), nil
@@ -333,7 +328,7 @@ func (s *Service) TransitionEventStatus(ctx context.Context, req *connectrpc.Req
 			return nil, connectrpc.NewError(code, err)
 		}
 
-		return nil, InternalError(ctx, err)
+		return nil, infraconnect.InternalError(ctx, err)
 	}
 
 	return connectrpc.NewResponse(&tenantv1.TransitionEventStatusResponse{Event: eventProto(event)}), nil
@@ -389,7 +384,7 @@ func (s *Service) GetEvent(ctx context.Context, req *connectrpc.Request[tenantv1
 			return nil, connectrpc.NewError(code, err)
 		}
 
-		return nil, InternalError(ctx, err)
+		return nil, infraconnect.InternalError(ctx, err)
 	}
 
 	return connectrpc.NewResponse(&tenantv1.GetEventResponse{Event: eventProto(event)}), nil
@@ -425,7 +420,7 @@ func (s *Service) GetObservationSettings(ctx context.Context, req *connectrpc.Re
 			return nil, connectrpc.NewError(code, err)
 		}
 
-		return nil, InternalError(ctx, err)
+		return nil, infraconnect.InternalError(ctx, err)
 	}
 
 	return connectrpc.NewResponse(&tenantv1.GetObservationSettingsResponse{Settings: observationSettingsProto(settings)}), nil
@@ -457,7 +452,7 @@ func (s *Service) UpdateObservationSettings(ctx context.Context, req *connectrpc
 			return nil, connectrpc.NewError(code, err)
 		}
 
-		return nil, InternalError(ctx, err)
+		return nil, infraconnect.InternalError(ctx, err)
 	}
 
 	return connectrpc.NewResponse(&tenantv1.UpdateObservationSettingsResponse{Settings: observationSettingsProto(settings)}), nil
@@ -482,7 +477,7 @@ func (s *Service) ListEvents(ctx context.Context, req *connectrpc.Request[tenant
 			return nil, connectrpc.NewError(code, err)
 		}
 
-		return nil, InternalError(ctx, err)
+		return nil, infraconnect.InternalError(ctx, err)
 	}
 
 	responseEvents := make([]*tenantv1.Event, 0, len(events))

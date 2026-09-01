@@ -15,6 +15,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	internaljwt "github.com/pj-hoakari/internal-jwt-handling"
 	"github.com/pj-hoakari/internal-jwt-handling/jwtgen"
+	infraconnect "github.com/pj-hoakari/tolo-tenant-management/internal/infra/connect"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/infra/db"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -22,8 +23,8 @@ import (
 )
 
 const (
-	internalJWTIssuer   = DefaultInternalJWTIssuer
-	internalJWTAudience = DefaultInternalJWTAudience
+	internalJWTIssuer   = infraconnect.DefaultInternalJWTIssuer
+	internalJWTAudience = infraconnect.DefaultInternalJWTAudience
 )
 
 type testInternalJWTs struct {

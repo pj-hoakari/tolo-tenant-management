@@ -31,15 +31,15 @@ import (
 
 	relationv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/relation/v1"
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/relation/v1/relationv1connect"
+	infraconnect "github.com/pj-hoakari/tolo-tenant-management/internal/infra/connect"
+	infradb "github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/logging"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/application"
 	relationdomain "github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	relationdb "github.com/pj-hoakari/tolo-tenant-management/internal/relation/infra/db"
 	relationrepository "github.com/pj-hoakari/tolo-tenant-management/internal/relation/repository"
-	tenantapplication "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/application"
 	tenantdomain "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/domain"
-	tenantconnect "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/infra/connect"
-	infradb "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/infra/db"
+	tenantdb "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/infra/db"
 	tenantrepository "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/repository"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
@@ -131,7 +131,7 @@ func (r *jwksRegistry) nextKeyID(prefix string) string {
 const callerSubject = jwtgen.DefaultSubject
 
 type fixture struct {
-	tenants     *infradb.PostgresTenantRepository
+	tenants     *tenantdb.PostgresTenantRepository
 	memberships *relationdb.PostgresMembershipRepository
 	jwks        *jwksRegistry
 	client      relationv1connect.RelationAdminServiceClient
@@ -154,7 +154,7 @@ func newFixture(t *testing.T) fixture {
 	}
 
 	ctx := context.Background()
-	tenants := infradb.NewPostgresTenantRepository(testDB)
+	tenants := tenantdb.NewPostgresTenantRepository(testDB)
 	memberships := relationdb.NewPostgresMembershipRepository(testDB)
 	registry := &jwksRegistry{}
 
@@ -176,13 +176,12 @@ func newFixture(t *testing.T) fixture {
 		t.Fatalf("jwks.New() error = %v", err)
 	}
 
-	tokenVerifier, err := verifier.New(tenantconnect.DefaultInternalJWTIssuer, tenantconnect.DefaultInternalJWTAudience, cache)
+	tokenVerifier, err := verifier.New(infraconnect.DefaultInternalJWTIssuer, infraconnect.DefaultInternalJWTAudience, cache)
 	if err != nil {
 		t.Fatalf("verifier.New() error = %v", err)
 	}
 
-	handler, err := tenantconnect.NewHandlerWithVerifier(
-		tenantapplication.NewTenantService(tenants, tenants, memberships, application.NewAuthorizer(memberships)),
+	handler, err := infraconnect.NewHandlerWithVerifier(
 		tokenVerifier,
 		Mount(application.NewRelationService(tenants, memberships, memberships)),
 	)
@@ -234,8 +233,8 @@ func (f fixture) mintToken(t *testing.T, tenantPublicID, scope string) string {
 	t.Helper()
 
 	output, err := jwtgen.Generate(jwtgen.Config{
-		Issuer:         tenantconnect.DefaultInternalJWTIssuer,
-		Audience:       tenantconnect.DefaultInternalJWTAudience,
+		Issuer:         infraconnect.DefaultInternalJWTIssuer,
+		Audience:       infraconnect.DefaultInternalJWTAudience,
 		TokenUse:       internaljwt.TokenUseTenantAccess,
 		TenantPublicID: tenantPublicID,
 		Scope:          scope,

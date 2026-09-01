@@ -14,6 +14,7 @@ import (
 	"github.com/pj-hoakari/internal-jwt-handling/jwtgen"
 	"github.com/pj-hoakari/internal-jwt-handling/verifier"
 
+	infraconnect "github.com/pj-hoakari/tolo-tenant-management/internal/infra/connect"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/application"
 )
 
@@ -90,7 +91,7 @@ func newDynamicTestHandler(t *testing.T, service application.TenantUseCases) (ht
 		t.Fatalf("verifier.New() error = %v", err)
 	}
 
-	handler, err := NewHandlerWithVerifier(service, tokenVerifier)
+	handler, err := infraconnect.NewHandlerWithVerifier(tokenVerifier, Mount(service))
 	if err != nil {
 		t.Fatalf("NewHandlerWithVerifier() error = %v", err)
 	}
