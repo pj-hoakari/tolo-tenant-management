@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"testing"
 
 	connectrpc "connectrpc.com/connect"
 
+	relationv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/relation/v1"
 	infradb "github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/logging"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/application"
@@ -20,6 +22,99 @@ import (
 	tenantrepository "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/repository"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
+
+func TestRoleConversions(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		role relationv1.Role
+		want relationdomain.Role
+	}{
+		{name: "unspecified", role: relationv1.Role_ROLE_UNSPECIFIED, want: relationdomain.RoleUnspecified},
+		{name: "owner", role: relationv1.Role_ROLE_OWNER, want: relationdomain.RoleOwner},
+		{name: "staff", role: relationv1.Role_ROLE_STAFF, want: relationdomain.RoleStaff},
+		// The reserved role crosses the wire as itself, so that the domain is
+		// the one to refuse it (ErrRoleReserved) rather than the transport
+		// silently degrading it to unspecified.
+		{name: "admin", role: relationv1.Role_ROLE_ADMIN, want: relationdomain.RoleAdmin},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := roleDomain(tt.role); got != tt.want {
+				t.Errorf("roleDomain(%v) = %v, want %v", tt.role, got, tt.want)
+			}
+
+			if got := roleProto(tt.want); got != tt.role {
+				t.Errorf("roleProto(%v) = %v, want %v", tt.want, got, tt.role)
+			}
+		})
+	}
+
+	t.Run("unknown values fall back to unspecified", func(t *testing.T) {
+		t.Parallel()
+
+		// A wire value this build does not know (a newer client) and a domain
+		// value the proto does not name are both answered with unspecified
+		// rather than mapped onto a role that grants something.
+		if got := roleDomain(relationv1.Role(math.MaxInt32)); got != relationdomain.RoleUnspecified {
+			t.Errorf("roleDomain(unknown) = %v, want %v", got, relationdomain.RoleUnspecified)
+		}
+
+		if got := roleProto(relationdomain.Role(math.MaxUint8)); got != relationv1.Role_ROLE_UNSPECIFIED {
+			t.Errorf("roleProto(unknown) = %v, want %v", got, relationv1.Role_ROLE_UNSPECIFIED)
+		}
+	})
+}
+
+// TestMembershipProto pins the wire shape of a membership: public IDs only,
+// the tenant role, and every event role in the order the domain holds them.
+func TestMembershipProto(t *testing.T) {
+	t.Parallel()
+
+	membership := relationdomain.NewMembership("user-1", "00000000-0000-0000-0000-0000000000a1", "aaaaaaaaaaaaaaa1", relationdomain.RoleStaff, []relationdomain.EventRole{
+		relationdomain.NewEventRole("00000000-0000-0000-0000-0000000000a2", "aaaaaaaaaaaaaaa2", relationdomain.RoleStaff),
+		relationdomain.NewEventRole("00000000-0000-0000-0000-0000000000a3", "aaaaaaaaaaaaaaa3", relationdomain.RoleOwner),
+	})
+
+	got := membershipProto(membership)
+
+	if got.GetUserId() != "user-1" || got.GetTenantId() != "aaaaaaaaaaaaaaa1" || got.GetTenantRole() != relationv1.Role_ROLE_STAFF {
+		t.Errorf("membershipProto() = %v, want user-1 as staff of aaaaaaaaaaaaaaa1", got)
+	}
+
+	wantRoles := []*relationv1.EventRole{
+		{EventId: "aaaaaaaaaaaaaaa2", Role: relationv1.Role_ROLE_STAFF},
+		{EventId: "aaaaaaaaaaaaaaa3", Role: relationv1.Role_ROLE_OWNER},
+	}
+
+	if roles := got.GetEventRoles(); len(roles) != len(wantRoles) {
+		t.Fatalf("EventRoles = %v, want %v", roles, wantRoles)
+	}
+
+	for i, want := range wantRoles {
+		if role := got.GetEventRoles()[i]; role.GetEventId() != want.GetEventId() || role.GetRole() != want.GetRole() {
+			t.Errorf("EventRoles[%d] = %v, want %v", i, role, want)
+		}
+	}
+
+	// The internal IDs of the tenant and the events never leave the service.
+	if text := got.String(); strings.Contains(text, "00000000-0000-0000-0000-") {
+		t.Errorf("membershipProto() = %s, want no internal ID on the wire", text)
+	}
+
+	t.Run("without event roles", func(t *testing.T) {
+		t.Parallel()
+
+		got := membershipProto(relationdomain.NewMembership("user-2", "00000000-0000-0000-0000-0000000000b1", "bbbbbbbbbbbbbbb1", relationdomain.RoleOwner, nil))
+		if roles := got.GetEventRoles(); len(roles) != 0 {
+			t.Errorf("EventRoles = %v, want none", roles)
+		}
+	})
+}
 
 // TestConnectError pins the code every sentinel error is answered with,
 // including the ones the transport cannot reach from a test.
