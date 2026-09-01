@@ -1,4 +1,8 @@
-// Package connect provides the Connect HTTP transport for this service.
+// Package connect builds the Connect HTTP handler of this process. It owns
+// what every service served here shares — the verification of the internal
+// JWT, the tracing interceptor, the health check and the mux — and leaves each
+// service to mount itself through Mount with an interceptor built from its own
+// generated policy table.
 package connect
 
 import (
@@ -14,9 +18,6 @@ import (
 	"github.com/pj-hoakari/internal-jwt-handling/jwks"
 	"github.com/pj-hoakari/internal-jwt-handling/verifier"
 	"github.com/pj-hoakari/protoc-gen-authz-go/authz"
-
-	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1/tenantv1connect"
-	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/application"
 )
 
 // Defaults for verifying internal JWTs. The issuer is the Service Gateway's
@@ -49,14 +50,16 @@ func DefaultJWTSettings() JWTSettings {
 // service from its generated policy table.
 type AuthInterceptor func(policies authz.Policies) (connectrpc.Interceptor, error)
 
-// Mount registers one more Connect service on the mux. auth builds the
-// service's authentication interceptor; interceptors are the ones every
-// service in the process runs with (tracing), to be placed before it.
+// Mount registers one Connect service on the mux. auth builds the service's
+// authentication interceptor; interceptors are the ones every service in the
+// process runs with (tracing), to be placed before it. Each service's connect
+// package returns its own Mount, so the process handler knows no service in
+// particular.
 type Mount func(mux *http.ServeMux, auth AuthInterceptor, interceptors ...connectrpc.Interceptor) error
 
 // NewHandlerWithJWTSettings builds the process handler that verifies internal
 // JWTs against the JWKS the settings locate.
-func NewHandlerWithJWTSettings(tenantService application.TenantUseCases, settings JWTSettings, mounts ...Mount) (http.Handler, error) {
+func NewHandlerWithJWTSettings(settings JWTSettings, mounts ...Mount) (http.Handler, error) {
 	cache, err := jwks.New(jwks.Config{
 		URL:             settings.JWKSURL,
 		HTTPClient:      nil,
@@ -76,14 +79,14 @@ func NewHandlerWithJWTSettings(tenantService application.TenantUseCases, setting
 		return nil, fmt.Errorf("create internal JWT verifier: %w", err)
 	}
 
-	return NewHandlerWithVerifier(tenantService, tokenVerifier, mounts...)
+	return NewHandlerWithVerifier(tokenVerifier, mounts...)
 }
 
 // NewHandlerWithVerifier builds the process handler around a verifier of the
 // internal JWT. Every service served by this process is guarded by an
 // interceptor built from its own generated policy table, so the credential
 // rules stay declared in the proto.
-func NewHandlerWithVerifier(tenantService application.TenantUseCases, tokenVerifier interceptor.TokenVerifier, mounts ...Mount) (http.Handler, error) {
+func NewHandlerWithVerifier(tokenVerifier interceptor.TokenVerifier, mounts ...Mount) (http.Handler, error) {
 	// The caller sits behind the Service Gateway, so an incoming trace context is
 	// trusted and continued instead of being demoted to a span link.
 	tracing, err := otelconnect.NewInterceptor(otelconnect.WithTrustRemote())
@@ -95,22 +98,11 @@ func NewHandlerWithVerifier(tenantService application.TenantUseCases, tokenVerif
 		return interceptor.New(tokenVerifier, policies, interceptor.WithErrorReporter(reportAuthRejection))
 	}
 
-	tenantAuth, err := auth(tenantv1connect.TenantServicePolicies)
-	if err != nil {
-		return nil, fmt.Errorf("create TenantService authentication interceptor: %w", err)
-	}
-
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealthz)
 
 	// Tracing runs before authentication, so a rejected call is still recorded
 	// on the trace it belongs to.
-	path, handler := tenantv1connect.NewTenantServiceHandler(
-		NewService(tenantService),
-		connectrpc.WithInterceptors(tracing, tenantAuth),
-	)
-	mux.Handle(path, handler)
-
 	for _, mount := range mounts {
 		if err := mount(mux, auth, tracing); err != nil {
 			return nil, fmt.Errorf("mount service: %w", err)

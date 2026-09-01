@@ -17,10 +17,11 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	internaljwt "github.com/pj-hoakari/internal-jwt-handling"
+	infradb "github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/repository"
 	tenantdomain "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/domain"
-	infradb "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/infra/db"
+	tenantdb "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
 
@@ -67,7 +68,7 @@ func TestMain(m *testing.M) {
 }
 
 type fixture struct {
-	tenants     *infradb.PostgresTenantRepository
+	tenants     *tenantdb.PostgresTenantRepository
 	memberships *PostgresMembershipRepository
 	tenantA     tenantdomain.Tenant
 	tenantB     tenantdomain.Tenant
@@ -86,7 +87,7 @@ func newFixture(t *testing.T) fixture {
 
 	ctx := context.Background()
 	f := fixture{
-		tenants:     infradb.NewPostgresTenantRepository(testDB),
+		tenants:     tenantdb.NewPostgresTenantRepository(testDB),
 		memberships: NewPostgresMembershipRepository(testDB),
 		tenantA:     tenantdomain.NewTenant("00000000-0000-0000-0000-0000000000a1", "aaaaaaaaaaaaaaa1", "Alpha", "standard", tenantdomain.TenantOwnershipStateOwned, false),
 		tenantB:     tenantdomain.NewTenant("00000000-0000-0000-0000-0000000000b1", "bbbbbbbbbbbbbbb1", "Beta", "standard", tenantdomain.TenantOwnershipStateOwned, false),

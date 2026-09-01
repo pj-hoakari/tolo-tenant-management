@@ -51,13 +51,6 @@ func (r *membershipRecorder) AddOwner(_ context.Context, tenantID, userID string
 	return r.err
 }
 
-func (r *membershipRecorder) owner() (string, string, int) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	return r.tenantID, r.userID, r.calls
-}
-
 // permissionStub stands in for the relation side's current-permission check.
 // It holds no mutable state, so the handler goroutines can share one.
 type permissionStub struct {

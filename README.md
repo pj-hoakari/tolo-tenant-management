@@ -119,6 +119,12 @@ go tool jwtgen -issuer service-gateway -audience tolo-tenant-management -token-u
 出力された `jwks` を Service Gateway の JWKS スタブとして公開すると、出力された `token` を結合テストに利用できる。
 サービスのテストもこの CLI と同じ生成ロジック（`internal-jwt-handling/jwtgen`）を使用する。
 
+### 結合テスト
+
+プロセス全体の結合テストは `internal/infra/connect` に置く（`integration_test.go` が基盤、`tenant_integration_test.go`／`relation_integration_test.go` が各サービスの RPC）。
+`cmd/server` と同じ配線で TenantService と RelationAdminService を 1 つのハンドラに載せ、testcontainers で起動した PostgreSQL と、テストが鍵を追加できる JWKS スタブを共有して、実際の HTTP 経由で両サービスを呼び出す。
+各サービスの `infra/connect` パッケージには、エラー変換や proto 変換のようなそのパッケージ固有のロジックの単体テストだけを置く。
+
 ## 認証と認可
 
 ### 内部 JWT の検証
@@ -200,7 +206,7 @@ proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16
 そのログは `message` が `internal error`、`error` 属性が原因という構造化レコードで、トレースが有効なときはトレースのフィールドも付く（「ログ」を参照）。
 クライアント都合の中断と締め切り超過は `canceled`／`deadline_exceeded` として返し、サーバー側のログには記録しない。
 エラーメッセージには内部主キー（UUIDv7）、テナント名、ユーザー ID を含めない。
-`connectrpc.CodeInternal` の直接使用は golangci-lint の `forbidigo` で禁止しており、許可するのは `InternalError` の中だけである。
+`connectrpc.CodeInternal` の直接使用は golangci-lint の `forbidigo` で禁止しており、許可するのは `internal/infra/connect` の `InternalError` の中だけである。
 
 ## テナントとイベント
 
@@ -275,7 +281,9 @@ draft はそのままアーカイブでき、これは作成した draft を破�
 前者は `internal/relation/infra/db` の所属リポジトリが、後者は `internal/relation/application` の `Authorizer` が実装する。
 所属リポジトリはテナント側と同じ接続プールと context 上のトランザクションを共有するため、オーナー所属と `owned` への遷移は同時に確定する。
 関係参照側は、公開 ID の解決と書き込み可否を決めるテナントの状態（`pending_owner`、アーカイブ済み）の判定のために、テナント側のリポジトリを読み取り専用で参照する。
-読み取りに加えて、`internal/tenant/infra/db` のトランザクション実行器と、`internal/tenant/infra/connect` が公開する `AuthInterceptor`／`Mount`／`InternalError` および内部 JWT の token verifier インスタンスもテナント側のものを再利用する（検証そのものの中核は `internal-jwt-handling` にある）。
+テナント側・関係参照側のどちらにも属さないプロセス共通の基盤は `internal/infra` に置く。
+`internal/infra/db` は接続プールの生成（`Open`）と context に載せるトランザクション（`RunInTransaction`／`Executor`）を、`internal/infra/connect` は内部 JWT の検証・トレース・`/healthz`・`Mount`／`AuthInterceptor`／`InternalError` を提供する（検証そのものの中核は `internal-jwt-handling` にある）。
+両モジュールのリポジトリとトランスポートはこれらを同じ形で利用し、互いのインフラ層を参照しない。
 
 ### スキーマとロール
 
@@ -285,8 +293,9 @@ draft はそのままアーカイブでき、これは作成した draft を破�
 
 ### RelationAdminService
 
-`tolo.relation.v1.RelationAdminService`（`proto/tolo/relation/v1/relation.proto`）は TenantService と同じプロセスで配信し、内部 JWT の token verifier を共有する（`internal/relation/infra/connect`）。
-認証・認可の interceptor は共有せず、サービスごとに自身の生成 policy 表（`relationv1connect.RelationAdminServicePolicies`）を `AuthInterceptor` に渡して組み立てる。
+`tolo.relation.v1.RelationAdminService`（`proto/tolo/relation/v1/relation.proto`）は TenantService と同じプロセスで配信し、内部 JWT の token verifier とトレースの interceptor を共有する。
+プロセスのハンドラは `internal/infra/connect` の `NewHandlerWithJWTSettings` が組み立て、各サービスは自身の `infra/connect` パッケージが返す `Mount`（`tenantconnect.Mount`／`relationconnect.Mount`）で同じ手順で登録される。
+認証・認可の interceptor は共有せず、サービスごとに自身の生成 policy 表（`tenantv1connect.TenantServicePolicies`／`relationv1connect.RelationAdminServicePolicies`）を `AuthInterceptor` に渡して組み立てる。
 すべての RPC が `tenant_access` を要求し、リクエストの `tenant_id`（`GrantEventRole` とイベント指定の `RevokeRole` はイベントの所属テナント）をクレームと突合する。
 
 | RPC | 要求 scope | 主な応答コード |

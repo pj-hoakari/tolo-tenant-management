@@ -11,20 +11,20 @@ import (
 
 	relationv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/relation/v1"
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/relation/v1/relationv1connect"
+	infraconnect "github.com/pj-hoakari/tolo-tenant-management/internal/infra/connect"
+	infradb "github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/repository"
-	tenantconnect "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/infra/connect"
-	infradb "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/infra/db"
 	tenantrepository "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/repository"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
 
 // Mount returns the mount of RelationAdminService for the process's handler.
 // The service is guarded by an interceptor built from its own generated policy
-// table and runs with the same process-wide interceptors as TenantService.
-func Mount(relationService application.RelationUseCases) tenantconnect.Mount {
-	return func(mux *http.ServeMux, auth tenantconnect.AuthInterceptor, interceptors ...connectrpc.Interceptor) error {
+// table and runs with the process-wide interceptors (tracing) before it.
+func Mount(relationService application.RelationUseCases) infraconnect.Mount {
+	return func(mux *http.ServeMux, auth infraconnect.AuthInterceptor, interceptors ...connectrpc.Interceptor) error {
 		relationAuth, err := auth(relationv1connect.RelationAdminServicePolicies)
 		if err != nil {
 			return fmt.Errorf("create RelationAdminService authentication interceptor: %w", err)
@@ -130,7 +130,7 @@ func (s *Service) ListMemberships(ctx context.Context, req *connectrpc.Request[r
 // the write is denied, and one without a subject is unauthenticated. A
 // transaction PostgreSQL aborted is reported as aborted, which tells the
 // client the call can be retried as it stands. Anything else is an internal
-// failure, reported without its detail (tenantconnect.InternalError).
+// failure, reported without its detail (infraconnect.InternalError).
 func connectError(ctx context.Context, err error) error {
 	switch {
 	case errors.Is(err, application.ErrTenantIDRequired),
@@ -165,7 +165,7 @@ func connectError(ctx context.Context, err error) error {
 	case errors.Is(err, infradb.ErrTransactionAborted):
 		return connectrpc.NewError(connectrpc.CodeAborted, err)
 	default:
-		return tenantconnect.InternalError(ctx, err)
+		return infraconnect.InternalError(ctx, err)
 	}
 }
 
