@@ -86,7 +86,33 @@ jobs:
                   push: true
                   tags: ${{ steps.meta.outputs.tags }}
                   labels: ${{ steps.meta.outputs.labels }}
-                  cache-from: type=gha
-                  cache-to: type=gha,mode=max
+                  cache-from: type=gha,scope=server
+                  cache-to: type=gha,mode=max,scope=server
+                  provenance: true
+                  sbom: true
+
+            - name: Extract metadata (migrate)
+              id: meta-migrate
+              uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+              with:
+                  images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-migrate
+                  tags: |
+                      type=semver,pattern={{version}},value=${{ steps.version.outputs.version }}
+                      type=semver,pattern={{major}}.{{minor}},value=${{ steps.version.outputs.version }}
+                      type=semver,pattern={{major}},value=${{ steps.version.outputs.version }},enable=${{ !startsWith(steps.version.outputs.version, '0.') }}
+                      type=raw,value=latest,enable=${{ !contains(steps.version.outputs.version, '-') }}
+
+            - name: Build and push (migrate)
+              uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+              with:
+                  context: .
+                  file: ./Dockerfile
+                  target: migrate
+                  platforms: linux/amd64,linux/arm64
+                  push: true
+                  tags: ${{ steps.meta-migrate.outputs.tags }}
+                  labels: ${{ steps.meta-migrate.outputs.labels }}
+                  cache-from: type=gha,scope=migrate
+                  cache-to: type=gha,mode=max,scope=migrate
                   provenance: true
                   sbom: true

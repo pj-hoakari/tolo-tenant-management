@@ -30,6 +30,7 @@ task up:build
 ```
 
 サーバーは `http://localhost:8080`、PostgreSQL は `localhost:5432` で待ち受ける。
+Compose の `migrate` サービスは `Dockerfile` の `migrate` ターゲット（後述の「イメージからマイグレーションを実行する」を参照）をビルドして起動するため、`migrations/` を追加・変更したあとは `--build` 付き（`docker compose up --build` または `task up:build`）で起動し直す。`task up` はイメージを再ビルドしないので、古いマイグレーションのままになる。
 アプリケーションは `DATABASE_URL` で接続先を設定する。
 ローカルでマイグレーションを実行する場合は、Compose で PostgreSQL を起動してから次を実行する（接続先は `DATABASE_URL` で上書きできる）。
 
@@ -315,6 +316,42 @@ draft はそのままアーカイブでき、これは作成した draft を破�
 - `docs/internal_jwt.md`: 内部 JWT の構造。`token_use`、scope、公開面の 3 軸とクレームの正本
 - `docs/service_gateway.md`: Service Gateway の入出力仕様。外部資格情報の検証と内部 JWT への変換
 - `docs/service_map.md`: サービス間の関係と主要なやり取りの図
+
+## イメージからマイグレーションを実行する
+
+`Dockerfile` の `migrate` ターゲットは golang-migrate CLI のイメージに `migrations/` を `/migrations` として同梱したものである。
+リポジトリを clone しなくても、このイメージだけで DB マイグレーションを実行できる。
+`ENTRYPOINT` は `migrate -path /migrations` なので、利用者は接続先とコマンドだけを引数として渡す。
+
+ローカルでビルドする場合は次のとおりである。
+
+```bash
+docker build --target migrate -t tolo-tenant-management-migrate .
+```
+
+適用は `-database` に接続先を、続けてコマンドを渡す。
+
+```bash
+docker run --rm --network host tolo-tenant-management-migrate -database "$DATABASE_URL" up
+```
+
+公開イメージは `ghcr.io/pj-hoakari/tolo-tenant-management-migrate` で、サーバーのイメージと同じバージョンタグを付ける。
+
+```bash
+docker run --rm --network host ghcr.io/pj-hoakari/tolo-tenant-management-migrate:<version> -database "$DATABASE_URL" up
+```
+
+そのほかのコマンドも同じ形で渡す。
+
+```bash
+# 現在のバージョンを確認
+docker run --rm --network host ghcr.io/pj-hoakari/tolo-tenant-management-migrate:<version> -database "$DATABASE_URL" version
+# 1 つ前にロールバック
+docker run --rm --network host ghcr.io/pj-hoakari/tolo-tenant-management-migrate:<version> -database "$DATABASE_URL" down 1
+```
+
+golang-migrate CLI は接続先を環境変数からは読まないため、`-database` は必ず引数で渡す。
+`--network host` はコンテナからホスト上の PostgreSQL に接続するための指定であり、接続先がホスト外にあるなら不要である。
 
 ## proto アーティファクトの利用
 
