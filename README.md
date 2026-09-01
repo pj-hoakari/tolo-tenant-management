@@ -119,6 +119,12 @@ go tool jwtgen -issuer service-gateway -audience tolo-tenant-management -token-u
 出力された `jwks` を Service Gateway の JWKS スタブとして公開すると、出力された `token` を結合テストに利用できる。
 サービスのテストもこの CLI と同じ生成ロジック（`internal-jwt-handling/jwtgen`）を使用する。
 
+### 結合テスト
+
+プロセス全体の結合テストは `internal/infra/connect` に置く（`integration_test.go` が基盤、`tenant_integration_test.go`／`relation_integration_test.go` が各サービスの RPC）。
+`cmd/server` と同じ配線で TenantService と RelationAdminService を 1 つのハンドラに載せ、testcontainers で起動した PostgreSQL と、テストが鍵を追加できる JWKS スタブを共有して、実際の HTTP 経由で両サービスを呼び出す。
+各サービスの `infra/connect` パッケージには、エラー変換や proto 変換のようなそのパッケージ固有のロジックの単体テストだけを置く。
+
 ## 認証と認可
 
 ### 内部 JWT の検証
