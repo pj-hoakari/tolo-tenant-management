@@ -16,11 +16,11 @@ services:
             - postgres-data:/var/lib/postgresql
 
     migrate:
-        image: migrate/migrate:v4.19.1@sha256:cc4ad8e19d66791e3689405d9a028ce6e9614f32032db14acda1469f7201d6e4
+        build:
+            context: .
+            target: migrate
         command:
             [
-                "-path",
-                "/migrations",
                 "-database",
                 "postgres://tenant_management:tenant_management@postgres:5432/tenant_management?sslmode=disable",
                 "up",
@@ -28,8 +28,6 @@ services:
         depends_on:
             postgres:
                 condition: service_healthy
-        volumes:
-            - ./migrations:/migrations:ro
 
     server:
         build:
