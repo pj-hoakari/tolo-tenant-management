@@ -2,7 +2,7 @@
 actionlint = "1.7.12"
 betterleaks = "latest"
 buf = "1.72.0"
-go = "1.27.0"
+go = "1.27.1"
 golangci-lint = "2.13.2"
 gomigrate = "latest"
 lefthook = "latest"
