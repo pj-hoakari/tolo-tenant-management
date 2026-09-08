@@ -1,6 +1,6 @@
 module github.com/pj-hoakari/tolo-tenant-management
 
-go 1.27.0
+go 1.27.1
 
 tool (
 	connectrpc.com/connect/cmd/protoc-gen-connect-go
