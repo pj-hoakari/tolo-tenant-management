@@ -1526,19 +1526,19 @@ const file_tolo_tenant_v1_tenant_proto_rawDesc = "" +
 	"\x11EVENT_STATUS_OPEN\x10\x02\x12\x17\n" +
 	"\x13EVENT_STATUS_LOCKED\x10\x03\x12\x17\n" +
 	"\x13EVENT_STATUS_CLOSED\x10\x04\x12\x19\n" +
-	"\x15EVENT_STATUS_ARCHIVED\x10\x052\xfa\n" +
+	"\x15EVENT_STATUS_ARCHIVED\x10\x052\xfe\n" +
 	"\n" +
 	"\rTenantService\x12\x82\x01\n" +
 	"\x17StartTenantRegistration\x12..tolo.tenant.v1.StartTenantRegistrationRequest\x1a/.tolo.tenant.v1.StartTenantRegistrationResponse\"\x06\x8a\xb5\x18\x02\b\x01\x12\x95\x01\n" +
 	"\x14ClaimTenantOwnership\x12+.tolo.tenant.v1.ClaimTenantOwnershipRequest\x1a,.tolo.tenant.v1.ClaimTenantOwnershipResponse\"\"\x8a\xb5\x18\x1e\b\x02\x12\ftenant.claim\x1a\fregistration\x12\x87\x01\n" +
 	"\x14ChangeTenantContract\x12+.tolo.tenant.v1.ChangeTenantContractRequest\x1a,.tolo.tenant.v1.ChangeTenantContractResponse\"\x14\x8a\xb5\x18\x10\b\x02\x12\ftenant.write\x12r\n" +
-	"\rArchiveTenant\x12$.tolo.tenant.v1.ArchiveTenantRequest\x1a%.tolo.tenant.v1.ArchiveTenantResponse\"\x14\x8a\xb5\x18\x10\b\x02\x12\ftenant.write\x12l\n" +
-	"\vCreateEvent\x12\".tolo.tenant.v1.CreateEventRequest\x1a#.tolo.tenant.v1.CreateEventResponse\"\x14\x8a\xb5\x18\x10\b\x02\x12\fevents.write\x12x\n" +
-	"\x0fAssignEventType\x12&.tolo.tenant.v1.AssignEventTypeRequest\x1a'.tolo.tenant.v1.AssignEventTypeResponse\"\x14\x8a\xb5\x18\x10\b\x02\x12\fevents.write\x12\x8a\x01\n" +
-	"\x15TransitionEventStatus\x12,.tolo.tenant.v1.TransitionEventStatusRequest\x1a-.tolo.tenant.v1.TransitionEventStatusResponse\"\x14\x8a\xb5\x18\x10\b\x02\x12\fevents.write\x12U\n" +
+	"\rArchiveTenant\x12$.tolo.tenant.v1.ArchiveTenantRequest\x1a%.tolo.tenant.v1.ArchiveTenantResponse\"\x14\x8a\xb5\x18\x10\b\x02\x12\ftenant.write\x12m\n" +
+	"\vCreateEvent\x12\".tolo.tenant.v1.CreateEventRequest\x1a#.tolo.tenant.v1.CreateEventResponse\"\x15\x8a\xb5\x18\x11\b\x02\x12\revents.manage\x12y\n" +
+	"\x0fAssignEventType\x12&.tolo.tenant.v1.AssignEventTypeRequest\x1a'.tolo.tenant.v1.AssignEventTypeResponse\"\x15\x8a\xb5\x18\x11\b\x02\x12\revents.manage\x12\x8b\x01\n" +
+	"\x15TransitionEventStatus\x12,.tolo.tenant.v1.TransitionEventStatusRequest\x1a-.tolo.tenant.v1.TransitionEventStatusResponse\"\x15\x8a\xb5\x18\x11\b\x02\x12\revents.manage\x12U\n" +
 	"\bGetEvent\x12\x1f.tolo.tenant.v1.GetEventRequest\x1a .tolo.tenant.v1.GetEventResponse\"\x06\x8a\xb5\x18\x02\b\x03\x12\x7f\n" +
-	"\x16GetObservationSettings\x12-.tolo.tenant.v1.GetObservationSettingsRequest\x1a..tolo.tenant.v1.GetObservationSettingsResponse\"\x06\x8a\xb5\x18\x02\b\x03\x12\x96\x01\n" +
-	"\x19UpdateObservationSettings\x120.tolo.tenant.v1.UpdateObservationSettingsRequest\x1a1.tolo.tenant.v1.UpdateObservationSettingsResponse\"\x14\x8a\xb5\x18\x10\b\x02\x12\fevents.write\x12h\n" +
+	"\x16GetObservationSettings\x12-.tolo.tenant.v1.GetObservationSettingsRequest\x1a..tolo.tenant.v1.GetObservationSettingsResponse\"\x06\x8a\xb5\x18\x02\b\x03\x12\x97\x01\n" +
+	"\x19UpdateObservationSettings\x120.tolo.tenant.v1.UpdateObservationSettingsRequest\x1a1.tolo.tenant.v1.UpdateObservationSettingsResponse\"\x15\x8a\xb5\x18\x11\b\x02\x12\revents.manage\x12h\n" +
 	"\n" +
 	"ListEvents\x12!.tolo.tenant.v1.ListEventsRequest\x1a\".tolo.tenant.v1.ListEventsResponse\"\x13\x8a\xb5\x18\x0f\b\x02\x12\vevents.readB\xc5\x01\n" +
 	"\x12com.tolo.tenant.v1B\vTenantProtoP\x01ZHgithub.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1;tenantv1\xa2\x02\x03TTX\xaa\x02\x0eTolo.Tenant.V1\xca\x02\x0eTolo\\Tenant\\V1\xe2\x02\x1aTolo\\Tenant\\V1\\GPBMetadata\xea\x02\x10Tolo::Tenant::V1b\x06proto3"
