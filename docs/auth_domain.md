@@ -21,7 +21,7 @@
 | 所有権取得専用の最小トークン / registration token | テナント文脈なしで仮テナントの所有権を取得するためのトークン<br>scope は `tenant.claim` のみで、ClaimTenantOwnership に限定 |
 | 関係参照サービス / relation service | 所属とロールを所有し参照を返す |
 
-ロール→scope：オーナー＝全scope／スタッフ＝tenant.read・events.read・events.operate・events.report（tenant.write と events.manage を含めない）／管理者（予約）＝オーナー相当
+ロール→scope：オーナー＝全scope／スタッフ＝tenant.write を除く全scope／管理者（予約）＝オーナー相当
 ロールは JWT claim に載せない
 
 ## ドメインイベント
