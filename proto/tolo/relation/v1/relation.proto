@@ -19,12 +19,14 @@ service RelationAdminService {
     option (authz.v1.auth_policy) = {
       level: AUTH_LEVEL_AUTHENTICATED
       required_scopes: "tenant.write"
+      token_uses: "tenant_access"
     };
   }
   rpc ChangeTenantRole(ChangeTenantRoleRequest) returns (ChangeTenantRoleResponse) {
     option (authz.v1.auth_policy) = {
       level: AUTH_LEVEL_AUTHENTICATED
       required_scopes: "tenant.write"
+      token_uses: "tenant_access"
     };
   }
   // GrantEventRole assigns an event role. The event must belong to the
@@ -33,6 +35,7 @@ service RelationAdminService {
     option (authz.v1.auth_policy) = {
       level: AUTH_LEVEL_AUTHENTICATED
       required_scopes: "tenant.write"
+      token_uses: "tenant_access"
     };
   }
   // RevokeRole removes a membership (tenant scope) or an event role only
@@ -41,12 +44,14 @@ service RelationAdminService {
     option (authz.v1.auth_policy) = {
       level: AUTH_LEVEL_AUTHENTICATED
       required_scopes: "tenant.write"
+      token_uses: "tenant_access"
     };
   }
   rpc ListMemberships(ListMembershipsRequest) returns (ListMembershipsResponse) {
     option (authz.v1.auth_policy) = {
       level: AUTH_LEVEL_AUTHENTICATED
       required_scopes: "tenant.read"
+      token_uses: "tenant_access"
     };
   }
 }

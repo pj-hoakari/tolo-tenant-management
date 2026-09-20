@@ -31,30 +31,35 @@ service TenantService {
     option (authz.v1.auth_policy) = {
       level: AUTH_LEVEL_AUTHENTICATED
       required_scopes: "tenant.write"
+      token_uses: "tenant_access"
     };
   }
   rpc ArchiveTenant(ArchiveTenantRequest) returns (ArchiveTenantResponse) {
     option (authz.v1.auth_policy) = {
       level: AUTH_LEVEL_AUTHENTICATED
       required_scopes: "tenant.write"
+      token_uses: "tenant_access"
     };
   }
   rpc CreateEvent(CreateEventRequest) returns (CreateEventResponse) {
     option (authz.v1.auth_policy) = {
       level: AUTH_LEVEL_AUTHENTICATED
       required_scopes: "events.manage"
+      token_uses: "tenant_access"
     };
   }
   rpc AssignEventType(AssignEventTypeRequest) returns (AssignEventTypeResponse) {
     option (authz.v1.auth_policy) = {
       level: AUTH_LEVEL_AUTHENTICATED
       required_scopes: "events.manage"
+      token_uses: "tenant_access"
     };
   }
   rpc TransitionEventStatus(TransitionEventStatusRequest) returns (TransitionEventStatusResponse) {
     option (authz.v1.auth_policy) = {
       level: AUTH_LEVEL_AUTHENTICATED
       required_scopes: "events.manage"
+      token_uses: "tenant_access"
     };
   }
   // GetEvent is the referential-integrity read used by Graph Authoring. It
@@ -72,12 +77,14 @@ service TenantService {
     option (authz.v1.auth_policy) = {
       level: AUTH_LEVEL_AUTHENTICATED
       required_scopes: "events.manage"
+      token_uses: "tenant_access"
     };
   }
   rpc ListEvents(ListEventsRequest) returns (ListEventsResponse) {
     option (authz.v1.auth_policy) = {
       level: AUTH_LEVEL_AUTHENTICATED
       required_scopes: "events.read"
+      token_uses: "tenant_access"
     };
   }
 }
