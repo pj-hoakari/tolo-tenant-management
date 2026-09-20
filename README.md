@@ -371,6 +371,7 @@ GET /tenants/0123456789abcdef/users/user-1/memberships
 - `docs/internal_jwt.md`: 内部 JWT の構造。`token_use`、scope、公開面の 3 軸とクレームの正本
 - `docs/service_gateway.md`: Service Gateway の入出力仕様。外部資格情報の検証と内部 JWT への変換
 - `docs/service_map.md`: サービス間の関係と主要なやり取りの図
+- `docs/workload_auth.md`: ワークロード認証の共通契約。SPIRE／Cloud Run の方式選択、環境変数、identity、資格情報の運搬
 
 ## イメージからマイグレーションを実行する
 

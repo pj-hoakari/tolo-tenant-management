@@ -12,6 +12,7 @@
 | TenantArchived | TenantService.ArchiveTenant |
 | EventCreated | TenantService.CreateEvent |
 | EventTypeAssigned | TenantService.AssignEventType |
+| ObservationSettingsChanged | TenantService.UpdateObservationSettings |
 | EventOpened／EventLocked／EventClosed／EventUnlocked／EventReopened／EventArchived／EventUnarchived | TenantService.TransitionEventStatus |
 
 ## 他コンテキストとの接点
