@@ -17,26 +17,24 @@ jobs:
               with:
                   fetch-depth: 0
 
-            - name: Detect test-related changes
+            - name: Detect changes
               id: changes
-              if: github.event_name == 'pull_request'
-              env:
-                  BASE_SHA: ${{ github.event.pull_request.base.sha }}
-                  HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-              run: |
-                  if git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- '**/*.go' go.mod go.sum .github/workflows/test.yml; then
-                    echo "run=false" >> "$GITHUB_OUTPUT"
-                  else
-                    echo "run=true" >> "$GITHUB_OUTPUT"
-                  fi
+              uses: ./.github/actions/detect-changes
+              with:
+                  paths: |
+                      **/*.go
+                      go.mod
+                      go.sum
+                      migrations/**
+                      .github/workflows/test.yml
 
             - name: Set up Go
-              if: github.event_name != 'pull_request' || steps.changes.outputs.run == 'true'
+              if: steps.changes.outputs.changed == 'true'
               uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
               with:
                   go-version-file: go.mod
                   cache: true
 
             - name: Run tests
-              if: github.event_name != 'pull_request' || steps.changes.outputs.run == 'true'
+              if: steps.changes.outputs.changed == 'true'
               run: go test ./...
