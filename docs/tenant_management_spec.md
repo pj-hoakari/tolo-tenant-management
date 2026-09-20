@@ -332,6 +332,7 @@ message ListMembershipsResponse {
 | 匿名の仮作成がレート制限を超過 | `resource_exhausted` |
 | 必須項目の欠落、`EVENT_TYPE_UNSPECIFIED` の指定 | `invalid_argument` |
 | 内部 JWT が無効、`token_use` 不一致 | `unauthenticated` |
+| 内部 JWT の検証鍵を解決できない（JWKS の取得失敗、そのクールダウン中） | `unavailable` |
 | scope 不足、認証テナント以外のイベントの指定 | `permission_denied` |
 
 - エラーメッセージに内部主キー・テナント名・ユーザー ID を含めない（service_gateway.md のエラー方針）
