@@ -820,14 +820,14 @@ const file_tolo_relation_v1_relation_proto_rawDesc = "" +
 	"\n" +
 	"ROLE_STAFF\x10\x02\x12\x0e\n" +
 	"\n" +
-	"ROLE_ADMIN\x10\x032\xfc\x04\n" +
-	"\x14RelationAdminService\x12|\n" +
-	"\x0fAddTenantMember\x12(.tolo.relation.v1.AddTenantMemberRequest\x1a).tolo.relation.v1.AddTenantMemberResponse\"\x14\x8a\xb5\x18\x10\b\x02\x12\ftenant.write\x12\x7f\n" +
-	"\x10ChangeTenantRole\x12).tolo.relation.v1.ChangeTenantRoleRequest\x1a*.tolo.relation.v1.ChangeTenantRoleResponse\"\x14\x8a\xb5\x18\x10\b\x02\x12\ftenant.write\x12y\n" +
-	"\x0eGrantEventRole\x12'.tolo.relation.v1.GrantEventRoleRequest\x1a(.tolo.relation.v1.GrantEventRoleResponse\"\x14\x8a\xb5\x18\x10\b\x02\x12\ftenant.write\x12m\n" +
+	"ROLE_ADMIN\x10\x032\xcb\x05\n" +
+	"\x14RelationAdminService\x12\x8b\x01\n" +
+	"\x0fAddTenantMember\x12(.tolo.relation.v1.AddTenantMemberRequest\x1a).tolo.relation.v1.AddTenantMemberResponse\"#\x8a\xb5\x18\x1f\b\x02\x12\ftenant.write\x1a\rtenant_access\x12\x8e\x01\n" +
+	"\x10ChangeTenantRole\x12).tolo.relation.v1.ChangeTenantRoleRequest\x1a*.tolo.relation.v1.ChangeTenantRoleResponse\"#\x8a\xb5\x18\x1f\b\x02\x12\ftenant.write\x1a\rtenant_access\x12\x88\x01\n" +
+	"\x0eGrantEventRole\x12'.tolo.relation.v1.GrantEventRoleRequest\x1a(.tolo.relation.v1.GrantEventRoleResponse\"#\x8a\xb5\x18\x1f\b\x02\x12\ftenant.write\x1a\rtenant_access\x12|\n" +
 	"\n" +
-	"RevokeRole\x12#.tolo.relation.v1.RevokeRoleRequest\x1a$.tolo.relation.v1.RevokeRoleResponse\"\x14\x8a\xb5\x18\x10\b\x02\x12\ftenant.write\x12{\n" +
-	"\x0fListMemberships\x12(.tolo.relation.v1.ListMembershipsRequest\x1a).tolo.relation.v1.ListMembershipsResponse\"\x13\x8a\xb5\x18\x0f\b\x02\x12\vtenant.readB\xd5\x01\n" +
+	"RevokeRole\x12#.tolo.relation.v1.RevokeRoleRequest\x1a$.tolo.relation.v1.RevokeRoleResponse\"#\x8a\xb5\x18\x1f\b\x02\x12\ftenant.write\x1a\rtenant_access\x12\x8a\x01\n" +
+	"\x0fListMemberships\x12(.tolo.relation.v1.ListMembershipsRequest\x1a).tolo.relation.v1.ListMembershipsResponse\"\"\x8a\xb5\x18\x1e\b\x02\x12\vtenant.read\x1a\rtenant_accessB\xd5\x01\n" +
 	"\x14com.tolo.relation.v1B\rRelationProtoP\x01ZLgithub.com/pj-hoakari/tolo-tenant-management/gen/tolo/relation/v1;relationv1\xa2\x02\x03TRX\xaa\x02\x10Tolo.Relation.V1\xca\x02\x10Tolo\\Relation\\V1\xe2\x02\x1cTolo\\Relation\\V1\\GPBMetadata\xea\x02\x12Tolo::Relation::V1b\x06proto3"
 
 var (

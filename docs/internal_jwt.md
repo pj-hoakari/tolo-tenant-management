@@ -10,7 +10,7 @@
 |---|---|---|---|
 | 公開面 | 外部公開の可否（サービス間専用か） | `level`（メソッド宣言） | public / authenticated / internal |
 | 資格情報の種別 | 出自（grant type）と付随する束縛クレーム | `token_use`（クレーム） | tenant_access / event_access / service / registration |
-| 権限 | ユーザー起点の外部公開操作で実行できる操作の粒度 | `scope`（クレーム） | tenant.write / events.write / events.read |
+| 権限 | ユーザー起点の外部公開操作で実行できる操作の粒度 | `scope`（クレーム） | tenant.write / events.manage / events.operate / events.report / events.read |
 
 - `token_use` は資格情報が「どう発行されたか（出自）」と、どの束縛クレーム（`tenant_id` 等）を伴うかを表す。
 - `scope` は `tenant_access`、`event_access`、`registration` で「何ができるか」を表す。`service` のメソッド可否は辺ポリシーが表す。

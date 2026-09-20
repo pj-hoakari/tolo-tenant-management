@@ -186,7 +186,7 @@ proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16
 | StartTenantRegistration | `TenantService` | 未認証（`AUTH_LEVEL_PUBLIC`） | なし | なし |
 | ClaimTenantOwnership | `TenantService` | 認証済み | `registration` | `tenant.claim` |
 | ChangeTenantContract、ArchiveTenant | `TenantService` | 認証済み | `tenant_access` | `tenant.write` |
-| CreateEvent、AssignEventType、TransitionEventStatus、UpdateObservationSettings | `TenantService` | 認証済み | `tenant_access` | `events.write` |
+| CreateEvent、AssignEventType、TransitionEventStatus、UpdateObservationSettings | `TenantService` | 認証済み | `tenant_access` | `events.manage` |
 | ListEvents | `TenantService` | 認証済み | `tenant_access` | `events.read` |
 | GetEvent、GetObservationSettings | `TenantService` | 内部（`AUTH_LEVEL_INTERNAL`） | `service` | なし |
 | AddTenantMember、ChangeTenantRole、GrantEventRole、RevokeRole | `RelationAdminService` | 認証済み | `tenant_access` | `tenant.write` |
@@ -269,7 +269,7 @@ draft はそのままアーカイブでき、これは作成した draft を破�
 アーカイブ済みのイベントについても応答し、宙づりの参照を生まない。
 テナント境界は強制せず、`tenant_id` クレームを持つ場合だけ突合する（「識別子とテナントの突合」）。
 
-`UpdateObservationSettings` は `tenant_access` と scope `events.write` を要求し、対象イベントの所属テナントをクレームと突合する。
+`UpdateObservationSettings` は `tenant_access` と scope `events.manage` を要求し、対象イベントの所属テナントをクレームと突合する。
 アーカイブ済みのイベント、およびアーカイブ済みテナントのイベントは `failed_precondition` で拒否する。
 `history_window_days` が 1 未満の場合は `invalid_argument` を返す。
 

@@ -60,7 +60,7 @@ const (
 
 	// allTenantScopes grants everything a tenant_access token can be granted, so
 	// a test that is not about scopes is not refused for lacking one.
-	allTenantScopes = "tenant.read tenant.write events.read events.write"
+	allTenantScopes = "tenant.read tenant.write events.read events.manage events.operate events.report"
 
 	// testRefreshCooldown lets a key a test registers after the first request be
 	// picked up at once. jwks.Config reads a non-positive duration as "use the
