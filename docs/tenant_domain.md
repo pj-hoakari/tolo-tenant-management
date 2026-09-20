@@ -27,6 +27,7 @@
 | テナント契約変更された | TenantContractChanged | プラン変更 |
 | イベント作成された | EventCreated | 配下にイベント新設 |
 | イベント種別設定された | EventTypeAssigned | 短期／長期設定 |
+| 観測設定値変更された | ObservationSettingsChanged | イベント単位の観測設定値（履歴期間）の変更 |
 | イベント公開された | EventOpened | draft→open |
 | イベントロックされた | EventLocked | open→locked |
 | イベント終了された | EventClosed | locked→closed |
@@ -48,7 +49,7 @@
 - 期限切れの `pending_owner` は未登録の仮データとして物理削除できる
 - 識別子はテナントが発番する正本（他は参照のみ）
 - 状態は前進（draft→…→archived）を基本に逆遷移も許容
-- 操作可否は各サービスが参照判断（Edge Bridge Service を除き、各サービスは Service Gateway 発行の内部 JWT を検証する側で、IdP の Resource Server ではない）
+- 操作可否は各サービスが参照判断（各サービスは Service Gateway 発行の内部 JWT を検証する側で、IdP の Resource Server ではない。例外は `event_access` を直接検証する Edge Bridge Service と、内部 JWT を要求せず Observation のワークロード認証だけを受ける Flow Control／Line Control）
 - `owned` の削除はソフト削除（アーカイブ）で物理削除せず宙づり参照を生まない
 - アーカイブ中は書き込み禁止・参照継続・所属保持
 - テナントのアーカイブは配下イベントの状態を変えない
