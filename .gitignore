@@ -8,6 +8,9 @@
 *.so
 *.dylib
 
+# Left in the repository root by `go build ./cmd/server/`.
+/server
+
 # Test binary, built with `go test -c`
 *.test
 

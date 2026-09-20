@@ -1,0 +1,37 @@
+package connect
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+
+	connectrpc "connectrpc.com/connect"
+)
+
+// errInternal is the only detail a client learns about an internal failure.
+var errInternal = errors.New("internal error")
+
+// InternalError reports a failure the client can do nothing about. The cause is
+// written to the server log and replaced by a fixed message, so that no
+// internal detail leaves the service (service_gateway.md「エラー方針」). The log
+// handler names the trace of the request context on the record, so an operator
+// can find the failure in the trace it belongs to.
+//
+// A cancelled or timed-out request is the client going away rather than a
+// server fault, so it keeps its own code and is not logged.
+//
+// Every service of this process builds its internal errors here, so that they
+// all answer an internal failure the same way.
+func InternalError(ctx context.Context, err error) *connectrpc.Error {
+	if errors.Is(err, context.Canceled) {
+		return connectrpc.NewError(connectrpc.CodeCanceled, err)
+	}
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		return connectrpc.NewError(connectrpc.CodeDeadlineExceeded, err)
+	}
+
+	slog.ErrorContext(ctx, "internal error", "error", err)
+
+	return connectrpc.NewError(connectrpc.CodeInternal, errInternal) //nolint:forbidigo // the one place that builds internal errors
+}
