@@ -195,11 +195,13 @@ scope は外部トークンの値を転記し、拡大も暗黙の縮小もし�
 
 | サービス | RPC | scope |
 |---|---|---|
-| Graph Authoring | CreateGraph、AddPoint／UpdatePoint／RemovePoint、AddRoute／UpdateRoute／RemoveRoute、MapObservationPoint、AddQrLocation／UpdateQrLocation／RemoveQrLocation、PublishRevision | events.write |
+| Graph Authoring | CreateGraph、AddPoint／UpdatePoint／RemovePoint、AddRoute／UpdateRoute／RemoveRoute、MapObservationPoint、AddQrLocation／UpdateQrLocation／RemoveQrLocation、PublishRevision | events.manage |
 | Graph Authoring | GetGraph | events.read |
-| Observation | ReportMeasurements、Heartbeat、RegisterEdgeDevice、UnregisterEdgeDevice、OperateGate、UpdateObservationPointConfig、ToggleDangerFlag、RegisterScheduleEvent、ReportCongestion、CorrectQueue | events.write |
+| Observation | RegisterEdgeDevice、UnregisterEdgeDevice | events.manage |
+| Observation | OperateGate、UpdateObservationPointConfig、ToggleDangerFlag、RegisterScheduleEvent、ReportCongestion、CorrectQueue | events.operate |
+| Observation | ReportMeasurements、Heartbeat | events.report |
 | Observation | ListEdgeDevices、GetEventOverview | events.read |
-| Operation | SendStaffMessage、RevokeStaffMessage、ShareGuidanceInfo、DirectReassignment、ApplyReassignment | events.write |
+| Operation | SendStaffMessage、RevokeStaffMessage、ShareGuidanceInfo、DirectReassignment、ApplyReassignment | events.operate |
 | Operation | ListStaffMessages、ListReassignments、GetHistoryDigest、UpdateConnectionState | events.read |
 | Realtime | FetchDeliveries、IssueFirestoreToken | events.read |
 
@@ -208,7 +210,7 @@ scope は外部トークンの値を転記し、拡大も暗黙の縮小もし�
 | サービス | RPC | scope |
 |---|---|---|
 | Tenant Management | ChangeTenantContract、ArchiveTenant | tenant.write |
-| Tenant Management | CreateEvent、AssignEventType、TransitionEventStatus、UpdateObservationSettings | events.write |
+| Tenant Management | CreateEvent、AssignEventType、TransitionEventStatus、UpdateObservationSettings | events.manage |
 | Tenant Management | ListEvents | events.read |
 | Tenant Management（RelationAdminService） | AddTenantMember、ChangeTenantRole、GrantEventRole、RevokeRole | tenant.write |
 | Tenant Management（RelationAdminService） | ListMemberships | tenant.read |

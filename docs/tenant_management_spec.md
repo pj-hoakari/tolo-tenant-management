@@ -18,12 +18,12 @@ package: `tolo.tenant.v1`（テナント）、`tolo.relation.v1`（関係参照�
 | ClaimTenantOwnership | 仮テナントの所有権を取得し、認証済みユーザーをオーナーとして登録する | 管理 UI | `tenant.claim`（所有権取得専用の最小トークン。テナント文脈なし。Auth（IdP）） | TenantRegistered |
 | ChangeTenantContract | テナントの契約プランを変更する | 管理 UI | `tenant_access` + tenant.write | TenantContractChanged |
 | ArchiveTenant | テナントを論理削除（アーカイブ）する。識別子と配下データは保持 | 管理 UI | `tenant_access` + tenant.write | TenantArchived |
-| CreateEvent | テナント配下にイベント（催事／設置）を新設する | 管理 UI | `tenant_access` + events.write | EventCreated |
-| AssignEventType | イベント種別（短期／長期）を設定する。短期は観測縮退の対象 | 管理 UI | `tenant_access` + events.write | EventTypeAssigned |
-| TransitionEventStatus | イベント状態を遷移させる（許容遷移は補足の遷移表） | 管理 UI | `tenant_access` + events.write | EventOpened／EventLocked／EventClosed／EventUnlocked／EventReopened／EventArchived／EventUnarchived |
+| CreateEvent | テナント配下にイベント（催事／設置）を新設する | 管理 UI | `tenant_access` + events.manage | EventCreated |
+| AssignEventType | イベント種別（短期／長期）を設定する。短期は観測縮退の対象 | 管理 UI | `tenant_access` + events.manage | EventTypeAssigned |
+| TransitionEventStatus | イベント状態を遷移させる（許容遷移は補足の遷移表） | 管理 UI | `tenant_access` + events.manage | EventOpened／EventLocked／EventClosed／EventUnlocked／EventReopened／EventArchived／EventUnarchived |
 | GetEvent | イベントの存在と所属テナントを参照する。存在しない ID へのグラフ作成を防ぐ参照整合の要（関係参照の存在確認はサービス内部で行い RPC を経ない） | グラフ編集 | サービス間（token_use=service。テナント文脈必須） | （参照のみ） |
 | GetObservationSettings | イベントの観測設定値を参照する | 観測 | サービス間（token_use=service） | （参照のみ） |
-| UpdateObservationSettings | イベントの観測設定値を変更する | 管理 UI | `tenant_access` + events.write | ObservationSettingsChanged |
+| UpdateObservationSettings | イベントの観測設定値を変更する | 管理 UI | `tenant_access` + events.manage | ObservationSettingsChanged |
 | ListEvents | テナント配下のイベントを一覧する | 管理 UI、スタッフアプリ | `tenant_access` + events.read | （参照のみ） |
 
 ### 関係参照（RelationAdminService）

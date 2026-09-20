@@ -16,12 +16,12 @@
 | `tenant_access` token | テナント文脈の JWT |
 | `event_access` token | Token Exchange で発行するイベント文脈トークン |
 | Token Exchange | tenant_access→event_access の一方向のみ |
-| scope | tenant.read/write／events.read/write |
+| scope | tenant.read／tenant.write／events.read と、権限クラスで分けた書き込み scope<br>events.manage（設計・構成）／events.operate（現場運用）／events.report（計測報告・稼働通知） |
 | resource / audience | 対象イベント（URI）／バックエンド API 全体の論理 audience（例 backend-api。登録は1つ）<br>検証は Service Gateway と Edge Bridge Service が行う |
 | 所有権取得専用の最小トークン / registration token | テナント文脈なしで仮テナントの所有権を取得するためのトークン<br>scope は `tenant.claim` のみで、ClaimTenantOwnership に限定 |
 | 関係参照サービス / relation service | 所属とロールを所有し参照を返す |
 
-ロール→scope：オーナー＝全scope／スタッフ＝read系／管理者（予約）＝オーナー相当
+ロール→scope：オーナー＝全scope／スタッフ＝tenant.read・events.read・events.operate・events.report（tenant.write と events.manage を含めない）／管理者（予約）＝オーナー相当
 ロールは JWT claim に載せない
 
 ## ドメインイベント
