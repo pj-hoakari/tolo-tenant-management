@@ -21,7 +21,7 @@ func TestRoleGrants(t *testing.T) {
 		{name: "staff reads the tenant", role: RoleStaff, scope: ScopeTenantRead, want: true},
 		{name: "staff reads events", role: RoleStaff, scope: ScopeEventsRead, want: true},
 		{name: "staff does not write the tenant", role: RoleStaff, scope: ScopeTenantWrite, want: false},
-		{name: "staff does not manage events", role: RoleStaff, scope: ScopeEventsManage, want: false},
+		{name: "staff manages events", role: RoleStaff, scope: ScopeEventsManage, want: true},
 		{name: "staff operates events", role: RoleStaff, scope: ScopeEventsOperate, want: true},
 		{name: "staff reports events", role: RoleStaff, scope: ScopeEventsReport, want: true},
 		{name: "unspecified grants nothing", role: RoleUnspecified, scope: ScopeTenantRead, want: false},

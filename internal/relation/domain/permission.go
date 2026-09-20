@@ -15,16 +15,16 @@ const (
 
 var (
 	// memberScopes are the scopes every role of a tenant can issue.
-	memberScopes = []string{ScopeTenantRead, ScopeEventsRead, ScopeEventsOperate, ScopeEventsReport}
+	memberScopes = []string{ScopeTenantRead, ScopeEventsRead, ScopeEventsManage, ScopeEventsOperate, ScopeEventsReport}
 	// adminScopes are the scopes reserved for the roles that administer the
 	// tenant.
-	adminScopes = []string{ScopeTenantWrite, ScopeEventsManage}
+	adminScopes = []string{ScopeTenantWrite}
 )
 
 // Grants reports whether the role can issue the scope. Owner administers the
 // tenant and issues every scope; the reserved admin role is owner-equivalent;
-// staff reads, operates events, and reports, but neither writes the tenant nor
-// manages events. An unspecified role and an unknown scope grant nothing.
+// staff issues every scope but the write of the tenant. An unspecified role and
+// an unknown scope grant nothing.
 func (r Role) Grants(scope string) bool {
 	switch r {
 	case RoleOwner, RoleAdmin:
