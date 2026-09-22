@@ -12,8 +12,11 @@ mise を使用して開発環境をセットアップする。
 ```bash
 mise trust
 mise install
+cp .env.example .env
 task proto
 ```
+
+`.env` は Compose と `task migrate:*` が開発用 PostgreSQL の接続情報（`POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB`）を読む先で、git 管理外。
 
 ### PostgreSQL を使った開発サーバー
 

@@ -2,11 +2,11 @@ services:
     postgres:
         image: postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
         environment:
-            POSTGRES_USER: tenant_management
-            POSTGRES_PASSWORD: tenant_management
-            POSTGRES_DB: tenant_management
+            POSTGRES_USER: ${POSTGRES_USER:?copy .env.example to .env}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?copy .env.example to .env}
+            POSTGRES_DB: ${POSTGRES_DB:?copy .env.example to .env}
         healthcheck:
-            test: ["CMD-SHELL", "pg_isready -U tenant_management -d tenant_management"]
+            test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
             interval: 5s
             timeout: 5s
             retries: 10
@@ -22,7 +22,7 @@ services:
         command:
             [
                 "-database",
-                "postgres://tenant_management:tenant_management@postgres:5432/tenant_management?sslmode=disable",
+                "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable",
                 "up",
             ]
         depends_on:
@@ -33,7 +33,7 @@ services:
         build:
             context: .
         environment:
-            DATABASE_URL: postgres://tenant_management:tenant_management@postgres:5432/tenant_management?sslmode=disable
+            DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
             SERVER_ADDR: :8080
         depends_on:
             migrate:
