@@ -2,10 +2,12 @@
 
 version: "3"
 
+dotenv: [".env"]
+
 vars:
     # compose.yml の postgres サービスを指す既定接続先。
     # 環境変数 DATABASE_URL を設定すると各 migrate タスクで上書きできる。
-    DEFAULT_DATABASE_URL: postgres://tenant_management:tenant_management@localhost:5432/tenant_management?sslmode=disable
+    DEFAULT_DATABASE_URL: postgres://{{.POSTGRES_USER}}:{{.POSTGRES_PASSWORD}}@localhost:5432/{{.POSTGRES_DB}}?sslmode=disable
 
 tasks:
     up:
