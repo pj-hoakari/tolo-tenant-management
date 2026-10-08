@@ -26,7 +26,7 @@ COPY migrations /migrations
 ENTRYPOINT ["migrate", "-path", "/migrations"]
 
 
-FROM gcr.io/distroless/static-debian12:nonroot@sha256:f5b485ea962d9bd1186b2f6b3a061191539b905b82ec395de78cbfae51f20e35
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3
 
 COPY --from=builder /out/server /usr/local/bin/server
 
