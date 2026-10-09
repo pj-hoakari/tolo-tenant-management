@@ -3,8 +3,8 @@
 package: `tolo.tenant.v1`（テナント）、`tolo.relation.v1`（関係参照）
 実現するコンテキスト: tenant_context.md（ドメイン定義 tenant_domain.md）と、auth_context.mdの関係参照（ドメイン定義 auth_domain.md）
 役割: テナントとイベントの識別子の正本、および所属（Membership）とロールの真実の源（関係参照）
-1つのデプロイ単位が2つの package を実装する。package はコンテキストの公開言語に対応するため統合しない
-グラフ編集は `GetEvent` で参照整合を取り、観測は `GetObservationSettings` で設定値を得る
+1つのデプロイ単位が2つの package を実装する。package はコンテキストの公開言語に対応するため統合しない。
+グラフ編集は `GetEvent` で参照整合を取り、観測は `GetObservationSettings` で設定値を得る。
 
 対象外: Auth からの所属・ロール参照 I/F とキャッシュパージ通知（Auth と関係参照の間）
 
@@ -28,7 +28,7 @@ package: `tolo.tenant.v1`（テナント）、`tolo.relation.v1`（関係参照�
 
 ### 関係参照（RelationAdminService）
 
-所属（Membership）とロールの真実の源。認証・認可コンテキストの関係参照を本サービスが実装する（package は `tolo.relation.v1` のまま分ける）
+所属（Membership）とロールの真実の源。認証・認可コンテキストの関係参照を本サービスが実装する（package は `tolo.relation.v1` のまま分ける）。
 
 | RPC | 説明（ユビキタス言語） | 呼び出し元 | 認可 | 関連ドメインイベント |
 |---|---|---|---|---|
@@ -296,18 +296,18 @@ message ListMembershipsResponse {
   認証済みユーザーのオーナー所属作成、`owned`への遷移、所有権取得トークンの消費を同一DBのローカルトランザクションで確定する
   TenantRegisteredはこのトランザクションの成功時に成立する
   1ユーザーは複数テナントに所属しうるため、取得者が既に他テナントへ所属していても所有権を取得できる
-- オンボーディング全体は「匿名の仮テナント作成 → Authの`POST /api/signup`でアカウント作成 → テナント未指定の認可で所有権取得専用トークンを取得 → 所有権取得とオーナー所属の確定 → tenantId指定の再認可で`tenant_access`取得」の流れ（Auth（IdP）補足）
+- オンボーディング全体は「匿名の仮テナント作成 → Authの`POST /api/signup`でアカウント作成 → テナント未指定の認可で所有権取得専用トークンを取得 → 所有権取得とオーナー所属の確定 → tenantId指定の再認可で`tenant_access`取得」の流れとする（Auth（IdP）補足）
   課金・プロビジョニング導入時に再設計の余地を残す
 
 ### 関係参照
 
-- `ROLE_ADMIN` は enum の予約値であり、付与しようとした場合は `invalid_argument` を返す。実ロール化は将来判断
+- `ROLE_ADMIN` は enum の予約値であり、付与しようとした場合は `invalid_argument` を返す。実ロールにするかは将来判断する
 - relation model 制約の検証点: 同一テナントへの重複所属を作らない（AddTenantMember）、event∈tenant と event-role⇒tenant-role（GrantEventRole）
-  違反は `failed_precondition`
+  違反は `failed_precondition` を返す
   1ユーザーが所属できるテナント数に上限は置かない
 - イベントの存在確認は同一サービス内のイベントレコード参照で行い、存在しない ID へ所属を作らない（RPC を経ない）
 - 所属変更時の Auth 側キャッシュパージ（RelationCachePurged）は Auth と関係参照の間の内部 I/F のため対象外
-- アーカイブ済みテナント・イベントへの新規所属・ロール変更は `failed_precondition`、既存所属はそのまま保持する
+- アーカイブ済みテナント・イベントへの新規所属・ロール変更は `failed_precondition` を返し、既存所属はそのまま保持する
   復元（EventUnarchived／テナント復元）時に再割り当ては不要
 
 ### 管理系書き込みの現在権限確認
@@ -347,10 +347,10 @@ message ListMembershipsResponse {
 - `GetObservationSettings` は境界を強制しない。テナント文脈のない経路（QR 由来の計上を契機とする観測サイクル等）から呼ばれうるため、クレームがない内部 JWT も受け付ける
   境界を強制しない代わりに、応答は観測設定値のみとし、イベント名・状態・所属テナントを含めない
 
-この分担は、参照整合と設定供給で呼び出し元の資格情報の性質が違うことに基づく。応答の内容も、境界を強制できない側が機微を持たないように分けている。
+この分担は、参照整合と設定供給で呼び出し元の資格情報の性質が違うことに基づく。応答の内容も、境界を強制できない側が機微な情報を返さないように分けている。
 
 ### その他
 
-- Realtime 配信ログの保持期間などテナント設定値の追加項目は実装フェーズで決定（Realtime）
+- Realtime 配信ログの保持期間などテナント設定値の追加項目は実装フェーズで決定する（Realtime）
 - `observation_settings` の既定は `history_window_days = 30` とする。実測にもとづき運用で調整する前提の初期値である
   観測設定値として持つのは `history_window_days` のみとし、他の項目は必要が生じた時点で追加する
