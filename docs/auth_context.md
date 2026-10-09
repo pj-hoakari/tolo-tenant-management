@@ -15,7 +15,7 @@
 | RegistrationTokenIssued | Auth: Discovery の `token_endpoint`（authorization_code、テナント未指定。所有権取得専用の最小トークン） |
 | EventAccessTokenIssued／TokenExchangeDenied | Auth: Discovery の `token_endpoint`（token-exchange） |
 | TokenRevoked | Auth: Authorization Server Metadata の `revocation_endpoint` |
-| AuditLogRecorded | Auth 内部（全操作の成否で記録） |
+| AuditLogRecorded | Auth 内部（全操作について成否を記録） |
 | UserJoinedTenant | Tenant Management: RelationAdminService.AddTenantMember |
 | TenantRoleChanged | Tenant Management: RelationAdminService.ChangeTenantRole |
 | EventRoleGranted | Tenant Management: RelationAdminService.GrantEventRole |
