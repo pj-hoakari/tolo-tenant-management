@@ -48,13 +48,6 @@ service TenantService {
       token_uses: "tenant_access"
     };
   }
-  rpc AssignEventType(AssignEventTypeRequest) returns (AssignEventTypeResponse) {
-    option (authz.v1.auth_policy) = {
-      level: AUTH_LEVEL_AUTHENTICATED
-      required_scopes: "events.manage"
-      token_uses: "tenant_access"
-    };
-  }
   rpc TransitionEventStatus(TransitionEventStatusRequest) returns (TransitionEventStatusResponse) {
     option (authz.v1.auth_policy) = {
       level: AUTH_LEVEL_AUTHENTICATED
@@ -66,19 +59,6 @@ service TenantService {
   // requires token_use=service with tenant context.
   rpc GetEvent(GetEventRequest) returns (GetEventResponse) {
     option (authz.v1.auth_policy) = { level: AUTH_LEVEL_INTERNAL };
-  }
-  // GetObservationSettings supplies observation settings to Observation. It
-  // requires token_use=service and does not enforce the tenant boundary, so
-  // the response carries settings only.
-  rpc GetObservationSettings(GetObservationSettingsRequest) returns (GetObservationSettingsResponse) {
-    option (authz.v1.auth_policy) = { level: AUTH_LEVEL_INTERNAL };
-  }
-  rpc UpdateObservationSettings(UpdateObservationSettingsRequest) returns (UpdateObservationSettingsResponse) {
-    option (authz.v1.auth_policy) = {
-      level: AUTH_LEVEL_AUTHENTICATED
-      required_scopes: "events.manage"
-      token_uses: "tenant_access"
-    };
   }
   rpc ListEvents(ListEventsRequest) returns (ListEventsResponse) {
     option (authz.v1.auth_policy) = {
@@ -111,14 +91,10 @@ message Event {
   string event_id = 1;   // public ID (random 16-character hex)
   string tenant_id = 2;  // public ID of the owning tenant
   string name = 3;
-  EventType type = 4;
   EventStatus status = 5;
-}
 
-enum EventType {
-  EVENT_TYPE_UNSPECIFIED = 0;
-  EVENT_TYPE_SHORT_TERM = 1;  // short history; subject to observation fallback
-  EVENT_TYPE_LONG_TERM = 2;   // permanent installation
+  reserved 4;
+  reserved "type";
 }
 
 enum EventStatus {
@@ -128,12 +104,6 @@ enum EventStatus {
   EVENT_STATUS_LOCKED = 3;
   EVENT_STATUS_CLOSED = 4;
   EVENT_STATUS_ARCHIVED = 5;  // soft delete
-}
-
-// ObservationSettings holds the values Observation reads for an event. It is
-// returned only by GetObservationSettings / UpdateObservationSettings.
-message ObservationSettings {
-  int32 history_window_days = 1;  // window for historical percentiles; default 30
 }
 
 message StartTenantRegistrationRequest {
@@ -164,15 +134,11 @@ message ArchiveTenantResponse { Tenant tenant = 1; }
 message CreateEventRequest {
   string tenant_id = 1;
   string name = 2;
-  EventType type = 3;  // optional; left UNSPECIFIED when omitted
+
+  reserved 3;
+  reserved "type";
 }
 message CreateEventResponse { Event event = 1; }
-
-message AssignEventTypeRequest {
-  string event_id = 1;
-  EventType type = 2;
-}
-message AssignEventTypeResponse { Event event = 1; }
 
 message TransitionEventStatusRequest {
   string event_id = 1;
@@ -182,15 +148,6 @@ message TransitionEventStatusResponse { Event event = 1; }
 
 message GetEventRequest { string event_id = 1; }
 message GetEventResponse { Event event = 1; }
-
-message GetObservationSettingsRequest { string event_id = 1; }
-message GetObservationSettingsResponse { ObservationSettings settings = 1; }
-
-message UpdateObservationSettingsRequest {
-  string event_id = 1;
-  ObservationSettings settings = 2;
-}
-message UpdateObservationSettingsResponse { ObservationSettings settings = 1; }
 
 message ListEventsRequest {
   string tenant_id = 1;

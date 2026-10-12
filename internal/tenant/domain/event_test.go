@@ -15,7 +15,6 @@ func TestNewEvent(t *testing.T) {
 		"tenant-id",
 		"tenant-public-id",
 		"Summer Festival",
-		EventTypeShortTerm,
 		EventStatusDraft,
 	)
 
@@ -37,14 +36,6 @@ func TestNewEvent(t *testing.T) {
 
 	if got, want := event.Name(), "Summer Festival"; got != want {
 		t.Errorf("Name() = %q, want %q", got, want)
-	}
-
-	if got, want := event.Type(), EventTypeShortTerm; got != want {
-		t.Errorf("Type() = %v, want %v", got, want)
-	}
-
-	if got, want := event.Type().String(), "short_term"; got != want {
-		t.Errorf("Type().String() = %q, want %q", got, want)
 	}
 
 	if got, want := event.Status(), EventStatusDraft; got != want {
@@ -118,21 +109,6 @@ func TestEventTransitionTo(t *testing.T) {
 				}
 			})
 		}
-	}
-}
-
-func TestEventAssignType(t *testing.T) {
-	t.Parallel()
-
-	event := NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", EventTypeShortTerm, EventStatusDraft)
-	updatedEvent := event.AssignType(EventTypeLongTerm)
-
-	if got, want := updatedEvent.Type(), EventTypeLongTerm; got != want {
-		t.Errorf("updated event type = %v, want %v", got, want)
-	}
-
-	if got, want := event.Type(), EventTypeShortTerm; got != want {
-		t.Errorf("original event type = %v, want %v", got, want)
 	}
 }
 

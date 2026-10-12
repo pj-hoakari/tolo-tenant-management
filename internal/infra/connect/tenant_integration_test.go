@@ -262,7 +262,6 @@ func TestCreateEventOverTransport(t *testing.T) {
 	res, err := p.tenantClient.CreateEvent(context.Background(), authorized(token, &tenantv1.CreateEventRequest{
 		TenantId: tenant.PublicID(),
 		Name:     "Summer Festival",
-		Type:     tenantv1.EventType_EVENT_TYPE_SHORT_TERM,
 	}))
 	if err != nil {
 		t.Fatalf("CreateEvent() error = %v", err)
@@ -275,10 +274,6 @@ func TestCreateEventOverTransport(t *testing.T) {
 
 	if got, want := event.GetName(), "Summer Festival"; got != want {
 		t.Errorf("Event.Name = %q, want %q", got, want)
-	}
-
-	if got, want := event.GetType(), tenantv1.EventType_EVENT_TYPE_SHORT_TERM; got != want {
-		t.Errorf("Event.Type = %v, want %v", got, want)
 	}
 
 	if got, want := event.GetStatus(), tenantv1.EventStatus_EVENT_STATUS_DRAFT; got != want {
@@ -458,154 +453,6 @@ func TestGetEventOverTransport(t *testing.T) {
 			}
 		})
 	}
-}
-
-// archiveEvent walks an event to archived, which is only reachable through the
-// lifecycle transitions.
-func (p *process) archiveEvent(t *testing.T, token, eventID string) {
-	t.Helper()
-
-	for _, to := range []tenantv1.EventStatus{
-		tenantv1.EventStatus_EVENT_STATUS_OPEN,
-		tenantv1.EventStatus_EVENT_STATUS_LOCKED,
-		tenantv1.EventStatus_EVENT_STATUS_CLOSED,
-		tenantv1.EventStatus_EVENT_STATUS_ARCHIVED,
-	} {
-		if _, err := p.tenantClient.TransitionEventStatus(context.Background(), authorized(token, &tenantv1.TransitionEventStatusRequest{EventId: eventID, To: to})); err != nil {
-			t.Fatalf("TransitionEventStatus(%v) error = %v", to, err)
-		}
-	}
-}
-
-func (p *process) observationSettings(t *testing.T, token, eventID string) (*tenantv1.ObservationSettings, error) {
-	t.Helper()
-
-	res, err := p.tenantClient.GetObservationSettings(context.Background(), authorized(token, &tenantv1.GetObservationSettingsRequest{EventId: eventID}))
-	if err != nil {
-		return nil, err
-	}
-
-	return res.Msg.GetSettings(), nil
-}
-
-func (p *process) updateObservationSettings(t *testing.T, token, eventID string, historyWindowDays int32) (*tenantv1.ObservationSettings, error) {
-	t.Helper()
-
-	res, err := p.tenantClient.UpdateObservationSettings(context.Background(), authorized(token, &tenantv1.UpdateObservationSettingsRequest{
-		EventId:  eventID,
-		Settings: &tenantv1.ObservationSettings{HistoryWindowDays: historyWindowDays},
-	}))
-	if err != nil {
-		return nil, err
-	}
-
-	return res.Msg.GetSettings(), nil
-}
-
-func TestGetObservationSettingsOverTransport(t *testing.T) {
-	p := newProcess(t)
-	tenant := p.createTenant(t, "0123456789abcdef", "Observation Host")
-	other := p.createTenant(t, "fedcba9876543210", "Other Tenant")
-	token := p.mintTenantAccessToken(t, tenant.PublicID())
-	created := p.createEvent(t, token, tenant.PublicID(), "Festival")
-
-	t.Run("answers a machine-origin service token with the default window", func(t *testing.T) {
-		// The boundary is not enforced for this read, so a service token
-		// without tenant context is accepted.
-		settings, err := p.observationSettings(t, internalJWTs(t).service, created.GetEventId())
-		if err != nil {
-			t.Fatalf("GetObservationSettings() error = %v", err)
-		}
-
-		if got, want := settings.GetHistoryWindowDays(), int32(tenantdomain.DefaultHistoryWindowDays); got != want {
-			t.Errorf("HistoryWindowDays = %d, want %d", got, want)
-		}
-	})
-
-	t.Run("answers for an archived event", func(t *testing.T) {
-		archived := p.createEvent(t, token, tenant.PublicID(), "Archived Festival")
-		p.archiveEvent(t, token, archived.GetEventId())
-
-		settings, err := p.observationSettings(t, internalJWTs(t).service, archived.GetEventId())
-		if err != nil {
-			t.Fatalf("GetObservationSettings(archived) error = %v", err)
-		}
-
-		if got, want := settings.GetHistoryWindowDays(), int32(tenantdomain.DefaultHistoryWindowDays); got != want {
-			t.Errorf("HistoryWindowDays = %d, want %d", got, want)
-		}
-	})
-
-	tests := []struct {
-		name    string
-		eventID string
-		token   string
-		want    connectrpc.Code
-	}{
-		// A service token that does carry a tenant is cross-checked.
-		{name: "rejects a service token of another tenant", eventID: created.GetEventId(), token: p.mintServiceToken(t, other.PublicID()), want: connectrpc.CodePermissionDenied},
-		{name: "rejects a tenant_access token", eventID: created.GetEventId(), token: token, want: connectrpc.CodeUnauthenticated},
-		{name: "reports unknown public IDs as not found", eventID: "0000000000000000", token: internalJWTs(t).service, want: connectrpc.CodeNotFound},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := p.observationSettings(t, tt.token, tt.eventID)
-			if got := connectrpc.CodeOf(err); got != tt.want {
-				t.Fatalf("GetObservationSettings() error code = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestUpdateObservationSettingsOverTransport(t *testing.T) {
-	p := newProcess(t)
-	tenant := p.createTenant(t, "0123456789abcdef", "Observation Host")
-	token := p.mintTenantAccessToken(t, tenant.PublicID())
-	created := p.createEvent(t, token, tenant.PublicID(), "Festival")
-
-	settings, err := p.updateObservationSettings(t, token, created.GetEventId(), 45)
-	if err != nil {
-		t.Fatalf("UpdateObservationSettings() error = %v", err)
-	}
-
-	if got, want := settings.GetHistoryWindowDays(), int32(45); got != want {
-		t.Errorf("HistoryWindowDays = %d, want %d", got, want)
-	}
-
-	// The change is what the service-to-service read answers with afterwards.
-	stored, err := p.observationSettings(t, internalJWTs(t).service, created.GetEventId())
-	if err != nil {
-		t.Fatalf("GetObservationSettings() after update error = %v", err)
-	}
-
-	if got, want := stored.GetHistoryWindowDays(), int32(45); got != want {
-		t.Errorf("HistoryWindowDays after update = %d, want %d", got, want)
-	}
-
-	t.Run("rejects a window shorter than one day", func(t *testing.T) {
-		_, err := p.updateObservationSettings(t, token, created.GetEventId(), 0)
-		if got, want := connectrpc.CodeOf(err), connectrpc.CodeInvalidArgument; got != want {
-			t.Fatalf("UpdateObservationSettings() error code = %v, want %v", got, want)
-		}
-	})
-
-	t.Run("rejects a request without settings", func(t *testing.T) {
-		_, err := p.tenantClient.UpdateObservationSettings(context.Background(), authorized(token, &tenantv1.UpdateObservationSettingsRequest{EventId: created.GetEventId()}))
-		if got, want := connectrpc.CodeOf(err), connectrpc.CodeInvalidArgument; got != want {
-			t.Fatalf("UpdateObservationSettings() error code = %v, want %v", got, want)
-		}
-	})
-
-	t.Run("refuses an archived event", func(t *testing.T) {
-		archived := p.createEvent(t, token, tenant.PublicID(), "Archived Festival")
-		p.archiveEvent(t, token, archived.GetEventId())
-
-		_, err := p.updateObservationSettings(t, token, archived.GetEventId(), 45)
-		if got, want := connectrpc.CodeOf(err), connectrpc.CodeFailedPrecondition; got != want {
-			t.Fatalf("UpdateObservationSettings(archived) error code = %v, want %v", got, want)
-		}
-	})
 }
 
 func TestTransitionEventStatusOverTransport(t *testing.T) {

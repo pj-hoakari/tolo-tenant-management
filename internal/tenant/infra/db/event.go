@@ -19,18 +19,17 @@ import (
 // (tenant_management_spec.md「エラー」). The transport logs the cause
 // server-side and answers the client with a fixed message.
 var (
-	errCreateEventNoRow               = errors.New("create event: no row inserted")
-	errUpdateEventNoRow               = errors.New("update event: no row updated")
-	errUpdateObservationSettingsNoRow = errors.New("update observation settings: no row updated")
+	errCreateEventNoRow = errors.New("create event: no row inserted")
+	errUpdateEventNoRow = errors.New("update event: no row updated")
 )
 
 func (r *PostgresTenantRepository) CreateEvent(ctx context.Context, event domain.Event) error {
 	result, err := r.executor(ctx).ExecContext(ctx, `
-		INSERT INTO events (id, public_id, tenant_id, tenant_public_id, name, event_type, status)
-		SELECT $1, $2, $3, $4, $5, $6, $7
+		INSERT INTO events (id, public_id, tenant_id, tenant_public_id, name, status)
+		SELECT $1, $2, $3, $4, $5, $6
 		FROM tenants
 		WHERE id = $3 AND archived = FALSE`,
-		event.ID(), event.PublicID(), event.TenantID(), event.TenantPublicID(), event.Name(), event.Type().String(), event.Status().String())
+		event.ID(), event.PublicID(), event.TenantID(), event.TenantPublicID(), event.Name(), event.Status().String())
 	if err != nil {
 		return mapEventConstraintError(err)
 	}
@@ -58,13 +57,13 @@ func (r *PostgresTenantRepository) CreateEvent(ctx context.Context, event domain
 
 func (r *PostgresTenantRepository) FindEventByPublicID(ctx context.Context, publicID string) (domain.Event, error) {
 	return r.findEvent(ctx, `
-		SELECT id, public_id, tenant_id, tenant_public_id, name, event_type, status
+		SELECT id, public_id, tenant_id, tenant_public_id, name, status
 		FROM events WHERE public_id = $1`, publicID)
 }
 
 func (r *PostgresTenantRepository) findEventByID(ctx context.Context, eventID string) (domain.Event, error) {
 	return r.findEvent(ctx, `
-		SELECT id, public_id, tenant_id, tenant_public_id, name, event_type, status
+		SELECT id, public_id, tenant_id, tenant_public_id, name, status
 		FROM events WHERE id = $1`, eventID)
 }
 
@@ -92,7 +91,7 @@ func (r *PostgresTenantRepository) ListEventsByTenantID(ctx context.Context, ten
 	// Events carry a UUIDv7 primary key, so ordering by id is creation order.
 	var rows []eventRow
 	if err := sqlx.SelectContext(ctx, r.executor(ctx), &rows, `
-		SELECT id, public_id, tenant_id, tenant_public_id, name, event_type, status
+		SELECT id, public_id, tenant_id, tenant_public_id, name, status
 		FROM events WHERE tenant_id = $1 AND ($2 OR status <> $3) ORDER BY id LIMIT $4`,
 		tenantID, filter.IncludeArchived, domain.EventStatusArchived.String(), limit); err != nil {
 		return nil, err
@@ -114,10 +113,10 @@ func (r *PostgresTenantRepository) ListEventsByTenantID(ctx context.Context, ten
 func (r *PostgresTenantRepository) UpdateEvent(ctx context.Context, event domain.Event) error {
 	result, err := r.executor(ctx).ExecContext(ctx, `
 		UPDATE events AS e
-		SET name = $2, event_type = $3, status = $4
+		SET name = $2, status = $3
 		FROM tenants AS t
 		WHERE e.id = $1 AND e.tenant_id = t.id AND t.archived = FALSE`,
-		event.ID(), event.Name(), event.Type().String(), event.Status().String())
+		event.ID(), event.Name(), event.Status().String())
 	if err != nil {
 		return err
 	}
@@ -148,95 +147,16 @@ func (r *PostgresTenantRepository) UpdateEvent(ctx context.Context, event domain
 	return errUpdateEventNoRow
 }
 
-// FindObservationSettingsByEventPublicID reads the observation settings of one
-// event. The tenant's public ID is selected alongside them so that the
-// ownership check below has something to verify, but it never leaves this
-// method: the caller receives the settings alone.
-func (r *PostgresTenantRepository) FindObservationSettingsByEventPublicID(ctx context.Context, publicID string) (domain.ObservationSettings, error) {
-	var row observationSettingsRow
-	if err := sqlx.GetContext(ctx, r.executor(ctx), &row, `
-		SELECT tenant_public_id, history_window_days
-		FROM events WHERE public_id = $1`, publicID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return domain.ObservationSettings{}, repository.ErrEventNotFound
-		}
-
-		return domain.ObservationSettings{}, err
-	}
-
-	return row.domain(ctx)
-}
-
-func (r *PostgresTenantRepository) UpdateObservationSettings(ctx context.Context, eventID string, settings domain.ObservationSettings) error {
-	result, err := r.executor(ctx).ExecContext(ctx, `
-		UPDATE events AS e
-		SET history_window_days = $2
-		FROM tenants AS t
-		WHERE e.id = $1 AND e.tenant_id = t.id AND t.archived = FALSE`,
-		eventID, settings.HistoryWindowDays())
-	if err != nil {
-		return err
-	}
-
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("get updated observation settings row count: %w", err)
-	}
-
-	if rows != 0 {
-		return nil
-	}
-
-	// The update matched nothing: either the event is gone or its tenant is
-	// archived. Distinguish the two the way UpdateEvent does.
-	storedEvent, err := r.findEventByID(ctx, eventID)
-	if err != nil {
-		return err
-	}
-
-	tenant, err := r.FindTenantByID(ctx, storedEvent.TenantID())
-	if err != nil {
-		return err
-	}
-
-	if tenant.Archived() {
-		return repository.ErrTenantArchived
-	}
-
-	return errUpdateObservationSettingsNoRow
-}
-
-type observationSettingsRow struct {
-	TenantPublicID    string `db:"tenant_public_id"`
-	HistoryWindowDays int    `db:"history_window_days"`
-}
-
-func (r observationSettingsRow) domain(ctx context.Context) (domain.ObservationSettings, error) {
-	// Defense in depth: never return the settings of an event that belongs to
-	// a tenant other than the authenticated tenant carried in the context.
-	if err := tenantctx.VerifyOwnership(ctx, r.TenantPublicID); err != nil {
-		return domain.ObservationSettings{}, err
-	}
-
-	return domain.NewObservationSettings(r.HistoryWindowDays)
-}
-
 type eventRow struct {
 	ID             string `db:"id"`
 	PublicID       string `db:"public_id"`
 	TenantID       string `db:"tenant_id"`
 	TenantPublicID string `db:"tenant_public_id"`
 	Name           string `db:"name"`
-	EventType      string `db:"event_type"`
 	Status         string `db:"status"`
 }
 
 func (r eventRow) domain(ctx context.Context) (domain.Event, error) {
-	eventType, err := domain.ParseEventType(r.EventType)
-	if err != nil {
-		return domain.Event{}, fmt.Errorf("parse event type: %w", err)
-	}
-
 	status, err := domain.ParseEventStatus(r.Status)
 	if err != nil {
 		return domain.Event{}, fmt.Errorf("parse event status: %w", err)
@@ -248,7 +168,7 @@ func (r eventRow) domain(ctx context.Context) (domain.Event, error) {
 		return domain.Event{}, err
 	}
 
-	return domain.NewEvent(r.ID, r.PublicID, r.TenantID, r.TenantPublicID, r.Name, eventType, status), nil
+	return domain.NewEvent(r.ID, r.PublicID, r.TenantID, r.TenantPublicID, r.Name, status), nil
 }
 
 func mapEventConstraintError(err error) error {

@@ -100,7 +100,6 @@ func TestEventProto(t *testing.T) {
 		"tenant-id",
 		"tenant-public-id",
 		"Festival",
-		domain.EventTypeShortTerm,
 		domain.EventStatusDraft,
 	)
 
@@ -142,33 +141,13 @@ func TestGetEvent(t *testing.T) {
 	}
 }
 
-func TestAssignEventType(t *testing.T) {
-	t.Parallel()
-
-	service, _, events := newReadService(t)
-
-	ctx := internaljwt.ContextWithClaims(context.Background(), internaljwt.Claims{TenantPublicID: events[0].TenantPublicID()})
-
-	response, err := service.AssignEventType(ctx, connectrpc.NewRequest(&tenantv1.AssignEventTypeRequest{
-		EventId: events[0].PublicID(),
-		Type:    tenantv1.EventType_EVENT_TYPE_LONG_TERM,
-	}))
-	if err != nil {
-		t.Fatalf("AssignEventType() error = %v", err)
-	}
-
-	if got, want := response.Msg.GetEvent().GetType(), tenantv1.EventType_EVENT_TYPE_LONG_TERM; got != want {
-		t.Errorf("Event.Type = %v, want %v", got, want)
-	}
-}
-
 func TestListEvents(t *testing.T) {
 	t.Parallel()
 
 	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, false)
 	events := []domain.Event{
-		domain.NewEvent("event-1", "event-public-id-1", tenant.ID(), tenant.PublicID(), "Festival 1", domain.EventTypeShortTerm, domain.EventStatusDraft),
-		domain.NewEvent("event-2", "event-public-id-2", tenant.ID(), tenant.PublicID(), "Festival 2", domain.EventTypeLongTerm, domain.EventStatusDraft),
+		domain.NewEvent("event-1", "event-public-id-1", tenant.ID(), tenant.PublicID(), "Festival 1", domain.EventStatusDraft),
+		domain.NewEvent("event-2", "event-public-id-2", tenant.ID(), tenant.PublicID(), "Festival 2", domain.EventStatusDraft),
 	}
 
 	for _, includeArchived := range []bool{false, true} {
@@ -226,7 +205,6 @@ func TestCreateEventPublicIDCollision(t *testing.T) {
 	_, err := service.CreateEvent(ctx, connectrpc.NewRequest(&tenantv1.CreateEventRequest{
 		TenantId: tenant.PublicID(),
 		Name:     "Festival",
-		Type:     tenantv1.EventType_EVENT_TYPE_SHORT_TERM,
 	}))
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodeAlreadyExists; got != want {
 		t.Fatalf("CreateEvent() error code = %v, want %v", got, want)
@@ -382,8 +360,8 @@ func newReadService(t *testing.T) (*Service, domain.Tenant, []domain.Event) {
 
 	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, false)
 	events := []domain.Event{
-		domain.NewEvent("event-1", "event-public-id-1", tenant.ID(), tenant.PublicID(), "Festival 1", domain.EventTypeShortTerm, domain.EventStatusDraft),
-		domain.NewEvent("event-2", "event-public-id-2", tenant.ID(), tenant.PublicID(), "Festival 2", domain.EventTypeLongTerm, domain.EventStatusDraft),
+		domain.NewEvent("event-1", "event-public-id-1", tenant.ID(), tenant.PublicID(), "Festival 1", domain.EventStatusDraft),
+		domain.NewEvent("event-2", "event-public-id-2", tenant.ID(), tenant.PublicID(), "Festival 2", domain.EventStatusDraft),
 	}
 
 	ctrl := gomock.NewController(t)
@@ -409,7 +387,6 @@ func TestEveryHandlerHidesInternalErrorDetail(t *testing.T) {
 	repo.EXPECT().FindTenantByPublicID(gomock.Any(), gomock.Any()).Return(domain.Tenant{}, errDetail).AnyTimes()
 	repo.EXPECT().FindTenantByPublicIDForUpdate(gomock.Any(), gomock.Any()).Return(domain.Tenant{}, domain.OwnershipClaim{}, errDetail).AnyTimes()
 	repo.EXPECT().FindEventByPublicID(gomock.Any(), gomock.Any()).Return(domain.Event{}, errDetail).AnyTimes()
-	repo.EXPECT().FindObservationSettingsByEventPublicID(gomock.Any(), gomock.Any()).Return(domain.ObservationSettings{}, errDetail).AnyTimes()
 	repo.EXPECT().DeleteExpiredPendingTenants(gomock.Any(), gomock.Any()).Return(int64(0), errDetail).AnyTimes()
 	service := NewService(application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{}, permissionStub{allowed: true}))
 
@@ -442,11 +419,6 @@ func TestEveryHandlerHidesInternalErrorDetail(t *testing.T) {
 
 			return err
 		},
-		"AssignEventType": func() error {
-			_, err := service.AssignEventType(ctx, connectrpc.NewRequest(&tenantv1.AssignEventTypeRequest{EventId: eventID, Type: tenantv1.EventType_EVENT_TYPE_SHORT_TERM}))
-
-			return err
-		},
 		"TransitionEventStatus": func() error {
 			_, err := service.TransitionEventStatus(ctx, connectrpc.NewRequest(&tenantv1.TransitionEventStatusRequest{EventId: eventID, To: tenantv1.EventStatus_EVENT_STATUS_OPEN}))
 
@@ -454,16 +426,6 @@ func TestEveryHandlerHidesInternalErrorDetail(t *testing.T) {
 		},
 		"GetEvent": func() error {
 			_, err := service.GetEvent(ctx, connectrpc.NewRequest(&tenantv1.GetEventRequest{EventId: eventID}))
-
-			return err
-		},
-		"GetObservationSettings": func() error {
-			_, err := service.GetObservationSettings(ctx, connectrpc.NewRequest(&tenantv1.GetObservationSettingsRequest{EventId: eventID}))
-
-			return err
-		},
-		"UpdateObservationSettings": func() error {
-			_, err := service.UpdateObservationSettings(ctx, connectrpc.NewRequest(&tenantv1.UpdateObservationSettingsRequest{EventId: eventID, Settings: &tenantv1.ObservationSettings{HistoryWindowDays: 10}}))
 
 			return err
 		},
