@@ -15,7 +15,6 @@ CREATE TABLE events (
     tenant_id UUID NOT NULL REFERENCES tenants (id) ON DELETE CASCADE,
     tenant_public_id VARCHAR(16) NOT NULL,
     name VARCHAR(255) NOT NULL,
-    event_type VARCHAR(32) NOT NULL,
     status VARCHAR(32) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT events_public_id_key UNIQUE (public_id)
