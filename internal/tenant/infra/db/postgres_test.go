@@ -140,10 +140,10 @@ func TestPostgresTenantRepositoryEvents(t *testing.T) {
 
 	// The archived event sits between the other two by key, so a limited
 	// listing that includes archived events differs from the default one.
-	archivedEvent := newEvent("00000000-0000-0000-0000-000000000012", "event-002", tenant, "Festival 2", domain.EventTypeLongTerm, domain.EventStatusArchived)
-	openEvent := newEvent("00000000-0000-0000-0000-000000000013", "event-003", tenant, "Festival 3", domain.EventTypeLongTerm, domain.EventStatusOpen)
+	archivedEvent := newEvent("00000000-0000-0000-0000-000000000012", "event-002", tenant, "Festival 2", domain.EventStatusArchived)
+	openEvent := newEvent("00000000-0000-0000-0000-000000000013", "event-003", tenant, "Festival 3", domain.EventStatusOpen)
 
-	draftEvent := newEvent("00000000-0000-0000-0000-000000000011", "event-001", tenant, "Festival 1", domain.EventTypeShortTerm, domain.EventStatusDraft)
+	draftEvent := newEvent("00000000-0000-0000-0000-000000000011", "event-001", tenant, "Festival 1", domain.EventStatusDraft)
 	for _, event := range []domain.Event{openEvent, archivedEvent, draftEvent} {
 		if err := repository.CreateEvent(ctx, event); err != nil {
 			t.Fatalf("CreateEvent(%q) error = %v", event.ID(), err)
@@ -187,9 +187,7 @@ func TestPostgresTenantRepositoryEvents(t *testing.T) {
 		})
 	}
 
-	updated := draftEvent.AssignType(domain.EventTypeLongTerm)
-
-	updated, err = updated.TransitionTo(domain.EventStatusOpen)
+	updated, err := draftEvent.TransitionTo(domain.EventStatusOpen)
 	if err != nil {
 		t.Fatalf("TransitionTo() error = %v", err)
 	}
@@ -220,21 +218,21 @@ func TestPostgresTenantRepositoryEventErrors(t *testing.T) {
 		}
 	}
 
-	event := newEvent("00000000-0000-0000-0000-000000000011", "event-001", activeTenant, "Festival", domain.EventTypeShortTerm, domain.EventStatusDraft)
+	event := newEvent("00000000-0000-0000-0000-000000000011", "event-001", activeTenant, "Festival", domain.EventStatusDraft)
 	if err := repository.CreateEvent(ctx, event); err != nil {
 		t.Fatalf("CreateEvent() error = %v", err)
 	}
 
-	if err := repository.CreateEvent(ctx, newEvent("00000000-0000-0000-0000-000000000012", event.PublicID(), activeTenant, "Other festival", domain.EventTypeShortTerm, domain.EventStatusDraft)); !errors.Is(err, repositorypkg.ErrEventPublicIDExists) {
+	if err := repository.CreateEvent(ctx, newEvent("00000000-0000-0000-0000-000000000012", event.PublicID(), activeTenant, "Other festival", domain.EventStatusDraft)); !errors.Is(err, repositorypkg.ErrEventPublicIDExists) {
 		t.Errorf("duplicate event public ID error = %v, want %v", err, repositorypkg.ErrEventPublicIDExists)
 	}
 
-	if err := repository.CreateEvent(ctx, newEvent("00000000-0000-0000-0000-000000000013", "event-003", archivedTenant, "Archived festival", domain.EventTypeShortTerm, domain.EventStatusDraft)); !errors.Is(err, repositorypkg.ErrTenantArchived) {
+	if err := repository.CreateEvent(ctx, newEvent("00000000-0000-0000-0000-000000000013", "event-003", archivedTenant, "Archived festival", domain.EventStatusDraft)); !errors.Is(err, repositorypkg.ErrTenantArchived) {
 		t.Errorf("archived tenant create error = %v, want %v", err, repositorypkg.ErrTenantArchived)
 	}
 
 	missingTenant := domain.NewTenant("00000000-0000-0000-0000-000000000099", "tenant-099", "", "", domain.TenantOwnershipStateOwned, false)
-	if err := repository.CreateEvent(ctx, newEvent("00000000-0000-0000-0000-000000000014", "event-004", missingTenant, "Missing tenant festival", domain.EventTypeShortTerm, domain.EventStatusDraft)); !errors.Is(err, repositorypkg.ErrTenantNotFound) {
+	if err := repository.CreateEvent(ctx, newEvent("00000000-0000-0000-0000-000000000014", "event-004", missingTenant, "Missing tenant festival", domain.EventStatusDraft)); !errors.Is(err, repositorypkg.ErrTenantNotFound) {
 		t.Errorf("missing tenant create error = %v, want %v", err, repositorypkg.ErrTenantNotFound)
 	}
 
@@ -242,23 +240,23 @@ func TestPostgresTenantRepositoryEventErrors(t *testing.T) {
 		t.Errorf("FindEventByPublicID() error = %v, want %v", err, repositorypkg.ErrEventNotFound)
 	}
 
-	missingEvent := newEvent("00000000-0000-0000-0000-000000000099", "event-099", activeTenant, "Missing festival", domain.EventTypeShortTerm, domain.EventStatusDraft)
+	missingEvent := newEvent("00000000-0000-0000-0000-000000000099", "event-099", activeTenant, "Missing festival", domain.EventStatusDraft)
 	if err := repository.UpdateEvent(ctx, missingEvent); !errors.Is(err, repositorypkg.ErrEventNotFound) {
 		t.Errorf("missing event update error = %v, want %v", err, repositorypkg.ErrEventNotFound)
 	}
 
-	archivedEvent := newEvent("00000000-0000-0000-0000-000000000015", "event-005", archivedTenant, "Archived event", domain.EventTypeShortTerm, domain.EventStatusDraft)
-	if _, err := testDB.ExecContext(ctx, `INSERT INTO events (id, public_id, tenant_id, tenant_public_id, name, event_type, status) VALUES ($1, $2, $3, $4, $5, $6, $7)`, archivedEvent.ID(), archivedEvent.PublicID(), archivedEvent.TenantID(), archivedEvent.TenantPublicID(), archivedEvent.Name(), archivedEvent.Type().String(), archivedEvent.Status().String()); err != nil {
+	archivedEvent := newEvent("00000000-0000-0000-0000-000000000015", "event-005", archivedTenant, "Archived event", domain.EventStatusDraft)
+	if _, err := testDB.ExecContext(ctx, `INSERT INTO events (id, public_id, tenant_id, tenant_public_id, name, status) VALUES ($1, $2, $3, $4, $5, $6)`, archivedEvent.ID(), archivedEvent.PublicID(), archivedEvent.TenantID(), archivedEvent.TenantPublicID(), archivedEvent.Name(), archivedEvent.Status().String()); err != nil {
 		t.Fatalf("insert archived event fixture: %v", err)
 	}
 
-	if err := repository.UpdateEvent(ctx, archivedEvent.AssignType(domain.EventTypeLongTerm)); !errors.Is(err, repositorypkg.ErrTenantArchived) {
+	if err := repository.UpdateEvent(ctx, archivedEvent); !errors.Is(err, repositorypkg.ErrTenantArchived) {
 		t.Errorf("archived tenant update error = %v, want %v", err, repositorypkg.ErrTenantArchived)
 	}
 
 	// A row the repository cannot parse is reported without naming the event.
-	brokenEvent := newEvent("00000000-0000-0000-0000-000000000016", "event-006", activeTenant, "Broken festival", domain.EventTypeShortTerm, domain.EventStatusDraft)
-	if _, err := testDB.ExecContext(ctx, `INSERT INTO events (id, public_id, tenant_id, tenant_public_id, name, event_type, status) VALUES ($1, $2, $3, $4, $5, $6, $7)`, brokenEvent.ID(), brokenEvent.PublicID(), brokenEvent.TenantID(), brokenEvent.TenantPublicID(), brokenEvent.Name(), "not-an-event-type", brokenEvent.Status().String()); err != nil {
+	brokenEvent := newEvent("00000000-0000-0000-0000-000000000016", "event-006", activeTenant, "Broken festival", domain.EventStatusDraft)
+	if _, err := testDB.ExecContext(ctx, `INSERT INTO events (id, public_id, tenant_id, tenant_public_id, name, status) VALUES ($1, $2, $3, $4, $5, $6)`, brokenEvent.ID(), brokenEvent.PublicID(), brokenEvent.TenantID(), brokenEvent.TenantPublicID(), brokenEvent.Name(), "not-an-event-status"); err != nil {
 		t.Fatalf("insert broken event fixture: %v", err)
 	}
 
@@ -292,84 +290,6 @@ func assertNoInternalIdentifier(t *testing.T, err error, identifiers ...string) 
 	}
 }
 
-func TestPostgresTenantRepositoryObservationSettings(t *testing.T) {
-	repository := newTestRepository(t)
-	ctx := context.Background()
-	activeTenant := newTenant("00000000-0000-0000-0000-000000000001", "tenant-001", "Acme", false)
-
-	archivedTenant := newTenant("00000000-0000-0000-0000-000000000002", "tenant-002", "Initech", true)
-	for _, tenant := range []domain.Tenant{activeTenant, archivedTenant} {
-		if err := repository.CreateTenant(ctx, tenant); err != nil {
-			t.Fatalf("CreateTenant(%q) error = %v", tenant.ID(), err)
-		}
-	}
-
-	event := newEvent("00000000-0000-0000-0000-000000000011", "event-001", activeTenant, "Festival", domain.EventTypeShortTerm, domain.EventStatusDraft)
-	if err := repository.CreateEvent(ctx, event); err != nil {
-		t.Fatalf("CreateEvent() error = %v", err)
-	}
-
-	// A freshly created event observes with the default window.
-	settings, err := repository.FindObservationSettingsByEventPublicID(ctx, event.PublicID())
-	if err != nil {
-		t.Fatalf("FindObservationSettingsByEventPublicID() error = %v", err)
-	}
-
-	if got, want := settings.HistoryWindowDays(), domain.DefaultHistoryWindowDays; got != want {
-		t.Errorf("HistoryWindowDays() = %d, want %d", got, want)
-	}
-
-	updated, err := domain.NewObservationSettings(45)
-	if err != nil {
-		t.Fatalf("NewObservationSettings() error = %v", err)
-	}
-
-	if err := repository.UpdateObservationSettings(ctx, event.ID(), updated); err != nil {
-		t.Fatalf("UpdateObservationSettings() error = %v", err)
-	}
-
-	settings, err = repository.FindObservationSettingsByEventPublicID(ctx, event.PublicID())
-	if err != nil {
-		t.Fatalf("FindObservationSettingsByEventPublicID() after update error = %v", err)
-	}
-
-	if got, want := settings.HistoryWindowDays(), 45; got != want {
-		t.Errorf("HistoryWindowDays() after update = %d, want %d", got, want)
-	}
-
-	// The settings of an archived tenant's event cannot be changed. The event
-	// is inserted directly, as CreateEvent refuses an archived tenant.
-	archivedEvent := newEvent("00000000-0000-0000-0000-000000000015", "event-005", archivedTenant, "Archived event", domain.EventTypeShortTerm, domain.EventStatusDraft)
-	if _, err := testDB.ExecContext(ctx, `INSERT INTO events (id, public_id, tenant_id, tenant_public_id, name, event_type, status) VALUES ($1, $2, $3, $4, $5, $6, $7)`, archivedEvent.ID(), archivedEvent.PublicID(), archivedEvent.TenantID(), archivedEvent.TenantPublicID(), archivedEvent.Name(), archivedEvent.Type().String(), archivedEvent.Status().String()); err != nil {
-		t.Fatalf("insert archived tenant event fixture: %v", err)
-	}
-
-	if err := repository.UpdateObservationSettings(ctx, archivedEvent.ID(), updated); !errors.Is(err, repositorypkg.ErrTenantArchived) {
-		t.Errorf("archived tenant update error = %v, want %v", err, repositorypkg.ErrTenantArchived)
-	}
-
-	if _, err := repository.FindObservationSettingsByEventPublicID(ctx, "event-099"); !errors.Is(err, repositorypkg.ErrEventNotFound) {
-		t.Errorf("FindObservationSettingsByEventPublicID(unknown) error = %v, want %v", err, repositorypkg.ErrEventNotFound)
-	}
-
-	if err := repository.UpdateObservationSettings(ctx, "00000000-0000-0000-0000-000000000099", updated); !errors.Is(err, repositorypkg.ErrEventNotFound) {
-		t.Errorf("UpdateObservationSettings(unknown) error = %v, want %v", err, repositorypkg.ErrEventNotFound)
-	}
-
-	// A caller authenticated as another tenant is rejected on reconstitution;
-	// its own tenant is accepted. The reads above ran without tenant context,
-	// as a service-token read does, and were left unrestricted.
-	foreignCtx := withTenant(ctx, archivedTenant.PublicID())
-	if _, err := repository.FindObservationSettingsByEventPublicID(foreignCtx, event.PublicID()); !errors.Is(err, tenantctx.ErrMismatch) {
-		t.Errorf("FindObservationSettingsByEventPublicID(foreign) error = %v, want %v", err, tenantctx.ErrMismatch)
-	}
-
-	ownCtx := withTenant(ctx, activeTenant.PublicID())
-	if _, err := repository.FindObservationSettingsByEventPublicID(ownCtx, event.PublicID()); err != nil {
-		t.Errorf("FindObservationSettingsByEventPublicID(own) error = %v, want nil", err)
-	}
-}
-
 func TestPostgresTenantRepositoryRejectsForeignTenantOnReconstitution(t *testing.T) {
 	repository := newTestRepository(t)
 	ctx := context.Background()
@@ -383,7 +303,7 @@ func TestPostgresTenantRepositoryRejectsForeignTenantOnReconstitution(t *testing
 		}
 	}
 
-	eventB := newEvent("00000000-0000-0000-0000-0000000000b2", "event-bbb", tenantB, "Beta Festival", domain.EventTypeShortTerm, domain.EventStatusDraft)
+	eventB := newEvent("00000000-0000-0000-0000-0000000000b2", "event-bbb", tenantB, "Beta Festival", domain.EventStatusDraft)
 	if err := repository.CreateEvent(ctx, eventB); err != nil {
 		t.Fatalf("CreateEvent() error = %v", err)
 	}
@@ -436,8 +356,8 @@ func newTenant(id, publicID, name string, archived bool) domain.Tenant {
 	return domain.NewTenant(id, publicID, name, "standard", domain.TenantOwnershipStateOwned, archived)
 }
 
-func newEvent(id, publicID string, tenant domain.Tenant, name string, eventType domain.EventType, status domain.EventStatus) domain.Event {
-	return domain.NewEvent(id, publicID, tenant.ID(), tenant.PublicID(), name, eventType, status)
+func newEvent(id, publicID string, tenant domain.Tenant, name string, status domain.EventStatus) domain.Event {
+	return domain.NewEvent(id, publicID, tenant.ID(), tenant.PublicID(), name, status)
 }
 
 func migrationPaths() []string {

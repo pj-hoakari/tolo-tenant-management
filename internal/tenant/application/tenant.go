@@ -18,7 +18,6 @@ var (
 	ErrTenantIDRequired           = errors.New("tenant ID is required")
 	ErrEventNameRequired          = errors.New("event name is required")
 	ErrEventIDRequired            = errors.New("event ID is required")
-	ErrEventTypeRequired          = errors.New("event type is required")
 	ErrEventStatusRequired        = errors.New("event status is required")
 	// ErrTenantPendingOwner rejects business operations on a tenant whose
 	// owner has not claimed it yet.
@@ -56,27 +55,12 @@ type TenantRegistration struct {
 type CreateEventInput struct {
 	TenantPublicID string
 	Name           string
-	Type           domain.EventType
 }
 
 // TransitionEventStatusInput contains the requested event status change.
 type TransitionEventStatusInput struct {
 	EventPublicID string
 	To            domain.EventStatus
-}
-
-// AssignEventTypeInput contains the requested event type assignment.
-type AssignEventTypeInput struct {
-	EventPublicID string
-	Type          domain.EventType
-}
-
-// UpdateObservationSettingsInput contains the requested observation settings
-// of an event. The settings are validated by the domain, so the raw value is
-// carried here.
-type UpdateObservationSettingsInput struct {
-	EventPublicID     string
-	HistoryWindowDays int
 }
 
 // StartTenantRegistrationUseCase creates a pending_owner tenant without
@@ -130,11 +114,6 @@ type TransitionEventStatusUseCase interface {
 	TransitionEventStatus(context.Context, TransitionEventStatusInput) (domain.Event, error)
 }
 
-// AssignEventTypeUseCase changes an event's type.
-type AssignEventTypeUseCase interface {
-	AssignEventType(context.Context, AssignEventTypeInput) (domain.Event, error)
-}
-
 // GetEventUseCase retrieves one event by its public ID.
 type GetEventUseCase interface {
 	GetEvent(context.Context, string) (domain.Event, error)
@@ -146,18 +125,6 @@ type ListEventsUseCase interface {
 	ListEvents(context.Context, string, bool) ([]domain.Event, error)
 }
 
-// GetObservationSettingsUseCase retrieves the observation settings of one
-// event by its public ID.
-type GetObservationSettingsUseCase interface {
-	GetObservationSettings(context.Context, string) (domain.ObservationSettings, error)
-}
-
-// UpdateObservationSettingsUseCase changes the observation settings of one
-// event.
-type UpdateObservationSettingsUseCase interface {
-	UpdateObservationSettings(context.Context, UpdateObservationSettingsInput) (domain.ObservationSettings, error)
-}
-
 // TenantUseCases groups the tenant operations exposed by the Connect
 // transport.
 type TenantUseCases interface {
@@ -166,12 +133,9 @@ type TenantUseCases interface {
 	ChangeTenantContractUseCase
 	ArchiveTenantUseCase
 	CreateEventUseCase
-	AssignEventTypeUseCase
 	TransitionEventStatusUseCase
 	GetEventUseCase
 	ListEventsUseCase
-	GetObservationSettingsUseCase
-	UpdateObservationSettingsUseCase
 }
 
 // TenantService implements tenant use cases.
@@ -453,7 +417,7 @@ func (s *TenantService) CreateEvent(ctx context.Context, input CreateEventInput)
 		return domain.Event{}, err
 	}
 
-	event := domain.NewEvent(eventID, publicID, tenant.ID(), tenant.PublicID(), input.Name, input.Type, domain.EventStatusDraft)
+	event := domain.NewEvent(eventID, publicID, tenant.ID(), tenant.PublicID(), input.Name, domain.EventStatusDraft)
 	if err := s.tenantRepository.CreateEvent(ctx, event); err != nil {
 		return domain.Event{}, err
 	}
@@ -487,32 +451,6 @@ func (s *TenantService) TransitionEventStatus(ctx context.Context, input Transit
 	return updatedEvent, nil
 }
 
-func (s *TenantService) AssignEventType(ctx context.Context, input AssignEventTypeInput) (domain.Event, error) {
-	if input.EventPublicID == "" {
-		return domain.Event{}, ErrEventIDRequired
-	}
-
-	if input.Type == domain.EventTypeUnspecified {
-		return domain.Event{}, ErrEventTypeRequired
-	}
-
-	event, err := s.resolveEvent(ctx, input.EventPublicID)
-	if err != nil {
-		return domain.Event{}, err
-	}
-
-	if event.Status() == domain.EventStatusArchived {
-		return domain.Event{}, repository.ErrEventArchived
-	}
-
-	updatedEvent := event.AssignType(input.Type)
-	if err := s.tenantRepository.UpdateEvent(ctx, updatedEvent); err != nil {
-		return domain.Event{}, err
-	}
-
-	return updatedEvent, nil
-}
-
 // GetEvent serves the service-to-service referential-integrity read. It
 // enforces the tenant boundary: the caller's tenant context (from the service
 // token's tenant_id claim) must match the event's tenant.
@@ -522,51 +460,6 @@ func (s *TenantService) GetEvent(ctx context.Context, eventPublicID string) (dom
 	}
 
 	return s.resolveEvent(ctx, eventPublicID)
-}
-
-// GetObservationSettings serves the service-to-service read of an event's
-// observation settings. Unlike GetEvent it does not enforce the tenant
-// boundary, because the read is reached from chains without tenant context
-// (the observation cycle triggered by a QR-borne tally). A caller that does
-// carry a tenant is still cross-checked: the repository refuses to hand back
-// another tenant's event. In exchange for the open boundary the answer is
-// limited to the settings; the event's name, status and tenant stay inside.
-// Archived events are answered too, so no reference is left dangling.
-func (s *TenantService) GetObservationSettings(ctx context.Context, eventPublicID string) (domain.ObservationSettings, error) {
-	if eventPublicID == "" {
-		return domain.ObservationSettings{}, ErrEventIDRequired
-	}
-
-	return s.tenantRepository.FindObservationSettingsByEventPublicID(ctx, eventPublicID)
-}
-
-// UpdateObservationSettings changes the observation settings of an event of
-// the tenant the caller is authenticated for. An archived event keeps the
-// settings it was archived with.
-func (s *TenantService) UpdateObservationSettings(ctx context.Context, input UpdateObservationSettingsInput) (domain.ObservationSettings, error) {
-	if input.EventPublicID == "" {
-		return domain.ObservationSettings{}, ErrEventIDRequired
-	}
-
-	settings, err := domain.NewObservationSettings(input.HistoryWindowDays)
-	if err != nil {
-		return domain.ObservationSettings{}, err
-	}
-
-	event, err := s.resolveEvent(ctx, input.EventPublicID)
-	if err != nil {
-		return domain.ObservationSettings{}, err
-	}
-
-	if event.Status() == domain.EventStatusArchived {
-		return domain.ObservationSettings{}, repository.ErrEventArchived
-	}
-
-	if err := s.tenantRepository.UpdateObservationSettings(ctx, event.ID(), settings); err != nil {
-		return domain.ObservationSettings{}, err
-	}
-
-	return settings, nil
 }
 
 // ListEvents returns the tenant's events in creation order. Archived events

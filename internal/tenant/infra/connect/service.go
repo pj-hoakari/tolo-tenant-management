@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"net/http"
 
 	connectrpc "connectrpc.com/connect"
@@ -20,10 +19,6 @@ import (
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/repository"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
-
-// errObservationSettingsRequired rejects an update that names no settings at
-// all; the request carries the whole value, not a patch.
-var errObservationSettingsRequired = errors.New("observation settings are required")
 
 // tenantContextErrorCode maps the tenant-context guard errors to Connect codes.
 // A mismatch between the requested tenant and the authenticated tenant is a
@@ -184,7 +179,6 @@ func (s *Service) CreateEvent(ctx context.Context, req *connectrpc.Request[tenan
 	event, err := s.tenantService.CreateEvent(ctx, application.CreateEventInput{
 		TenantPublicID: req.Msg.GetTenantId(),
 		Name:           req.Msg.GetName(),
-		Type:           eventTypeDomain(req.Msg.GetType()),
 	})
 	if err != nil {
 		if errors.Is(err, application.ErrEventNameRequired) || errors.Is(err, application.ErrTenantIDRequired) {
@@ -212,32 +206,6 @@ func (s *Service) CreateEvent(ctx context.Context, req *connectrpc.Request[tenan
 	}
 
 	return connectrpc.NewResponse(&tenantv1.CreateEventResponse{Event: eventProto(event)}), nil
-}
-
-func eventTypeDomain(eventType tenantv1.EventType) domain.EventType {
-	switch eventType {
-	case tenantv1.EventType_EVENT_TYPE_UNSPECIFIED:
-		return domain.EventTypeUnspecified
-	case tenantv1.EventType_EVENT_TYPE_SHORT_TERM:
-		return domain.EventTypeShortTerm
-	case tenantv1.EventType_EVENT_TYPE_LONG_TERM:
-		return domain.EventTypeLongTerm
-	default:
-		return domain.EventTypeUnspecified
-	}
-}
-
-func eventTypeProto(eventType domain.EventType) tenantv1.EventType {
-	switch eventType {
-	case domain.EventTypeUnspecified:
-		return tenantv1.EventType_EVENT_TYPE_UNSPECIFIED
-	case domain.EventTypeShortTerm:
-		return tenantv1.EventType_EVENT_TYPE_SHORT_TERM
-	case domain.EventTypeLongTerm:
-		return tenantv1.EventType_EVENT_TYPE_LONG_TERM
-	default:
-		return tenantv1.EventType_EVENT_TYPE_UNSPECIFIED
-	}
 }
 
 func eventStatusProto(eventStatus domain.EventStatus) tenantv1.EventStatus {
@@ -276,34 +244,6 @@ func eventStatusDomain(eventStatus tenantv1.EventStatus) domain.EventStatus {
 	default:
 		return domain.EventStatusUnspecified
 	}
-}
-
-func (s *Service) AssignEventType(ctx context.Context, req *connectrpc.Request[tenantv1.AssignEventTypeRequest]) (*connectrpc.Response[tenantv1.AssignEventTypeResponse], error) {
-	event, err := s.tenantService.AssignEventType(ctx, application.AssignEventTypeInput{
-		EventPublicID: req.Msg.GetEventId(),
-		Type:          eventTypeDomain(req.Msg.GetType()),
-	})
-	if err != nil {
-		if errors.Is(err, application.ErrEventIDRequired) || errors.Is(err, application.ErrEventTypeRequired) {
-			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
-		}
-
-		if errors.Is(err, repository.ErrEventNotFound) {
-			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
-		}
-
-		if errors.Is(err, repository.ErrEventArchived) || errors.Is(err, repository.ErrTenantArchived) {
-			return nil, connectrpc.NewError(connectrpc.CodeFailedPrecondition, err)
-		}
-
-		if code, ok := tenantContextErrorCode(err); ok {
-			return nil, connectrpc.NewError(code, err)
-		}
-
-		return nil, infraconnect.InternalError(ctx, err)
-	}
-
-	return connectrpc.NewResponse(&tenantv1.AssignEventTypeResponse{Event: eventProto(event)}), nil
 }
 
 func (s *Service) TransitionEventStatus(ctx context.Context, req *connectrpc.Request[tenantv1.TransitionEventStatusRequest]) (*connectrpc.Response[tenantv1.TransitionEventStatusResponse], error) {
@@ -364,7 +304,6 @@ func eventProto(event domain.Event) *tenantv1.Event {
 		EventId:  event.PublicID(),
 		TenantId: event.TenantPublicID(),
 		Name:     event.Name(),
-		Type:     eventTypeProto(event.Type()),
 		Status:   eventStatusProto(event.Status()),
 	}
 }
@@ -388,74 +327,6 @@ func (s *Service) GetEvent(ctx context.Context, req *connectrpc.Request[tenantv1
 	}
 
 	return connectrpc.NewResponse(&tenantv1.GetEventResponse{Event: eventProto(event)}), nil
-}
-
-// observationSettingsProto maps the settings to their wire representation.
-// Nothing else about the event is exposed, so the read stays safe to serve
-// without a tenant boundary.
-func observationSettingsProto(settings domain.ObservationSettings) *tenantv1.ObservationSettings {
-	// The domain keeps the window as an int; the wire carries an int32. A
-	// window that large cannot be stored, but the clamp keeps the conversion
-	// total rather than relying on that.
-	historyWindowDays := settings.HistoryWindowDays()
-	if historyWindowDays > math.MaxInt32 {
-		historyWindowDays = math.MaxInt32
-	}
-
-	return &tenantv1.ObservationSettings{HistoryWindowDays: int32(historyWindowDays)}
-}
-
-func (s *Service) GetObservationSettings(ctx context.Context, req *connectrpc.Request[tenantv1.GetObservationSettingsRequest]) (*connectrpc.Response[tenantv1.GetObservationSettingsResponse], error) {
-	settings, err := s.tenantService.GetObservationSettings(ctx, req.Msg.GetEventId())
-	if err != nil {
-		if errors.Is(err, application.ErrEventIDRequired) {
-			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
-		}
-
-		if errors.Is(err, repository.ErrEventNotFound) {
-			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
-		}
-
-		if code, ok := tenantContextErrorCode(err); ok {
-			return nil, connectrpc.NewError(code, err)
-		}
-
-		return nil, infraconnect.InternalError(ctx, err)
-	}
-
-	return connectrpc.NewResponse(&tenantv1.GetObservationSettingsResponse{Settings: observationSettingsProto(settings)}), nil
-}
-
-func (s *Service) UpdateObservationSettings(ctx context.Context, req *connectrpc.Request[tenantv1.UpdateObservationSettingsRequest]) (*connectrpc.Response[tenantv1.UpdateObservationSettingsResponse], error) {
-	if req.Msg.GetSettings() == nil {
-		return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, errObservationSettingsRequired)
-	}
-
-	settings, err := s.tenantService.UpdateObservationSettings(ctx, application.UpdateObservationSettingsInput{
-		EventPublicID:     req.Msg.GetEventId(),
-		HistoryWindowDays: int(req.Msg.GetSettings().GetHistoryWindowDays()),
-	})
-	if err != nil {
-		if errors.Is(err, application.ErrEventIDRequired) || errors.Is(err, domain.ErrHistoryWindowDaysInvalid) {
-			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
-		}
-
-		if errors.Is(err, repository.ErrEventNotFound) {
-			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
-		}
-
-		if errors.Is(err, repository.ErrEventArchived) || errors.Is(err, repository.ErrTenantArchived) {
-			return nil, connectrpc.NewError(connectrpc.CodeFailedPrecondition, err)
-		}
-
-		if code, ok := tenantContextErrorCode(err); ok {
-			return nil, connectrpc.NewError(code, err)
-		}
-
-		return nil, infraconnect.InternalError(ctx, err)
-	}
-
-	return connectrpc.NewResponse(&tenantv1.UpdateObservationSettingsResponse{Settings: observationSettingsProto(settings)}), nil
 }
 
 func (s *Service) ListEvents(ctx context.Context, req *connectrpc.Request[tenantv1.ListEventsRequest]) (*connectrpc.Response[tenantv1.ListEventsResponse], error) {

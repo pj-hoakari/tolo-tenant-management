@@ -8,15 +8,12 @@ import (
 
 // TenantServicePolicies is the effective policy of every procedure of tolo.tenant.v1.TenantService.
 var TenantServicePolicies = authz.Policies{
-	TenantServiceStartTenantRegistrationProcedure:   {Level: authz.LevelPublic},
-	TenantServiceClaimTenantOwnershipProcedure:      {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.claim"}, TokenUses: []string{"registration"}},
-	TenantServiceChangeTenantContractProcedure:      {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.write"}, TokenUses: []string{"tenant_access"}},
-	TenantServiceArchiveTenantProcedure:             {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.write"}, TokenUses: []string{"tenant_access"}},
-	TenantServiceCreateEventProcedure:               {Level: authz.LevelAuthenticated, RequiredScopes: []string{"events.manage"}, TokenUses: []string{"tenant_access"}},
-	TenantServiceAssignEventTypeProcedure:           {Level: authz.LevelAuthenticated, RequiredScopes: []string{"events.manage"}, TokenUses: []string{"tenant_access"}},
-	TenantServiceTransitionEventStatusProcedure:     {Level: authz.LevelAuthenticated, RequiredScopes: []string{"events.manage"}, TokenUses: []string{"tenant_access"}},
-	TenantServiceGetEventProcedure:                  {Level: authz.LevelInternal},
-	TenantServiceGetObservationSettingsProcedure:    {Level: authz.LevelInternal},
-	TenantServiceUpdateObservationSettingsProcedure: {Level: authz.LevelAuthenticated, RequiredScopes: []string{"events.manage"}, TokenUses: []string{"tenant_access"}},
-	TenantServiceListEventsProcedure:                {Level: authz.LevelAuthenticated, RequiredScopes: []string{"events.read"}, TokenUses: []string{"tenant_access"}},
+	TenantServiceStartTenantRegistrationProcedure: {Level: authz.LevelPublic},
+	TenantServiceClaimTenantOwnershipProcedure:    {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.claim"}, TokenUses: []string{"registration"}},
+	TenantServiceChangeTenantContractProcedure:    {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.write"}, TokenUses: []string{"tenant_access"}},
+	TenantServiceArchiveTenantProcedure:           {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.write"}, TokenUses: []string{"tenant_access"}},
+	TenantServiceCreateEventProcedure:             {Level: authz.LevelAuthenticated, RequiredScopes: []string{"events.manage"}, TokenUses: []string{"tenant_access"}},
+	TenantServiceTransitionEventStatusProcedure:   {Level: authz.LevelAuthenticated, RequiredScopes: []string{"events.manage"}, TokenUses: []string{"tenant_access"}},
+	TenantServiceGetEventProcedure:                {Level: authz.LevelInternal},
+	TenantServiceListEventsProcedure:              {Level: authz.LevelAuthenticated, RequiredScopes: []string{"events.read"}, TokenUses: []string{"tenant_access"}},
 }

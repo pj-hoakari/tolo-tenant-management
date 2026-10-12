@@ -171,11 +171,10 @@ proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16
 
 テナント配下を対象にする RPC（`CreateEvent`、`ListEvents` など）はリクエストの `tenant_id` で対象を指定し、サービスはクレームの `tenant_id` と突合する。
 不一致は `permission_denied`、`tenant_id` の欠落は `invalid_argument` を返す。
-イベントを対象にする RPC（`AssignEventType`、`TransitionEventStatus`）は、読み込んだイベントの所属テナントをクレームと突合する。
+イベントを対象にする RPC（`TransitionEventStatus`）は、読み込んだイベントの所属テナントをクレームと突合する。
 
 サービス間の参照系 RPC は境界の扱いが異なる。
 `GetEvent` はテナント文脈を持つ `service` トークン（ユーザー起点で `tenant_id` クレームを持つもの）を要求し、クレームがなければ `unauthenticated`、イベントの所属テナントと不一致なら `permission_denied` を返す。
-`GetObservationSettings` はテナント文脈のない `service` トークン（マシン起点）も受け付け、クレームがある場合だけ突合する。
 
 ### RPC ごとの認可
 
@@ -189,9 +188,9 @@ proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16
 | StartTenantRegistration | `TenantService` | 未認証（`AUTH_LEVEL_PUBLIC`） | なし | なし |
 | ClaimTenantOwnership | `TenantService` | 認証済み | `registration` | `tenant.claim` |
 | ChangeTenantContract、ArchiveTenant | `TenantService` | 認証済み | `tenant_access` | `tenant.write` |
-| CreateEvent、AssignEventType、TransitionEventStatus、UpdateObservationSettings | `TenantService` | 認証済み | `tenant_access` | `events.manage` |
+| CreateEvent、TransitionEventStatus | `TenantService` | 認証済み | `tenant_access` | `events.manage` |
 | ListEvents | `TenantService` | 認証済み | `tenant_access` | `events.read` |
-| GetEvent、GetObservationSettings | `TenantService` | 内部（`AUTH_LEVEL_INTERNAL`） | `service` | なし |
+| GetEvent | `TenantService` | 内部（`AUTH_LEVEL_INTERNAL`） | `service` | なし |
 | AddTenantMember、ChangeTenantRole、GrantEventRole、RevokeRole | `RelationAdminService` | 認証済み | `tenant_access` | `tenant.write` |
 | ListMemberships | `RelationAdminService` | 認証済み | `tenant_access` | `tenant.read` |
 
@@ -261,20 +260,6 @@ draft はそのままアーカイブでき、これは作成した draft を破�
 `ListEvents` はテナント配下のイベントを作成順（内部主キーの UUIDv7 順）に返す。
 アーカイブ済みイベントは既定では返さず、`include_archived` を指定したときだけ含める。
 返却件数の上限は 1000 件（`repository.MaxListEvents`）で、ページングは設けない。
-
-### 観測設定値
-
-イベントの観測設定値は `history_window_days` のみを持つ（`docs/tenant_management_spec.md` の「その他」）。
-既定は 30 で、1 以上の値でなければならない。
-値は `events` テーブルの列として保持し、イベントの作成時に既定値が入る。
-
-`GetObservationSettings` はサービス間の参照系 RPC で、応答は観測設定値だけを含み、イベント名、状態、所属テナントは返さない。
-アーカイブ済みのイベントについても応答し、宙づりの参照を生まない。
-テナント境界は強制せず、`tenant_id` クレームを持つ場合だけ突合する（「識別子とテナントの突合」）。
-
-`UpdateObservationSettings` は `tenant_access` と scope `events.manage` を要求し、対象イベントの所属テナントをクレームと突合する。
-アーカイブ済みのイベント、およびアーカイブ済みテナントのイベントは `failed_precondition` で拒否する。
-`history_window_days` が 1 未満の場合は `invalid_argument` を返す。
 
 ## 関係参照（所属とロール）
 

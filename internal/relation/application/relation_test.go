@@ -24,8 +24,8 @@ var (
 	ownedTenant    = tenantdomain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", tenantdomain.TenantOwnershipStateOwned, false)
 	pendingTenant  = tenantdomain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", tenantdomain.TenantOwnershipStatePendingOwner, false)
 	archivedTenant = tenantdomain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", tenantdomain.TenantOwnershipStateOwned, true)
-	draftEvent     = tenantdomain.NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", tenantdomain.EventTypeShortTerm, tenantdomain.EventStatusDraft)
-	archivedEvent  = tenantdomain.NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", tenantdomain.EventTypeShortTerm, tenantdomain.EventStatusArchived)
+	draftEvent     = tenantdomain.NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", tenantdomain.EventStatusDraft)
+	archivedEvent  = tenantdomain.NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", tenantdomain.EventStatusArchived)
 )
 
 // callerID is the authenticated subject of the tests, an owner of the tenant
