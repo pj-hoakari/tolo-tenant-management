@@ -4,7 +4,7 @@ package: `tolo.tenant.v1`（テナント）、`tolo.relation.v1`（関係参照�
 実現するコンテキスト: tenant_context.md（ドメイン定義 tenant_domain.md）と、auth_context.mdの関係参照（ドメイン定義 auth_domain.md）
 役割: テナントとイベントの識別子の正本、および所属（Membership）とロールの真実の源（関係参照）
 1つのデプロイ単位が2つの package を実装する。package はコンテキストの公開言語に対応するため統合しない。
-グラフ編集は `GetEvent` で参照整合を取り、観測は `GetObservationSettings` で設定値を得る。
+グラフ編集は `GetEvent` で参照整合を取る。
 
 対象外: Auth からの所属・ロール参照 I/F とキャッシュパージ通知（Auth と関係参照の間）
 
@@ -19,11 +19,8 @@ package: `tolo.tenant.v1`（テナント）、`tolo.relation.v1`（関係参照�
 | ChangeTenantContract | テナントの契約プランを変更する | 管理 UI | `tenant_access` + tenant.write | TenantContractChanged |
 | ArchiveTenant | テナントを論理削除（アーカイブ）する。識別子と配下データは保持 | 管理 UI | `tenant_access` + tenant.write | TenantArchived |
 | CreateEvent | テナント配下にイベント（催事／設置）を新設する | 管理 UI | `tenant_access` + events.manage | EventCreated |
-| AssignEventType | イベント種別（短期／長期）を設定する。短期は観測縮退の対象 | 管理 UI | `tenant_access` + events.manage | EventTypeAssigned |
 | TransitionEventStatus | イベント状態を遷移させる（許容遷移は補足の遷移表） | 管理 UI | `tenant_access` + events.manage | EventOpened／EventLocked／EventClosed／EventUnlocked／EventReopened／EventArchived／EventUnarchived |
 | GetEvent | イベントの存在と所属テナントを参照する。存在しない ID へのグラフ作成を防ぐ参照整合の要（関係参照の存在確認はサービス内部で行い RPC を経ない） | グラフ編集 | サービス間（token_use=service。テナント文脈必須） | （参照のみ） |
-| GetObservationSettings | イベントの観測設定値を参照する | 観測 | サービス間（token_use=service） | （参照のみ） |
-| UpdateObservationSettings | イベントの観測設定値を変更する | 管理 UI | `tenant_access` + events.manage | ObservationSettingsChanged |
 | ListEvents | テナント配下のイベントを一覧する | 管理 UI、スタッフアプリ | `tenant_access` + events.read | （参照のみ） |
 
 ### 関係参照（RelationAdminService）
@@ -51,11 +48,8 @@ service TenantService {
   rpc ChangeTenantContract(ChangeTenantContractRequest) returns (Tenant);
   rpc ArchiveTenant(ArchiveTenantRequest) returns (Tenant);
   rpc CreateEvent(CreateEventRequest) returns (Event);
-  rpc AssignEventType(AssignEventTypeRequest) returns (Event);
   rpc TransitionEventStatus(TransitionEventStatusRequest) returns (Event);
   rpc GetEvent(GetEventRequest) returns (Event);
-  rpc GetObservationSettings(GetObservationSettingsRequest) returns (ObservationSettings);
-  rpc UpdateObservationSettings(UpdateObservationSettingsRequest) returns (ObservationSettings);
   rpc ListEvents(ListEventsRequest) returns (ListEventsResponse);
 }
 
@@ -79,14 +73,9 @@ message Event {
   string event_id = 1;       // 公開 ID（ランダムな 16 文字 hex）
   string tenant_id = 2;      // 必ず1テナントに属す
   string name = 3;
-  EventType type = 4;
   EventStatus status = 5;
-}
-
-enum EventType {
-  EVENT_TYPE_UNSPECIFIED = 0;
-  EVENT_TYPE_SHORT_TERM = 1;  // 短期（履歴短い・観測縮退対象）
-  EVENT_TYPE_LONG_TERM = 2;   // 長期（常設）
+  reserved 4;
+  reserved "type";
 }
 
 enum EventStatus {
@@ -96,11 +85,6 @@ enum EventStatus {
   EVENT_STATUS_LOCKED = 3;
   EVENT_STATUS_CLOSED = 4;
   EVENT_STATUS_ARCHIVED = 5;  // 論理削除
-}
-
-// 観測が参照する設定値（履歴期間等）。GetObservationSettings でのみ返す
-message ObservationSettings {
-  int32 history_window_days = 1;  // 履歴パーセンタイル算出に使う期間。既定 30
 }
 
 // tenant_id／event_id はいずれも公開 ID。内部主キー（UUIDv7）は proto に現れない
@@ -127,11 +111,8 @@ message ArchiveTenantRequest {
 message CreateEventRequest {
   string tenant_id = 1;
   string name = 2;
-  EventType type = 3;
-}
-message AssignEventTypeRequest {
-  string event_id = 1;
-  EventType type = 2;
+  reserved 3;
+  reserved "type";
 }
 message TransitionEventStatusRequest {
   string event_id = 1;
@@ -139,13 +120,6 @@ message TransitionEventStatusRequest {
 }
 message GetEventRequest {
   string event_id = 1;
-}
-message GetObservationSettingsRequest {
-  string event_id = 1;
-}
-message UpdateObservationSettingsRequest {
-  string event_id = 1;
-  ObservationSettings settings = 2;
 }
 message ListEventsRequest {
   string tenant_id = 1;
@@ -249,7 +223,7 @@ message ListMembershipsResponse {
   アーカイブは名前を解放しない。アーカイブ済みテナントの名前を新規テナントが使うことはできない
 - `pending_owner` は、ClaimTenantOwnership と期限切れ削除以外の操作を受け付けない
 - `owned` への遷移後は、所有状態を `pending_owner` へ戻さない
-- アーカイブは論理削除であり `GetEvent`／`GetObservationSettings` は archived でも返す（宙づり参照を生まない）
+- アーカイブは論理削除であり `GetEvent` は archived でも返す（宙づり参照を生まない）
 - アーカイブ済みテナント／イベントの扱い: 書き込み系 RPC は `failed_precondition`、参照系は継続
   既存所属は保持し（補足「関係参照」）、archived イベントへの Token Exchange は拒否（Auth（IdP））
 - テナントのアーカイブは配下イベントの状態を変えない
@@ -260,11 +234,6 @@ message ListMembershipsResponse {
 
 - CreateEvent は `owned` かつアーカイブされていないテナントにのみ作成し、初期状態は `draft` とする
   存在しないテナントは `not_found`、`pending_owner`またはアーカイブ済みのテナントは `failed_precondition` を返す
-- CreateEvent の `type` は省略できる。省略した場合は `EVENT_TYPE_UNSPECIFIED` のまま作成し、短期／長期のいずれにも丸めない
-  AssignEventType で `EVENT_TYPE_UNSPECIFIED` を指定することはできず `invalid_argument` を返す
-- AssignEventType は archived 以外のすべての状態で種別を変更できる。イベントが archived の場合のみ `failed_precondition` を返す
-  公開後（open 以降）の変更も許容する。既存の観測スナップショットは保持し、以後の算出方法（参照値で補うか自前の履歴を使うか）だけが切り替わる
-  観測データは種別に依存しない生データのため、変更しても過去の値との矛盾は生じない
 - 許容する状態遷移は次の8つに限り、これ以外は `failed_precondition` を返す
   自状態への遷移（open→open 等）も許容しない
 
@@ -330,7 +299,7 @@ message ListMembershipsResponse {
 | 存在しないテナント／イベント | `not_found` |
 | `pending_owner`またはアーカイブ済みテナント／イベントへの許可外の書き込み、許容外の状態遷移 | `failed_precondition` |
 | 匿名の仮作成がレート制限を超過 | `resource_exhausted` |
-| 必須項目の欠落、`EVENT_TYPE_UNSPECIFIED` の指定 | `invalid_argument` |
+| 必須項目の欠落 | `invalid_argument` |
 | 内部 JWT が無効、`token_use` 不一致 | `unauthenticated` |
 | 内部 JWT の検証鍵を解決できない（JWKS の取得失敗、その再試行を控えている間） | `unavailable` |
 | scope 不足、認証テナント以外のイベントの指定 | `permission_denied` |
@@ -340,17 +309,11 @@ message ListMembershipsResponse {
 
 ### 参照系 RPC とテナント境界
 
-サービス間の参照系 RPC は2つあり、テナント境界の強制の扱いが異なる。
+サービス間の参照系 RPC は `GetEvent` だけであり、テナント境界を強制する。
 
-- `GetEvent` は境界を強制する。内部 JWT の `tenant_id` クレームと対象イベントの所属テナントが一致しない場合は `permission_denied` を返し、クレームを持たない内部 JWT（マシン起点の `token_use=service`）では `unauthenticated` を返す
-  呼び出し元はグラフ編集で、管理 UI 起点のためテナント文脈を必ず持つ
-- `GetObservationSettings` は境界を強制しない。テナント文脈のない経路（QR 由来の計上を契機とする観測サイクル等）から呼ばれうるため、クレームがない内部 JWT も受け付ける
-  境界を強制しない代わりに、応答は観測設定値のみとし、イベント名・状態・所属テナントを含めない
-
-この分担は、参照整合と設定供給で呼び出し元の資格情報の性質が違うことに基づく。応答の内容も、境界を強制できない側が機微な情報を返さないように分けている。
+- 内部 JWT の `tenant_id` クレームと対象イベントの所属テナントが一致しない場合は `permission_denied` を返し、クレームを持たない内部 JWT（マシン起点の `token_use=service`）では `unauthenticated` を返す
+- 呼び出し元はグラフ編集で、管理 UI 起点のためテナント文脈を必ず持つ
 
 ### その他
 
 - Realtime 配信ログの保持期間などテナント設定値の追加項目は実装フェーズで決定する（Realtime）
-- `observation_settings` の既定は `history_window_days = 30` とする。実測にもとづき運用で調整する前提の初期値である
-  観測設定値として持つのは `history_window_days` のみとし、他の項目は必要が生じた時点で追加する

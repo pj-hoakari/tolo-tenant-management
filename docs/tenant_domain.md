@@ -14,7 +14,6 @@
 | テナント | Tenant | 契約・課金・オンボーディングの単位＝顧客組織<br>改善データの保護境界<br>1ユーザーは複数テナントに所属しうる |
 | テナント所有状態 | Tenant Ownership State | `pending_owner`＝未認証で仮作成され、オーナー未確定<br>`owned`＝認証済みユーザーがオーナーとして所属し、利用可能 |
 | イベント | Event | テナント配下の催事／設置<br>必ず1テナントに属す<br>グラフ・観測・最適化・行列誘導はイベント単位 |
-| イベント種別 | Event Type | 短期（履歴短い・観測縮退対象）／長期（常設） |
 | イベント状態 | Event Status | draft→open→locked→closed→archived<br>逆遷移も許容 |
 | アーカイブ | Archive | 削除＝論理削除<br>識別子と配下データを保持 |
 | ロール | Role | オーナー／スタッフ／管理者（予約）<br>テナントとイベントで独立 |
@@ -26,8 +25,6 @@
 | テナント登録された | TenantRegistered | オンボーディング完了 |
 | テナント契約変更された | TenantContractChanged | プラン変更 |
 | イベント作成された | EventCreated | 配下にイベント新設 |
-| イベント種別設定された | EventTypeAssigned | 短期／長期設定 |
-| 観測設定値変更された | ObservationSettingsChanged | イベント単位の観測設定値（履歴期間）の変更 |
 | イベント公開された | EventOpened | draft→open |
 | イベントロックされた | EventLocked | open→locked |
 | イベント終了された | EventClosed | locked→closed |
