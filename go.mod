@@ -14,6 +14,7 @@ tool (
 
 require (
 	connectrpc.com/connect v1.21.0
+	connectrpc.com/connect/v2 v2.0.0
 	connectrpc.com/otelconnect v0.10.0
 	github.com/XSAM/otelsql v0.44.0
 	github.com/go-logr/logr v1.4.4
