@@ -14,7 +14,7 @@ tool (
 
 require (
 	connectrpc.com/connect v1.21.0
-	connectrpc.com/otelconnect v0.10.0
+	connectrpc.com/otelconnect v0.12.0
 	github.com/XSAM/otelsql v0.44.0
 	github.com/go-logr/logr v1.4.4
 	github.com/golang-jwt/jwt/v5 v5.3.1
@@ -34,6 +34,7 @@ require (
 )
 
 require (
+	connectrpc.com/connect/v2 v2.0.0 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
