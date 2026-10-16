@@ -11,7 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	connectrpc "connectrpc.com/connect"
+	connectrpc "connectrpc.com/connect/v2"
 	"connectrpc.com/otelconnect"
 
 	"github.com/pj-hoakari/internal-jwt-handling/interceptor"
@@ -48,14 +48,14 @@ func DefaultJWTSettings() JWTSettings {
 
 // AuthInterceptor builds the interceptor that authenticates and authorizes one
 // service from its generated policy table.
-type AuthInterceptor func(policies authz.Policies) (connectrpc.Interceptor, error)
+type AuthInterceptor func(policies authz.Policies) (connectrpc.ServerInterceptor, error)
 
 // Mount registers one Connect service on the mux. auth builds the service's
 // authentication interceptor; interceptors are the ones every service in the
 // process runs with (tracing), to be placed before it. Each service's connect
 // package returns its own Mount, so the process handler knows no service in
 // particular.
-type Mount func(mux *http.ServeMux, auth AuthInterceptor, interceptors ...connectrpc.Interceptor) error
+type Mount func(mux *http.ServeMux, auth AuthInterceptor, interceptors ...connectrpc.ServerInterceptor) error
 
 // NewHandlerWithJWTSettings builds the process handler that verifies internal
 // JWTs against the JWKS the settings locate.
@@ -89,12 +89,12 @@ func NewHandlerWithJWTSettings(settings JWTSettings, mounts ...Mount) (http.Hand
 func NewHandlerWithVerifier(tokenVerifier interceptor.TokenVerifier, mounts ...Mount) (http.Handler, error) {
 	// The caller sits behind the Service Gateway, so an incoming trace context is
 	// trusted and continued instead of being demoted to a span link.
-	tracing, err := otelconnect.NewInterceptor(otelconnect.WithTrustRemote())
+	tracing, err := otelconnect.NewServerInterceptor(otelconnect.WithTrustRemote())
 	if err != nil {
 		return nil, fmt.Errorf("create tracing interceptor: %w", err)
 	}
 
-	auth := func(policies authz.Policies) (connectrpc.Interceptor, error) {
+	auth := func(policies authz.Policies) (connectrpc.ServerInterceptor, error) {
 		return interceptor.New(tokenVerifier, policies, interceptor.WithErrorReporter(reportAuthRejection))
 	}
 

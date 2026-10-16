@@ -13,7 +13,7 @@ import (
 	"sync"
 	"testing"
 
-	connectrpc "connectrpc.com/connect"
+	connectrpc "connectrpc.com/connect/v2"
 	"github.com/golang-jwt/jwt/v5"
 	internaljwt "github.com/pj-hoakari/internal-jwt-handling"
 	tenantv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1"
@@ -131,12 +131,12 @@ func TestGetEvent(t *testing.T) {
 
 	ctx := internaljwt.ContextWithClaims(context.Background(), internaljwt.Claims{TenantPublicID: events[0].TenantPublicID()})
 
-	response, err := service.GetEvent(ctx, connectrpc.NewRequest(&tenantv1.GetEventRequest{EventId: events[0].PublicID()}))
+	response, err := service.GetEvent(ctx, &tenantv1.GetEventRequest{EventId: events[0].PublicID()})
 	if err != nil {
 		t.Fatalf("GetEvent() error = %v", err)
 	}
 
-	if got, want := response.Msg.GetEvent().GetEventId(), events[0].PublicID(); got != want {
+	if got, want := response.GetEvent().GetEventId(), events[0].PublicID(); got != want {
 		t.Errorf("EventId = %q, want %q", got, want)
 	}
 }
@@ -166,20 +166,20 @@ func TestListEvents(t *testing.T) {
 
 			ctx := internaljwt.ContextWithClaims(context.Background(), internaljwt.Claims{TenantPublicID: tenant.PublicID()})
 
-			response, err := service.ListEvents(ctx, connectrpc.NewRequest(&tenantv1.ListEventsRequest{
+			response, err := service.ListEvents(ctx, &tenantv1.ListEventsRequest{
 				TenantId:        tenant.PublicID(),
 				IncludeArchived: includeArchived,
-			}))
+			})
 			if err != nil {
 				t.Fatalf("ListEvents() error = %v", err)
 			}
 
-			if got, want := len(response.Msg.GetEvents()), len(events); got != want {
+			if got, want := len(response.GetEvents()), len(events); got != want {
 				t.Fatalf("event count = %d, want %d", got, want)
 			}
 
 			for i, event := range events {
-				if got, want := response.Msg.GetEvents()[i].GetEventId(), event.PublicID(); got != want {
+				if got, want := response.GetEvents()[i].GetEventId(), event.PublicID(); got != want {
 					t.Errorf("Events[%d].EventId = %q, want %q", i, got, want)
 				}
 			}
@@ -202,10 +202,10 @@ func TestCreateEventPublicIDCollision(t *testing.T) {
 	service := NewService(application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{}, permissionStub{allowed: true}))
 	ctx := internaljwt.ContextWithClaims(context.Background(), internaljwt.Claims{TenantPublicID: tenant.PublicID()})
 
-	_, err := service.CreateEvent(ctx, connectrpc.NewRequest(&tenantv1.CreateEventRequest{
+	_, err := service.CreateEvent(ctx, &tenantv1.CreateEventRequest{
 		TenantId: tenant.PublicID(),
 		Name:     "Festival",
-	}))
+	})
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodeAlreadyExists; got != want {
 		t.Fatalf("CreateEvent() error code = %v, want %v", got, want)
 	}
@@ -221,7 +221,7 @@ func TestInternalErrorHidesDetail(t *testing.T) {
 
 	ctx := withSampledSpan(t, internaljwt.ContextWithClaims(context.Background(), internaljwt.Claims{TenantPublicID: tenant.PublicID()}))
 
-	_, err := service.ListEvents(ctx, connectrpc.NewRequest(&tenantv1.ListEventsRequest{TenantId: tenant.PublicID()}))
+	_, err := service.ListEvents(ctx, &tenantv1.ListEventsRequest{TenantId: tenant.PublicID()})
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodeInternal; got != want {
 		t.Fatalf("ListEvents() error code = %v, want %v", got, want)
 	}
@@ -272,7 +272,7 @@ func TestCanceledRequestIsNotLogged(t *testing.T) {
 
 	ctx := internaljwt.ContextWithClaims(context.Background(), internaljwt.Claims{TenantPublicID: tenant.PublicID()})
 
-	_, err := service.ListEvents(ctx, connectrpc.NewRequest(&tenantv1.ListEventsRequest{TenantId: tenant.PublicID()}))
+	_, err := service.ListEvents(ctx, &tenantv1.ListEventsRequest{TenantId: tenant.PublicID()})
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodeCanceled; got != want {
 		t.Fatalf("ListEvents() error code = %v, want %v", got, want)
 	}
@@ -395,42 +395,42 @@ func TestEveryHandlerHidesInternalErrorDetail(t *testing.T) {
 
 	calls := map[string]func() error{
 		"StartTenantRegistration": func() error {
-			_, err := service.StartTenantRegistration(ctx, connectrpc.NewRequest(&tenantv1.StartTenantRegistrationRequest{Name: "Acme", ContractPlan: "standard"}))
+			_, err := service.StartTenantRegistration(ctx, &tenantv1.StartTenantRegistrationRequest{Name: "Acme", ContractPlan: "standard"})
 
 			return err
 		},
 		"ClaimTenantOwnership": func() error {
-			_, err := service.ClaimTenantOwnership(ctx, connectrpc.NewRequest(&tenantv1.ClaimTenantOwnershipRequest{TenantId: tenant.PublicID(), OwnershipClaimToken: "token"}))
+			_, err := service.ClaimTenantOwnership(ctx, &tenantv1.ClaimTenantOwnershipRequest{TenantId: tenant.PublicID(), OwnershipClaimToken: "token"})
 
 			return err
 		},
 		"ChangeTenantContract": func() error {
-			_, err := service.ChangeTenantContract(ctx, connectrpc.NewRequest(&tenantv1.ChangeTenantContractRequest{TenantId: tenant.PublicID(), ContractPlan: "enterprise"}))
+			_, err := service.ChangeTenantContract(ctx, &tenantv1.ChangeTenantContractRequest{TenantId: tenant.PublicID(), ContractPlan: "enterprise"})
 
 			return err
 		},
 		"ArchiveTenant": func() error {
-			_, err := service.ArchiveTenant(ctx, connectrpc.NewRequest(&tenantv1.ArchiveTenantRequest{TenantId: tenant.PublicID()}))
+			_, err := service.ArchiveTenant(ctx, &tenantv1.ArchiveTenantRequest{TenantId: tenant.PublicID()})
 
 			return err
 		},
 		"CreateEvent": func() error {
-			_, err := service.CreateEvent(ctx, connectrpc.NewRequest(&tenantv1.CreateEventRequest{TenantId: tenant.PublicID(), Name: "Festival"}))
+			_, err := service.CreateEvent(ctx, &tenantv1.CreateEventRequest{TenantId: tenant.PublicID(), Name: "Festival"})
 
 			return err
 		},
 		"TransitionEventStatus": func() error {
-			_, err := service.TransitionEventStatus(ctx, connectrpc.NewRequest(&tenantv1.TransitionEventStatusRequest{EventId: eventID, To: tenantv1.EventStatus_EVENT_STATUS_OPEN}))
+			_, err := service.TransitionEventStatus(ctx, &tenantv1.TransitionEventStatusRequest{EventId: eventID, To: tenantv1.EventStatus_EVENT_STATUS_OPEN})
 
 			return err
 		},
 		"GetEvent": func() error {
-			_, err := service.GetEvent(ctx, connectrpc.NewRequest(&tenantv1.GetEventRequest{EventId: eventID}))
+			_, err := service.GetEvent(ctx, &tenantv1.GetEventRequest{EventId: eventID})
 
 			return err
 		},
 		"ListEvents": func() error {
-			_, err := service.ListEvents(ctx, connectrpc.NewRequest(&tenantv1.ListEventsRequest{TenantId: tenant.PublicID()}))
+			_, err := service.ListEvents(ctx, &tenantv1.ListEventsRequest{TenantId: tenant.PublicID()})
 
 			return err
 		},

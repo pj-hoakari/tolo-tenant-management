@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	connectrpc "connectrpc.com/connect"
+	connectrpc "connectrpc.com/connect/v2"
 
 	relationv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/relation/v1"
 	relationdomain "github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
@@ -57,24 +57,24 @@ func (f relationFixture) mintToken(t *testing.T, tenantPublicID, scope string) s
 func (f relationFixture) addMember(t *testing.T, token, tenantID, userID string, role relationv1.Role) (*relationv1.Membership, error) {
 	t.Helper()
 
-	res, err := f.relationClient.AddTenantMember(context.Background(), authorized(token, &relationv1.AddTenantMemberRequest{TenantId: tenantID, UserId: userID, TenantRole: role}))
+	res, err := f.relationClient.AddTenantMember(authorized(context.Background(), token), &relationv1.AddTenantMemberRequest{TenantId: tenantID, UserId: userID, TenantRole: role})
 	if err != nil {
 		return nil, err
 	}
 
-	return res.Msg.GetMembership(), nil
+	return res.GetMembership(), nil
 }
 
 // listMemberships lists the memberships of the tenant through the transport.
 func (f relationFixture) listMemberships(t *testing.T, token, tenantPublicID string) []*relationv1.Membership {
 	t.Helper()
 
-	res, err := f.relationClient.ListMemberships(context.Background(), authorized(token, &relationv1.ListMembershipsRequest{Filter: &relationv1.ListMembershipsRequest_TenantId{TenantId: tenantPublicID}}))
+	res, err := f.relationClient.ListMemberships(authorized(context.Background(), token), &relationv1.ListMembershipsRequest{Filter: &relationv1.ListMembershipsRequest_TenantId{TenantId: tenantPublicID}})
 	if err != nil {
 		t.Fatalf("ListMemberships(%q) error = %v", tenantPublicID, err)
 	}
 
-	return res.Msg.GetMemberships()
+	return res.GetMemberships()
 }
 
 // membershipOf returns the listed membership of userID, or nil.
@@ -163,26 +163,26 @@ func TestRolesOverTransport(t *testing.T) {
 		t.Fatalf("AddTenantMember() error = %v", err)
 	}
 
-	changed, err := f.relationClient.ChangeTenantRole(ctx, authorized(f.tokenA, &relationv1.ChangeTenantRoleRequest{TenantId: f.tenantA.PublicID(), UserId: "user-1", TenantRole: relationv1.Role_ROLE_OWNER}))
+	changed, err := f.relationClient.ChangeTenantRole(authorized(ctx, f.tokenA), &relationv1.ChangeTenantRoleRequest{TenantId: f.tenantA.PublicID(), UserId: "user-1", TenantRole: relationv1.Role_ROLE_OWNER})
 	if err != nil {
 		t.Fatalf("ChangeTenantRole() error = %v", err)
 	}
 
-	if got, want := changed.Msg.GetMembership().GetTenantRole(), relationv1.Role_ROLE_OWNER; got != want {
+	if got, want := changed.GetMembership().GetTenantRole(), relationv1.Role_ROLE_OWNER; got != want {
 		t.Errorf("TenantRole after change = %v, want %v", got, want)
 	}
 
-	_, err = f.relationClient.ChangeTenantRole(ctx, authorized(f.tokenA, &relationv1.ChangeTenantRoleRequest{TenantId: f.tenantA.PublicID(), UserId: "user-9", TenantRole: relationv1.Role_ROLE_OWNER}))
+	_, err = f.relationClient.ChangeTenantRole(authorized(ctx, f.tokenA), &relationv1.ChangeTenantRoleRequest{TenantId: f.tenantA.PublicID(), UserId: "user-9", TenantRole: relationv1.Role_ROLE_OWNER})
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodeNotFound; got != want {
 		t.Errorf("ChangeTenantRole(unknown member) error code = %v, want %v", got, want)
 	}
 
-	granted, err := f.relationClient.GrantEventRole(ctx, authorized(f.tokenA, &relationv1.GrantEventRoleRequest{EventId: f.eventA, UserId: "user-1", Role: relationv1.Role_ROLE_STAFF}))
+	granted, err := f.relationClient.GrantEventRole(authorized(ctx, f.tokenA), &relationv1.GrantEventRoleRequest{EventId: f.eventA, UserId: "user-1", Role: relationv1.Role_ROLE_STAFF})
 	if err != nil {
 		t.Fatalf("GrantEventRole() error = %v", err)
 	}
 
-	if roles := granted.Msg.GetMembership().GetEventRoles(); len(roles) != 1 || roles[0].GetEventId() != f.eventA || roles[0].GetRole() != relationv1.Role_ROLE_STAFF {
+	if roles := granted.GetMembership().GetEventRoles(); len(roles) != 1 || roles[0].GetEventId() != f.eventA || roles[0].GetRole() != relationv1.Role_ROLE_STAFF {
 		t.Errorf("EventRoles after grant = %v, want staff on %q", roles, f.eventA)
 	}
 
@@ -200,7 +200,7 @@ func TestRolesOverTransport(t *testing.T) {
 
 	for _, tt := range grantTests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := f.relationClient.GrantEventRole(ctx, authorized(tt.token, &relationv1.GrantEventRoleRequest{EventId: tt.eventID, UserId: tt.userID, Role: relationv1.Role_ROLE_STAFF}))
+			_, err := f.relationClient.GrantEventRole(authorized(ctx, tt.token), &relationv1.GrantEventRoleRequest{EventId: tt.eventID, UserId: tt.userID, Role: relationv1.Role_ROLE_STAFF})
 			if got := connectrpc.CodeOf(err); got != tt.want {
 				t.Fatalf("GrantEventRole() error code = %v, want %v", got, tt.want)
 			}
@@ -212,36 +212,36 @@ func TestRolesOverTransport(t *testing.T) {
 		t.Errorf("ListMemberships(tenant) = %v, want the caller and user-1 with one event role", listed)
 	}
 
-	byUser, err := f.relationClient.ListMemberships(ctx, authorized(f.tokenA, &relationv1.ListMembershipsRequest{Filter: &relationv1.ListMembershipsRequest_UserId{UserId: "user-1"}}))
-	if err != nil || len(byUser.Msg.GetMemberships()) != 1 {
+	byUser, err := f.relationClient.ListMemberships(authorized(ctx, f.tokenA), &relationv1.ListMembershipsRequest{Filter: &relationv1.ListMembershipsRequest_UserId{UserId: "user-1"}})
+	if err != nil || len(byUser.GetMemberships()) != 1 {
 		t.Errorf("ListMemberships(user) = %v, %v, want one membership", byUser, err)
 	}
 
 	// Tenant B cannot see tenant A's memberships, even through the user filter.
-	byUserB, err := f.relationClient.ListMemberships(ctx, authorized(f.tokenB, &relationv1.ListMembershipsRequest{Filter: &relationv1.ListMembershipsRequest_UserId{UserId: "user-1"}}))
-	if err != nil || len(byUserB.Msg.GetMemberships()) != 0 {
+	byUserB, err := f.relationClient.ListMemberships(authorized(ctx, f.tokenB), &relationv1.ListMembershipsRequest{Filter: &relationv1.ListMembershipsRequest_UserId{UserId: "user-1"}})
+	if err != nil || len(byUserB.GetMemberships()) != 0 {
 		t.Errorf("ListMemberships(user, other tenant) = %v, %v, want empty", byUserB, err)
 	}
 
-	_, err = f.relationClient.ListMemberships(ctx, authorized(f.tokenB, &relationv1.ListMembershipsRequest{Filter: &relationv1.ListMembershipsRequest_TenantId{TenantId: f.tenantA.PublicID()}}))
+	_, err = f.relationClient.ListMemberships(authorized(ctx, f.tokenB), &relationv1.ListMembershipsRequest{Filter: &relationv1.ListMembershipsRequest_TenantId{TenantId: f.tenantA.PublicID()}})
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodePermissionDenied; got != want {
 		t.Errorf("ListMemberships(another tenant) error code = %v, want %v", got, want)
 	}
 
-	if _, err := f.relationClient.RevokeRole(ctx, authorized(f.tokenA, &relationv1.RevokeRoleRequest{UserId: "user-1", Scope: &relationv1.RevokeRoleRequest_EventId{EventId: f.eventA}})); err != nil {
+	if _, err := f.relationClient.RevokeRole(authorized(ctx, f.tokenA), &relationv1.RevokeRoleRequest{UserId: "user-1", Scope: &relationv1.RevokeRoleRequest_EventId{EventId: f.eventA}}); err != nil {
 		t.Fatalf("RevokeRole(event) error = %v", err)
 	}
 
-	_, err = f.relationClient.RevokeRole(ctx, authorized(f.tokenA, &relationv1.RevokeRoleRequest{UserId: "user-1", Scope: &relationv1.RevokeRoleRequest_EventId{EventId: f.eventA}}))
+	_, err = f.relationClient.RevokeRole(authorized(ctx, f.tokenA), &relationv1.RevokeRoleRequest{UserId: "user-1", Scope: &relationv1.RevokeRoleRequest_EventId{EventId: f.eventA}})
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodeNotFound; got != want {
 		t.Errorf("second RevokeRole(event) error code = %v, want %v", got, want)
 	}
 
-	if _, err := f.relationClient.RevokeRole(ctx, authorized(f.tokenA, &relationv1.RevokeRoleRequest{UserId: "user-1", Scope: &relationv1.RevokeRoleRequest_TenantId{TenantId: f.tenantA.PublicID()}})); err != nil {
+	if _, err := f.relationClient.RevokeRole(authorized(ctx, f.tokenA), &relationv1.RevokeRoleRequest{UserId: "user-1", Scope: &relationv1.RevokeRoleRequest_TenantId{TenantId: f.tenantA.PublicID()}}); err != nil {
 		t.Fatalf("RevokeRole(tenant) error = %v", err)
 	}
 
-	_, err = f.relationClient.RevokeRole(ctx, authorized(f.tokenA, &relationv1.RevokeRoleRequest{UserId: "user-1"}))
+	_, err = f.relationClient.RevokeRole(authorized(ctx, f.tokenA), &relationv1.RevokeRoleRequest{UserId: "user-1"})
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodeInvalidArgument; got != want {
 		t.Errorf("RevokeRole(no scope) error code = %v, want %v", got, want)
 	}

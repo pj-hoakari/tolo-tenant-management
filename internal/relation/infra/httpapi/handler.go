@@ -23,7 +23,7 @@ import (
 	"net/http"
 	"strings"
 
-	connectrpc "connectrpc.com/connect"
+	connectrpc "connectrpc.com/connect/v2"
 
 	infraconnect "github.com/pj-hoakari/tolo-tenant-management/internal/infra/connect"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/application"
@@ -62,7 +62,7 @@ type membershipLister interface {
 // JWT, so the route is unauthenticated: the auth interceptor and the
 // process-wide Connect interceptors do not apply to it.
 func Mount(useCases membershipLister) infraconnect.Mount {
-	return func(mux *http.ServeMux, _ infraconnect.AuthInterceptor, _ ...connectrpc.Interceptor) error {
+	return func(mux *http.ServeMux, _ infraconnect.AuthInterceptor, _ ...connectrpc.ServerInterceptor) error {
 		mux.HandleFunc(ListMembershipsPattern, listMemberships(useCases))
 
 		return nil

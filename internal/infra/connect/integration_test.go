@@ -22,7 +22,8 @@ import (
 	"testing"
 	"time"
 
-	connectrpc "connectrpc.com/connect"
+	connectrpc "connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/testcontainers/testcontainers-go"
@@ -282,8 +283,8 @@ func newProcess(t *testing.T, options ...application.Option) *process {
 		tenants:        tenants,
 		memberships:    memberships,
 		jwks:           registry,
-		tenantClient:   tenantv1connect.NewTenantServiceClient(httpServer.Client(), httpServer.URL),
-		relationClient: relationv1connect.NewRelationAdminServiceClient(httpServer.Client(), httpServer.URL),
+		tenantClient:   tenantv1connect.NewTenantServiceClient(connectrpc.NewClient(connecthttp.NewTransport(httpServer.Client(), httpServer.URL))),
+		relationClient: relationv1connect.NewRelationAdminServiceClient(connectrpc.NewClient(connecthttp.NewTransport(httpServer.Client(), httpServer.URL))),
 		baseURL:        httpServer.URL,
 		httpClient:     httpServer.Client(),
 	}
@@ -359,15 +360,15 @@ func (p *process) mintRegistrationTokenWithScope(t *testing.T, scope string) str
 	})
 }
 
-// authorized builds a request carrying token as its bearer credential; an
-// empty token leaves the request unauthenticated.
-func authorized[T any](token string, msg *T) *connectrpc.Request[T] {
-	req := connectrpc.NewRequest(msg)
+// authorized builds a call context carrying token as its bearer credential; an
+// empty token leaves the call unauthenticated.
+func authorized(ctx context.Context, token string) context.Context {
+	ctx, info := connectrpc.NewClientContext(ctx)
 	if token != "" {
-		req.Header().Set("Authorization", token)
+		info.RequestHeader().Set("Authorization", token)
 	}
 
-	return req
+	return ctx
 }
 
 // createTenant stores an owned tenant directly, standing in for the onboarding
@@ -406,24 +407,24 @@ func (p *process) changeTenantRole(t *testing.T, tenantID, userID string, role r
 func (p *process) startRegistration(t *testing.T, name string) *tenantv1.StartTenantRegistrationResponse {
 	t.Helper()
 
-	res, err := p.tenantClient.StartTenantRegistration(context.Background(), connectrpc.NewRequest(&tenantv1.StartTenantRegistrationRequest{Name: name, ContractPlan: "standard"}))
+	res, err := p.tenantClient.StartTenantRegistration(context.Background(), &tenantv1.StartTenantRegistrationRequest{Name: name, ContractPlan: "standard"})
 	if err != nil {
 		t.Fatalf("StartTenantRegistration(%q) error = %v", name, err)
 	}
 
-	return res.Msg
+	return res
 }
 
 // claim calls ClaimTenantOwnership with token as the bearer credential.
 func (p *process) claim(t *testing.T, token, tenantID, claimToken string) (*tenantv1.Tenant, error) {
 	t.Helper()
 
-	res, err := p.tenantClient.ClaimTenantOwnership(context.Background(), authorized(token, &tenantv1.ClaimTenantOwnershipRequest{TenantId: tenantID, OwnershipClaimToken: claimToken}))
+	res, err := p.tenantClient.ClaimTenantOwnership(authorized(context.Background(), token), &tenantv1.ClaimTenantOwnershipRequest{TenantId: tenantID, OwnershipClaimToken: claimToken})
 	if err != nil {
 		return nil, err
 	}
 
-	return res.Msg.GetTenant(), nil
+	return res.GetTenant(), nil
 }
 
 // createEvent creates an event through TenantService and returns it as the
@@ -431,10 +432,10 @@ func (p *process) claim(t *testing.T, token, tenantID, claimToken string) (*tena
 func (p *process) createEvent(t *testing.T, token, tenantPublicID, name string) *tenantv1.Event {
 	t.Helper()
 
-	res, err := p.tenantClient.CreateEvent(context.Background(), authorized(token, &tenantv1.CreateEventRequest{TenantId: tenantPublicID, Name: name}))
+	res, err := p.tenantClient.CreateEvent(authorized(context.Background(), token), &tenantv1.CreateEventRequest{TenantId: tenantPublicID, Name: name})
 	if err != nil {
 		t.Fatalf("CreateEvent(%q) error = %v", name, err)
 	}
 
-	return res.Msg.GetEvent()
+	return res.GetEvent()
 }
