@@ -5,321 +5,364 @@
 package tenantv1connect
 
 import (
-	connect "connectrpc.com/connect"
+	connect "connectrpc.com/connect/v2"
 	context "context"
-	errors "errors"
 	v1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1"
-	http "net/http"
-	strings "strings"
+	sync "sync"
 )
-
-// This is a compile-time assertion to ensure that this generated file and the connect package are
-// compatible. If you get a compiler error that this constant is not defined, this code was
-// generated with a version of connect newer than the one compiled into your binary. You can fix the
-// problem by either regenerating this code with an older version of connect or updating the connect
-// version compiled into your binary.
-const _ = connect.IsAtLeastVersion1_13_0
 
 const (
 	// TenantServiceName is the fully-qualified name of the TenantService service.
 	TenantServiceName = "tolo.tenant.v1.TenantService"
 )
 
-// These constants are the fully-qualified names of the RPCs defined in this package. They're
-// exposed at runtime as Spec.Procedure and as the final two segments of the HTTP route.
+// These constants are the procedure names of the RPCs defined in this package. They're exposed at
+// runtime as Spec.Procedure and as the final two segments of the HTTP route.
 //
 // Note that these are different from the fully-qualified method names used by
 // google.golang.org/protobuf/reflect/protoreflect. To convert from these constants to
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// TenantServiceStartTenantRegistrationProcedure is the fully-qualified name of the TenantService's
+	// TenantServiceStartTenantRegistrationProcedure is the procedure name of the TenantService's
 	// StartTenantRegistration RPC.
 	TenantServiceStartTenantRegistrationProcedure = "/tolo.tenant.v1.TenantService/StartTenantRegistration"
-	// TenantServiceClaimTenantOwnershipProcedure is the fully-qualified name of the TenantService's
+	// TenantServiceClaimTenantOwnershipProcedure is the procedure name of the TenantService's
 	// ClaimTenantOwnership RPC.
 	TenantServiceClaimTenantOwnershipProcedure = "/tolo.tenant.v1.TenantService/ClaimTenantOwnership"
-	// TenantServiceChangeTenantContractProcedure is the fully-qualified name of the TenantService's
+	// TenantServiceChangeTenantContractProcedure is the procedure name of the TenantService's
 	// ChangeTenantContract RPC.
 	TenantServiceChangeTenantContractProcedure = "/tolo.tenant.v1.TenantService/ChangeTenantContract"
-	// TenantServiceArchiveTenantProcedure is the fully-qualified name of the TenantService's
-	// ArchiveTenant RPC.
-	TenantServiceArchiveTenantProcedure = "/tolo.tenant.v1.TenantService/ArchiveTenant"
-	// TenantServiceCreateEventProcedure is the fully-qualified name of the TenantService's CreateEvent
+	// TenantServiceArchiveTenantProcedure is the procedure name of the TenantService's ArchiveTenant
 	// RPC.
+	TenantServiceArchiveTenantProcedure = "/tolo.tenant.v1.TenantService/ArchiveTenant"
+	// TenantServiceCreateEventProcedure is the procedure name of the TenantService's CreateEvent RPC.
 	TenantServiceCreateEventProcedure = "/tolo.tenant.v1.TenantService/CreateEvent"
-	// TenantServiceTransitionEventStatusProcedure is the fully-qualified name of the TenantService's
+	// TenantServiceTransitionEventStatusProcedure is the procedure name of the TenantService's
 	// TransitionEventStatus RPC.
 	TenantServiceTransitionEventStatusProcedure = "/tolo.tenant.v1.TenantService/TransitionEventStatus"
-	// TenantServiceGetEventProcedure is the fully-qualified name of the TenantService's GetEvent RPC.
+	// TenantServiceGetEventProcedure is the procedure name of the TenantService's GetEvent RPC.
 	TenantServiceGetEventProcedure = "/tolo.tenant.v1.TenantService/GetEvent"
-	// TenantServiceListEventsProcedure is the fully-qualified name of the TenantService's ListEvents
-	// RPC.
+	// TenantServiceListEventsProcedure is the procedure name of the TenantService's ListEvents RPC.
 	TenantServiceListEventsProcedure = "/tolo.tenant.v1.TenantService/ListEvents"
+)
+
+var (
+	tenantServiceStartTenantRegistrationSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_tolo_tenant_v1_tenant_proto.Services().ByName("TenantService").Methods().ByName("StartTenantRegistration"),
+			Procedure:  TenantServiceStartTenantRegistrationProcedure,
+		}
+	})
+	tenantServiceClaimTenantOwnershipSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_tolo_tenant_v1_tenant_proto.Services().ByName("TenantService").Methods().ByName("ClaimTenantOwnership"),
+			Procedure:  TenantServiceClaimTenantOwnershipProcedure,
+		}
+	})
+	tenantServiceChangeTenantContractSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_tolo_tenant_v1_tenant_proto.Services().ByName("TenantService").Methods().ByName("ChangeTenantContract"),
+			Procedure:  TenantServiceChangeTenantContractProcedure,
+		}
+	})
+	tenantServiceArchiveTenantSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_tolo_tenant_v1_tenant_proto.Services().ByName("TenantService").Methods().ByName("ArchiveTenant"),
+			Procedure:  TenantServiceArchiveTenantProcedure,
+		}
+	})
+	tenantServiceCreateEventSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_tolo_tenant_v1_tenant_proto.Services().ByName("TenantService").Methods().ByName("CreateEvent"),
+			Procedure:  TenantServiceCreateEventProcedure,
+		}
+	})
+	tenantServiceTransitionEventStatusSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_tolo_tenant_v1_tenant_proto.Services().ByName("TenantService").Methods().ByName("TransitionEventStatus"),
+			Procedure:  TenantServiceTransitionEventStatusProcedure,
+		}
+	})
+	tenantServiceGetEventSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_tolo_tenant_v1_tenant_proto.Services().ByName("TenantService").Methods().ByName("GetEvent"),
+			Procedure:  TenantServiceGetEventProcedure,
+		}
+	})
+	tenantServiceListEventsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_tolo_tenant_v1_tenant_proto.Services().ByName("TenantService").Methods().ByName("ListEvents"),
+			Procedure:  TenantServiceListEventsProcedure,
+		}
+	})
 )
 
 // TenantServiceClient is a client for the tolo.tenant.v1.TenantService service.
 type TenantServiceClient interface {
 	// StartTenantRegistration creates a pending_owner tenant without
 	// authentication and returns a one-time ownership claim token.
-	StartTenantRegistration(context.Context, *connect.Request[v1.StartTenantRegistrationRequest]) (*connect.Response[v1.StartTenantRegistrationResponse], error)
+	StartTenantRegistration(context.Context, *v1.StartTenantRegistrationRequest) (*v1.StartTenantRegistrationResponse, error)
 	// ClaimTenantOwnership turns a pending_owner tenant into an owned tenant
 	// and registers the authenticated user as its owner. It requires
 	// token_use=registration, which carries no tenant context.
-	ClaimTenantOwnership(context.Context, *connect.Request[v1.ClaimTenantOwnershipRequest]) (*connect.Response[v1.ClaimTenantOwnershipResponse], error)
-	ChangeTenantContract(context.Context, *connect.Request[v1.ChangeTenantContractRequest]) (*connect.Response[v1.ChangeTenantContractResponse], error)
-	ArchiveTenant(context.Context, *connect.Request[v1.ArchiveTenantRequest]) (*connect.Response[v1.ArchiveTenantResponse], error)
-	CreateEvent(context.Context, *connect.Request[v1.CreateEventRequest]) (*connect.Response[v1.CreateEventResponse], error)
-	TransitionEventStatus(context.Context, *connect.Request[v1.TransitionEventStatusRequest]) (*connect.Response[v1.TransitionEventStatusResponse], error)
+	ClaimTenantOwnership(context.Context, *v1.ClaimTenantOwnershipRequest) (*v1.ClaimTenantOwnershipResponse, error)
+	ChangeTenantContract(context.Context, *v1.ChangeTenantContractRequest) (*v1.ChangeTenantContractResponse, error)
+	ArchiveTenant(context.Context, *v1.ArchiveTenantRequest) (*v1.ArchiveTenantResponse, error)
+	CreateEvent(context.Context, *v1.CreateEventRequest) (*v1.CreateEventResponse, error)
+	TransitionEventStatus(context.Context, *v1.TransitionEventStatusRequest) (*v1.TransitionEventStatusResponse, error)
 	// GetEvent is the referential-integrity read used by Graph Authoring. It
 	// requires token_use=service with tenant context.
-	GetEvent(context.Context, *connect.Request[v1.GetEventRequest]) (*connect.Response[v1.GetEventResponse], error)
-	ListEvents(context.Context, *connect.Request[v1.ListEventsRequest]) (*connect.Response[v1.ListEventsResponse], error)
+	GetEvent(context.Context, *v1.GetEventRequest) (*v1.GetEventResponse, error)
+	ListEvents(context.Context, *v1.ListEventsRequest) (*v1.ListEventsResponse, error)
 }
 
-// NewTenantServiceClient constructs a client for the tolo.tenant.v1.TenantService service. By
-// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
-// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
-// connect.WithGRPC() or connect.WithGRPCWeb() options.
-//
-// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
-// http://api.acme.com or https://acme.com/grpc).
-func NewTenantServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) TenantServiceClient {
-	baseURL = strings.TrimRight(baseURL, "/")
-	tenantServiceMethods := v1.File_tolo_tenant_v1_tenant_proto.Services().ByName("TenantService").Methods()
-	return &tenantServiceClient{
-		startTenantRegistration: connect.NewClient[v1.StartTenantRegistrationRequest, v1.StartTenantRegistrationResponse](
-			httpClient,
-			baseURL+TenantServiceStartTenantRegistrationProcedure,
-			connect.WithSchema(tenantServiceMethods.ByName("StartTenantRegistration")),
-			connect.WithClientOptions(opts...),
-		),
-		claimTenantOwnership: connect.NewClient[v1.ClaimTenantOwnershipRequest, v1.ClaimTenantOwnershipResponse](
-			httpClient,
-			baseURL+TenantServiceClaimTenantOwnershipProcedure,
-			connect.WithSchema(tenantServiceMethods.ByName("ClaimTenantOwnership")),
-			connect.WithClientOptions(opts...),
-		),
-		changeTenantContract: connect.NewClient[v1.ChangeTenantContractRequest, v1.ChangeTenantContractResponse](
-			httpClient,
-			baseURL+TenantServiceChangeTenantContractProcedure,
-			connect.WithSchema(tenantServiceMethods.ByName("ChangeTenantContract")),
-			connect.WithClientOptions(opts...),
-		),
-		archiveTenant: connect.NewClient[v1.ArchiveTenantRequest, v1.ArchiveTenantResponse](
-			httpClient,
-			baseURL+TenantServiceArchiveTenantProcedure,
-			connect.WithSchema(tenantServiceMethods.ByName("ArchiveTenant")),
-			connect.WithClientOptions(opts...),
-		),
-		createEvent: connect.NewClient[v1.CreateEventRequest, v1.CreateEventResponse](
-			httpClient,
-			baseURL+TenantServiceCreateEventProcedure,
-			connect.WithSchema(tenantServiceMethods.ByName("CreateEvent")),
-			connect.WithClientOptions(opts...),
-		),
-		transitionEventStatus: connect.NewClient[v1.TransitionEventStatusRequest, v1.TransitionEventStatusResponse](
-			httpClient,
-			baseURL+TenantServiceTransitionEventStatusProcedure,
-			connect.WithSchema(tenantServiceMethods.ByName("TransitionEventStatus")),
-			connect.WithClientOptions(opts...),
-		),
-		getEvent: connect.NewClient[v1.GetEventRequest, v1.GetEventResponse](
-			httpClient,
-			baseURL+TenantServiceGetEventProcedure,
-			connect.WithSchema(tenantServiceMethods.ByName("GetEvent")),
-			connect.WithClientOptions(opts...),
-		),
-		listEvents: connect.NewClient[v1.ListEventsRequest, v1.ListEventsResponse](
-			httpClient,
-			baseURL+TenantServiceListEventsProcedure,
-			connect.WithSchema(tenantServiceMethods.ByName("ListEvents")),
-			connect.WithClientOptions(opts...),
-		),
-	}
-}
-
-// tenantServiceClient implements TenantServiceClient.
-type tenantServiceClient struct {
-	startTenantRegistration *connect.Client[v1.StartTenantRegistrationRequest, v1.StartTenantRegistrationResponse]
-	claimTenantOwnership    *connect.Client[v1.ClaimTenantOwnershipRequest, v1.ClaimTenantOwnershipResponse]
-	changeTenantContract    *connect.Client[v1.ChangeTenantContractRequest, v1.ChangeTenantContractResponse]
-	archiveTenant           *connect.Client[v1.ArchiveTenantRequest, v1.ArchiveTenantResponse]
-	createEvent             *connect.Client[v1.CreateEventRequest, v1.CreateEventResponse]
-	transitionEventStatus   *connect.Client[v1.TransitionEventStatusRequest, v1.TransitionEventStatusResponse]
-	getEvent                *connect.Client[v1.GetEventRequest, v1.GetEventResponse]
-	listEvents              *connect.Client[v1.ListEventsRequest, v1.ListEventsResponse]
-}
-
-// StartTenantRegistration calls tolo.tenant.v1.TenantService.StartTenantRegistration.
-func (c *tenantServiceClient) StartTenantRegistration(ctx context.Context, req *connect.Request[v1.StartTenantRegistrationRequest]) (*connect.Response[v1.StartTenantRegistrationResponse], error) {
-	return c.startTenantRegistration.CallUnary(ctx, req)
-}
-
-// ClaimTenantOwnership calls tolo.tenant.v1.TenantService.ClaimTenantOwnership.
-func (c *tenantServiceClient) ClaimTenantOwnership(ctx context.Context, req *connect.Request[v1.ClaimTenantOwnershipRequest]) (*connect.Response[v1.ClaimTenantOwnershipResponse], error) {
-	return c.claimTenantOwnership.CallUnary(ctx, req)
-}
-
-// ChangeTenantContract calls tolo.tenant.v1.TenantService.ChangeTenantContract.
-func (c *tenantServiceClient) ChangeTenantContract(ctx context.Context, req *connect.Request[v1.ChangeTenantContractRequest]) (*connect.Response[v1.ChangeTenantContractResponse], error) {
-	return c.changeTenantContract.CallUnary(ctx, req)
-}
-
-// ArchiveTenant calls tolo.tenant.v1.TenantService.ArchiveTenant.
-func (c *tenantServiceClient) ArchiveTenant(ctx context.Context, req *connect.Request[v1.ArchiveTenantRequest]) (*connect.Response[v1.ArchiveTenantResponse], error) {
-	return c.archiveTenant.CallUnary(ctx, req)
-}
-
-// CreateEvent calls tolo.tenant.v1.TenantService.CreateEvent.
-func (c *tenantServiceClient) CreateEvent(ctx context.Context, req *connect.Request[v1.CreateEventRequest]) (*connect.Response[v1.CreateEventResponse], error) {
-	return c.createEvent.CallUnary(ctx, req)
-}
-
-// TransitionEventStatus calls tolo.tenant.v1.TenantService.TransitionEventStatus.
-func (c *tenantServiceClient) TransitionEventStatus(ctx context.Context, req *connect.Request[v1.TransitionEventStatusRequest]) (*connect.Response[v1.TransitionEventStatusResponse], error) {
-	return c.transitionEventStatus.CallUnary(ctx, req)
-}
-
-// GetEvent calls tolo.tenant.v1.TenantService.GetEvent.
-func (c *tenantServiceClient) GetEvent(ctx context.Context, req *connect.Request[v1.GetEventRequest]) (*connect.Response[v1.GetEventResponse], error) {
-	return c.getEvent.CallUnary(ctx, req)
-}
-
-// ListEvents calls tolo.tenant.v1.TenantService.ListEvents.
-func (c *tenantServiceClient) ListEvents(ctx context.Context, req *connect.Request[v1.ListEventsRequest]) (*connect.Response[v1.ListEventsResponse], error) {
-	return c.listEvents.CallUnary(ctx, req)
+// NewTenantServiceClient constructs a client for the tolo.tenant.v1.TenantService service. Multiple
+// service clients may share a single connect.Client.
+func NewTenantServiceClient(client *connect.Client) TenantServiceClient {
+	return &tenantServiceClient{client: client}
 }
 
 // TenantServiceHandler is an implementation of the tolo.tenant.v1.TenantService service.
 type TenantServiceHandler interface {
 	// StartTenantRegistration creates a pending_owner tenant without
 	// authentication and returns a one-time ownership claim token.
-	StartTenantRegistration(context.Context, *connect.Request[v1.StartTenantRegistrationRequest]) (*connect.Response[v1.StartTenantRegistrationResponse], error)
+	StartTenantRegistration(context.Context, *v1.StartTenantRegistrationRequest) (*v1.StartTenantRegistrationResponse, error)
 	// ClaimTenantOwnership turns a pending_owner tenant into an owned tenant
 	// and registers the authenticated user as its owner. It requires
 	// token_use=registration, which carries no tenant context.
-	ClaimTenantOwnership(context.Context, *connect.Request[v1.ClaimTenantOwnershipRequest]) (*connect.Response[v1.ClaimTenantOwnershipResponse], error)
-	ChangeTenantContract(context.Context, *connect.Request[v1.ChangeTenantContractRequest]) (*connect.Response[v1.ChangeTenantContractResponse], error)
-	ArchiveTenant(context.Context, *connect.Request[v1.ArchiveTenantRequest]) (*connect.Response[v1.ArchiveTenantResponse], error)
-	CreateEvent(context.Context, *connect.Request[v1.CreateEventRequest]) (*connect.Response[v1.CreateEventResponse], error)
-	TransitionEventStatus(context.Context, *connect.Request[v1.TransitionEventStatusRequest]) (*connect.Response[v1.TransitionEventStatusResponse], error)
+	ClaimTenantOwnership(context.Context, *v1.ClaimTenantOwnershipRequest) (*v1.ClaimTenantOwnershipResponse, error)
+	ChangeTenantContract(context.Context, *v1.ChangeTenantContractRequest) (*v1.ChangeTenantContractResponse, error)
+	ArchiveTenant(context.Context, *v1.ArchiveTenantRequest) (*v1.ArchiveTenantResponse, error)
+	CreateEvent(context.Context, *v1.CreateEventRequest) (*v1.CreateEventResponse, error)
+	TransitionEventStatus(context.Context, *v1.TransitionEventStatusRequest) (*v1.TransitionEventStatusResponse, error)
 	// GetEvent is the referential-integrity read used by Graph Authoring. It
 	// requires token_use=service with tenant context.
-	GetEvent(context.Context, *connect.Request[v1.GetEventRequest]) (*connect.Response[v1.GetEventResponse], error)
-	ListEvents(context.Context, *connect.Request[v1.ListEventsRequest]) (*connect.Response[v1.ListEventsResponse], error)
+	GetEvent(context.Context, *v1.GetEventRequest) (*v1.GetEventResponse, error)
+	ListEvents(context.Context, *v1.ListEventsRequest) (*v1.ListEventsResponse, error)
 }
 
-// NewTenantServiceHandler builds an HTTP handler from the service implementation. It returns the
-// path on which to mount the handler and the handler itself.
-//
-// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
-// and JSON codecs. They also support gzip compression.
-func NewTenantServiceHandler(svc TenantServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	tenantServiceMethods := v1.File_tolo_tenant_v1_tenant_proto.Services().ByName("TenantService").Methods()
-	tenantServiceStartTenantRegistrationHandler := connect.NewUnaryHandler(
-		TenantServiceStartTenantRegistrationProcedure,
-		svc.StartTenantRegistration,
-		connect.WithSchema(tenantServiceMethods.ByName("StartTenantRegistration")),
-		connect.WithHandlerOptions(opts...),
+// RegisterTenantServiceHandler registers svc as the tolo.tenant.v1.TenantService implementation on
+// server.
+func RegisterTenantServiceHandler(server *connect.Server, svc TenantServiceHandler) {
+	adapter := tenantServiceHandler{svc: svc}
+	server.Register(
+		connect.Method{Spec: tenantServiceStartTenantRegistrationSpec(), Handler: adapter.startTenantRegistration},
+		connect.Method{Spec: tenantServiceClaimTenantOwnershipSpec(), Handler: adapter.claimTenantOwnership},
+		connect.Method{Spec: tenantServiceChangeTenantContractSpec(), Handler: adapter.changeTenantContract},
+		connect.Method{Spec: tenantServiceArchiveTenantSpec(), Handler: adapter.archiveTenant},
+		connect.Method{Spec: tenantServiceCreateEventSpec(), Handler: adapter.createEvent},
+		connect.Method{Spec: tenantServiceTransitionEventStatusSpec(), Handler: adapter.transitionEventStatus},
+		connect.Method{Spec: tenantServiceGetEventSpec(), Handler: adapter.getEvent},
+		connect.Method{Spec: tenantServiceListEventsSpec(), Handler: adapter.listEvents},
 	)
-	tenantServiceClaimTenantOwnershipHandler := connect.NewUnaryHandler(
-		TenantServiceClaimTenantOwnershipProcedure,
-		svc.ClaimTenantOwnership,
-		connect.WithSchema(tenantServiceMethods.ByName("ClaimTenantOwnership")),
-		connect.WithHandlerOptions(opts...),
-	)
-	tenantServiceChangeTenantContractHandler := connect.NewUnaryHandler(
-		TenantServiceChangeTenantContractProcedure,
-		svc.ChangeTenantContract,
-		connect.WithSchema(tenantServiceMethods.ByName("ChangeTenantContract")),
-		connect.WithHandlerOptions(opts...),
-	)
-	tenantServiceArchiveTenantHandler := connect.NewUnaryHandler(
-		TenantServiceArchiveTenantProcedure,
-		svc.ArchiveTenant,
-		connect.WithSchema(tenantServiceMethods.ByName("ArchiveTenant")),
-		connect.WithHandlerOptions(opts...),
-	)
-	tenantServiceCreateEventHandler := connect.NewUnaryHandler(
-		TenantServiceCreateEventProcedure,
-		svc.CreateEvent,
-		connect.WithSchema(tenantServiceMethods.ByName("CreateEvent")),
-		connect.WithHandlerOptions(opts...),
-	)
-	tenantServiceTransitionEventStatusHandler := connect.NewUnaryHandler(
-		TenantServiceTransitionEventStatusProcedure,
-		svc.TransitionEventStatus,
-		connect.WithSchema(tenantServiceMethods.ByName("TransitionEventStatus")),
-		connect.WithHandlerOptions(opts...),
-	)
-	tenantServiceGetEventHandler := connect.NewUnaryHandler(
-		TenantServiceGetEventProcedure,
-		svc.GetEvent,
-		connect.WithSchema(tenantServiceMethods.ByName("GetEvent")),
-		connect.WithHandlerOptions(opts...),
-	)
-	tenantServiceListEventsHandler := connect.NewUnaryHandler(
-		TenantServiceListEventsProcedure,
-		svc.ListEvents,
-		connect.WithSchema(tenantServiceMethods.ByName("ListEvents")),
-		connect.WithHandlerOptions(opts...),
-	)
-	return "/tolo.tenant.v1.TenantService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case TenantServiceStartTenantRegistrationProcedure:
-			tenantServiceStartTenantRegistrationHandler.ServeHTTP(w, r)
-		case TenantServiceClaimTenantOwnershipProcedure:
-			tenantServiceClaimTenantOwnershipHandler.ServeHTTP(w, r)
-		case TenantServiceChangeTenantContractProcedure:
-			tenantServiceChangeTenantContractHandler.ServeHTTP(w, r)
-		case TenantServiceArchiveTenantProcedure:
-			tenantServiceArchiveTenantHandler.ServeHTTP(w, r)
-		case TenantServiceCreateEventProcedure:
-			tenantServiceCreateEventHandler.ServeHTTP(w, r)
-		case TenantServiceTransitionEventStatusProcedure:
-			tenantServiceTransitionEventStatusHandler.ServeHTTP(w, r)
-		case TenantServiceGetEventProcedure:
-			tenantServiceGetEventHandler.ServeHTTP(w, r)
-		case TenantServiceListEventsProcedure:
-			tenantServiceListEventsHandler.ServeHTTP(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	})
 }
 
 // UnimplementedTenantServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedTenantServiceHandler struct{}
 
-func (UnimplementedTenantServiceHandler) StartTenantRegistration(context.Context, *connect.Request[v1.StartTenantRegistrationRequest]) (*connect.Response[v1.StartTenantRegistrationResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tolo.tenant.v1.TenantService.StartTenantRegistration is not implemented"))
+func (UnimplementedTenantServiceHandler) StartTenantRegistration(context.Context, *v1.StartTenantRegistrationRequest) (*v1.StartTenantRegistrationResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "tolo.tenant.v1.TenantService.StartTenantRegistration is not implemented")
 }
 
-func (UnimplementedTenantServiceHandler) ClaimTenantOwnership(context.Context, *connect.Request[v1.ClaimTenantOwnershipRequest]) (*connect.Response[v1.ClaimTenantOwnershipResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tolo.tenant.v1.TenantService.ClaimTenantOwnership is not implemented"))
+func (UnimplementedTenantServiceHandler) ClaimTenantOwnership(context.Context, *v1.ClaimTenantOwnershipRequest) (*v1.ClaimTenantOwnershipResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "tolo.tenant.v1.TenantService.ClaimTenantOwnership is not implemented")
 }
 
-func (UnimplementedTenantServiceHandler) ChangeTenantContract(context.Context, *connect.Request[v1.ChangeTenantContractRequest]) (*connect.Response[v1.ChangeTenantContractResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tolo.tenant.v1.TenantService.ChangeTenantContract is not implemented"))
+func (UnimplementedTenantServiceHandler) ChangeTenantContract(context.Context, *v1.ChangeTenantContractRequest) (*v1.ChangeTenantContractResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "tolo.tenant.v1.TenantService.ChangeTenantContract is not implemented")
 }
 
-func (UnimplementedTenantServiceHandler) ArchiveTenant(context.Context, *connect.Request[v1.ArchiveTenantRequest]) (*connect.Response[v1.ArchiveTenantResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tolo.tenant.v1.TenantService.ArchiveTenant is not implemented"))
+func (UnimplementedTenantServiceHandler) ArchiveTenant(context.Context, *v1.ArchiveTenantRequest) (*v1.ArchiveTenantResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "tolo.tenant.v1.TenantService.ArchiveTenant is not implemented")
 }
 
-func (UnimplementedTenantServiceHandler) CreateEvent(context.Context, *connect.Request[v1.CreateEventRequest]) (*connect.Response[v1.CreateEventResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tolo.tenant.v1.TenantService.CreateEvent is not implemented"))
+func (UnimplementedTenantServiceHandler) CreateEvent(context.Context, *v1.CreateEventRequest) (*v1.CreateEventResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "tolo.tenant.v1.TenantService.CreateEvent is not implemented")
 }
 
-func (UnimplementedTenantServiceHandler) TransitionEventStatus(context.Context, *connect.Request[v1.TransitionEventStatusRequest]) (*connect.Response[v1.TransitionEventStatusResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tolo.tenant.v1.TenantService.TransitionEventStatus is not implemented"))
+func (UnimplementedTenantServiceHandler) TransitionEventStatus(context.Context, *v1.TransitionEventStatusRequest) (*v1.TransitionEventStatusResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "tolo.tenant.v1.TenantService.TransitionEventStatus is not implemented")
 }
 
-func (UnimplementedTenantServiceHandler) GetEvent(context.Context, *connect.Request[v1.GetEventRequest]) (*connect.Response[v1.GetEventResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tolo.tenant.v1.TenantService.GetEvent is not implemented"))
+func (UnimplementedTenantServiceHandler) GetEvent(context.Context, *v1.GetEventRequest) (*v1.GetEventResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "tolo.tenant.v1.TenantService.GetEvent is not implemented")
 }
 
-func (UnimplementedTenantServiceHandler) ListEvents(context.Context, *connect.Request[v1.ListEventsRequest]) (*connect.Response[v1.ListEventsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tolo.tenant.v1.TenantService.ListEvents is not implemented"))
+func (UnimplementedTenantServiceHandler) ListEvents(context.Context, *v1.ListEventsRequest) (*v1.ListEventsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "tolo.tenant.v1.TenantService.ListEvents is not implemented")
+}
+
+type tenantServiceClient struct {
+	client *connect.Client
+}
+
+func (c *tenantServiceClient) StartTenantRegistration(ctx context.Context, req *v1.StartTenantRegistrationRequest) (*v1.StartTenantRegistrationResponse, error) {
+	var res v1.StartTenantRegistrationResponse
+	if err := c.client.CallUnary(ctx, tenantServiceStartTenantRegistrationSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *tenantServiceClient) ClaimTenantOwnership(ctx context.Context, req *v1.ClaimTenantOwnershipRequest) (*v1.ClaimTenantOwnershipResponse, error) {
+	var res v1.ClaimTenantOwnershipResponse
+	if err := c.client.CallUnary(ctx, tenantServiceClaimTenantOwnershipSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *tenantServiceClient) ChangeTenantContract(ctx context.Context, req *v1.ChangeTenantContractRequest) (*v1.ChangeTenantContractResponse, error) {
+	var res v1.ChangeTenantContractResponse
+	if err := c.client.CallUnary(ctx, tenantServiceChangeTenantContractSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *tenantServiceClient) ArchiveTenant(ctx context.Context, req *v1.ArchiveTenantRequest) (*v1.ArchiveTenantResponse, error) {
+	var res v1.ArchiveTenantResponse
+	if err := c.client.CallUnary(ctx, tenantServiceArchiveTenantSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *tenantServiceClient) CreateEvent(ctx context.Context, req *v1.CreateEventRequest) (*v1.CreateEventResponse, error) {
+	var res v1.CreateEventResponse
+	if err := c.client.CallUnary(ctx, tenantServiceCreateEventSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *tenantServiceClient) TransitionEventStatus(ctx context.Context, req *v1.TransitionEventStatusRequest) (*v1.TransitionEventStatusResponse, error) {
+	var res v1.TransitionEventStatusResponse
+	if err := c.client.CallUnary(ctx, tenantServiceTransitionEventStatusSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *tenantServiceClient) GetEvent(ctx context.Context, req *v1.GetEventRequest) (*v1.GetEventResponse, error) {
+	var res v1.GetEventResponse
+	if err := c.client.CallUnary(ctx, tenantServiceGetEventSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *tenantServiceClient) ListEvents(ctx context.Context, req *v1.ListEventsRequest) (*v1.ListEventsResponse, error) {
+	var res v1.ListEventsResponse
+	if err := c.client.CallUnary(ctx, tenantServiceListEventsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+type tenantServiceHandler struct{ svc TenantServiceHandler }
+
+func (h tenantServiceHandler) startTenantRegistration(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.StartTenantRegistrationRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.StartTenantRegistration(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h tenantServiceHandler) claimTenantOwnership(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ClaimTenantOwnershipRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ClaimTenantOwnership(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h tenantServiceHandler) changeTenantContract(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ChangeTenantContractRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ChangeTenantContract(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h tenantServiceHandler) archiveTenant(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ArchiveTenantRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ArchiveTenant(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h tenantServiceHandler) createEvent(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.CreateEventRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.CreateEvent(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h tenantServiceHandler) transitionEventStatus(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.TransitionEventStatusRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.TransitionEventStatus(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h tenantServiceHandler) getEvent(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GetEventRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetEvent(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h tenantServiceHandler) listEvents(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListEventsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListEvents(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }

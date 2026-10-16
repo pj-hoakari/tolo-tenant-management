@@ -7,7 +7,8 @@ import (
 	"fmt"
 	"net/http"
 
-	connectrpc "connectrpc.com/connect"
+	connectrpc "connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 
 	relationv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/relation/v1"
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/relation/v1/relationv1connect"
@@ -24,17 +25,15 @@ import (
 // The service is guarded by an interceptor built from its own generated policy
 // table and runs with the process-wide interceptors (tracing) before it.
 func Mount(relationService application.RelationUseCases) infraconnect.Mount {
-	return func(mux *http.ServeMux, auth infraconnect.AuthInterceptor, interceptors ...connectrpc.Interceptor) error {
+	return func(mux *http.ServeMux, auth infraconnect.AuthInterceptor, interceptors ...connectrpc.ServerInterceptor) error {
 		relationAuth, err := auth(relationv1connect.RelationAdminServicePolicies)
 		if err != nil {
 			return fmt.Errorf("create RelationAdminService authentication interceptor: %w", err)
 		}
 
-		path, handler := relationv1connect.NewRelationAdminServiceHandler(
-			NewService(relationService),
-			connectrpc.WithInterceptors(append(interceptors, relationAuth)...),
-		)
-		mux.Handle(path, handler)
+		server := connectrpc.NewServer(append(interceptors, relationAuth)...)
+		relationv1connect.RegisterRelationAdminServiceHandler(server, NewService(relationService))
+		connecthttp.Mount(mux, server)
 
 		return nil
 	}
@@ -53,62 +52,62 @@ func NewService(relationService application.RelationUseCases) *Service {
 	}
 }
 
-func (s *Service) AddTenantMember(ctx context.Context, req *connectrpc.Request[relationv1.AddTenantMemberRequest]) (*connectrpc.Response[relationv1.AddTenantMemberResponse], error) {
+func (s *Service) AddTenantMember(ctx context.Context, req *relationv1.AddTenantMemberRequest) (*relationv1.AddTenantMemberResponse, error) {
 	membership, err := s.relationService.AddTenantMember(ctx, application.AddTenantMemberInput{
-		TenantPublicID: req.Msg.GetTenantId(),
-		UserID:         req.Msg.GetUserId(),
-		Role:           roleDomain(req.Msg.GetTenantRole()),
+		TenantPublicID: req.GetTenantId(),
+		UserID:         req.GetUserId(),
+		Role:           roleDomain(req.GetTenantRole()),
 	})
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
 
-	return connectrpc.NewResponse(&relationv1.AddTenantMemberResponse{Membership: membershipProto(membership)}), nil
+	return &relationv1.AddTenantMemberResponse{Membership: membershipProto(membership)}, nil
 }
 
-func (s *Service) ChangeTenantRole(ctx context.Context, req *connectrpc.Request[relationv1.ChangeTenantRoleRequest]) (*connectrpc.Response[relationv1.ChangeTenantRoleResponse], error) {
+func (s *Service) ChangeTenantRole(ctx context.Context, req *relationv1.ChangeTenantRoleRequest) (*relationv1.ChangeTenantRoleResponse, error) {
 	membership, err := s.relationService.ChangeTenantRole(ctx, application.ChangeTenantRoleInput{
-		TenantPublicID: req.Msg.GetTenantId(),
-		UserID:         req.Msg.GetUserId(),
-		Role:           roleDomain(req.Msg.GetTenantRole()),
+		TenantPublicID: req.GetTenantId(),
+		UserID:         req.GetUserId(),
+		Role:           roleDomain(req.GetTenantRole()),
 	})
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
 
-	return connectrpc.NewResponse(&relationv1.ChangeTenantRoleResponse{Membership: membershipProto(membership)}), nil
+	return &relationv1.ChangeTenantRoleResponse{Membership: membershipProto(membership)}, nil
 }
 
-func (s *Service) GrantEventRole(ctx context.Context, req *connectrpc.Request[relationv1.GrantEventRoleRequest]) (*connectrpc.Response[relationv1.GrantEventRoleResponse], error) {
+func (s *Service) GrantEventRole(ctx context.Context, req *relationv1.GrantEventRoleRequest) (*relationv1.GrantEventRoleResponse, error) {
 	membership, err := s.relationService.GrantEventRole(ctx, application.GrantEventRoleInput{
-		EventPublicID: req.Msg.GetEventId(),
-		UserID:        req.Msg.GetUserId(),
-		Role:          roleDomain(req.Msg.GetRole()),
+		EventPublicID: req.GetEventId(),
+		UserID:        req.GetUserId(),
+		Role:          roleDomain(req.GetRole()),
 	})
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
 
-	return connectrpc.NewResponse(&relationv1.GrantEventRoleResponse{Membership: membershipProto(membership)}), nil
+	return &relationv1.GrantEventRoleResponse{Membership: membershipProto(membership)}, nil
 }
 
-func (s *Service) RevokeRole(ctx context.Context, req *connectrpc.Request[relationv1.RevokeRoleRequest]) (*connectrpc.Response[relationv1.RevokeRoleResponse], error) {
+func (s *Service) RevokeRole(ctx context.Context, req *relationv1.RevokeRoleRequest) (*relationv1.RevokeRoleResponse, error) {
 	err := s.relationService.RevokeRole(ctx, application.RevokeRoleInput{
-		UserID:         req.Msg.GetUserId(),
-		TenantPublicID: req.Msg.GetTenantId(),
-		EventPublicID:  req.Msg.GetEventId(),
+		UserID:         req.GetUserId(),
+		TenantPublicID: req.GetTenantId(),
+		EventPublicID:  req.GetEventId(),
 	})
 	if err != nil {
 		return nil, connectError(ctx, err)
 	}
 
-	return connectrpc.NewResponse(&relationv1.RevokeRoleResponse{}), nil
+	return &relationv1.RevokeRoleResponse{}, nil
 }
 
-func (s *Service) ListMemberships(ctx context.Context, req *connectrpc.Request[relationv1.ListMembershipsRequest]) (*connectrpc.Response[relationv1.ListMembershipsResponse], error) {
+func (s *Service) ListMemberships(ctx context.Context, req *relationv1.ListMembershipsRequest) (*relationv1.ListMembershipsResponse, error) {
 	memberships, err := s.relationService.ListMemberships(ctx, application.ListMembershipsInput{
-		TenantPublicID: req.Msg.GetTenantId(),
-		UserID:         req.Msg.GetUserId(),
+		TenantPublicID: req.GetTenantId(),
+		UserID:         req.GetUserId(),
 	})
 	if err != nil {
 		return nil, connectError(ctx, err)
@@ -119,7 +118,7 @@ func (s *Service) ListMemberships(ctx context.Context, req *connectrpc.Request[r
 		response = append(response, membershipProto(membership))
 	}
 
-	return connectrpc.NewResponse(&relationv1.ListMembershipsResponse{Memberships: response}), nil
+	return &relationv1.ListMembershipsResponse{Memberships: response}, nil
 }
 
 // connectError maps use case and repository errors to Connect codes
@@ -142,28 +141,28 @@ func connectError(ctx context.Context, err error) error {
 		errors.Is(err, application.ErrFilterAmbiguous),
 		errors.Is(err, domain.ErrRoleRequired),
 		errors.Is(err, domain.ErrRoleReserved):
-		return connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
+		return connectrpc.NewError(connectrpc.CodeInvalidArgument, err.Error()).WithCause(err)
 	case errors.Is(err, tenantrepository.ErrTenantNotFound),
 		errors.Is(err, tenantrepository.ErrEventNotFound),
 		errors.Is(err, repository.ErrTenantNotFound),
 		errors.Is(err, repository.ErrEventNotFound),
 		errors.Is(err, repository.ErrMembershipNotFound),
 		errors.Is(err, repository.ErrEventRoleNotFound):
-		return connectrpc.NewError(connectrpc.CodeNotFound, err)
+		return connectrpc.NewError(connectrpc.CodeNotFound, err.Error()).WithCause(err)
 	case errors.Is(err, tenantrepository.ErrTenantArchived),
 		errors.Is(err, tenantrepository.ErrEventArchived),
 		errors.Is(err, application.ErrTenantPendingOwner),
 		errors.Is(err, repository.ErrMembershipAlreadyExists),
 		errors.Is(err, repository.ErrTenantMembershipRequired):
-		return connectrpc.NewError(connectrpc.CodeFailedPrecondition, err)
+		return connectrpc.NewError(connectrpc.CodeFailedPrecondition, err.Error()).WithCause(err)
 	case errors.Is(err, tenantctx.ErrMismatch),
 		errors.Is(err, application.ErrPermissionDenied):
-		return connectrpc.NewError(connectrpc.CodePermissionDenied, err)
+		return connectrpc.NewError(connectrpc.CodePermissionDenied, err.Error()).WithCause(err)
 	case errors.Is(err, tenantctx.ErrMissing),
 		errors.Is(err, tenantctx.ErrSubjectMissing):
-		return connectrpc.NewError(connectrpc.CodeUnauthenticated, err)
+		return connectrpc.NewError(connectrpc.CodeUnauthenticated, err.Error()).WithCause(err)
 	case errors.Is(err, infradb.ErrTransactionAborted):
-		return connectrpc.NewError(connectrpc.CodeAborted, err)
+		return connectrpc.NewError(connectrpc.CodeAborted, err.Error()).WithCause(err)
 	default:
 		return infraconnect.InternalError(ctx, err)
 	}

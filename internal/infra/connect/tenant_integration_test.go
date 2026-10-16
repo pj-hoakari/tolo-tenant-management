@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	connectrpc "connectrpc.com/connect"
+	connectrpc "connectrpc.com/connect/v2"
 
 	relationv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/relation/v1"
 	tenantv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1"
@@ -28,12 +28,12 @@ func TestStartTenantRegistrationOverTransport(t *testing.T) {
 	p := newProcess(t, application.WithClock(func() time.Time { return now }))
 
 	// The public RPC is served without a bearer token.
-	res, err := p.tenantClient.StartTenantRegistration(context.Background(), connectrpc.NewRequest(&tenantv1.StartTenantRegistrationRequest{Name: "Acme", ContractPlan: "standard"}))
+	res, err := p.tenantClient.StartTenantRegistration(context.Background(), &tenantv1.StartTenantRegistrationRequest{Name: "Acme", ContractPlan: "standard"})
 	if err != nil {
 		t.Fatalf("StartTenantRegistration() error = %v", err)
 	}
 
-	tenant := res.Msg.GetTenant()
+	tenant := res.GetTenant()
 	if got, want := tenant.GetOwnershipState(), tenantv1.TenantOwnershipState_TENANT_OWNERSHIP_STATE_PENDING_OWNER; got != want {
 		t.Errorf("Tenant.OwnershipState = %v, want %v", got, want)
 	}
@@ -42,23 +42,23 @@ func TestStartTenantRegistrationOverTransport(t *testing.T) {
 		t.Errorf("Tenant.TenantId = %q, want 16-character hex", got)
 	}
 
-	if got := res.Msg.GetOwnershipClaimToken(); !claimTokenPattern.MatchString(got) {
+	if got := res.GetOwnershipClaimToken(); !claimTokenPattern.MatchString(got) {
 		t.Errorf("OwnershipClaimToken = %q, want 43-character base64url", got)
 	}
 
-	if got, want := res.Msg.GetExpiresAt().AsTime(), now.Add(application.DefaultOwnershipClaimTTL); !got.Equal(want) {
+	if got, want := res.GetExpiresAt().AsTime(), now.Add(application.DefaultOwnershipClaimTTL); !got.Equal(want) {
 		t.Errorf("ExpiresAt = %v, want %v", got, want)
 	}
 
 	t.Run("rejects duplicate names while the registration is pending", func(t *testing.T) {
-		_, err := p.tenantClient.StartTenantRegistration(context.Background(), connectrpc.NewRequest(&tenantv1.StartTenantRegistrationRequest{Name: "Acme", ContractPlan: "standard"}))
+		_, err := p.tenantClient.StartTenantRegistration(context.Background(), &tenantv1.StartTenantRegistrationRequest{Name: "Acme", ContractPlan: "standard"})
 		if got, want := connectrpc.CodeOf(err), connectrpc.CodeAlreadyExists; got != want {
 			t.Fatalf("StartTenantRegistration() error code = %v, want %v", got, want)
 		}
 	})
 
 	t.Run("rejects missing required fields", func(t *testing.T) {
-		_, err := p.tenantClient.StartTenantRegistration(context.Background(), connectrpc.NewRequest(&tenantv1.StartTenantRegistrationRequest{Name: "Acme"}))
+		_, err := p.tenantClient.StartTenantRegistration(context.Background(), &tenantv1.StartTenantRegistrationRequest{Name: "Acme"})
 		if got, want := connectrpc.CodeOf(err), connectrpc.CodeInvalidArgument; got != want {
 			t.Fatalf("StartTenantRegistration() error code = %v, want %v", got, want)
 		}
@@ -71,12 +71,12 @@ func TestPendingOwnerTenantRejectsTenantScopedCalls(t *testing.T) {
 	tenantID := p.startRegistration(t, "Acme").GetTenant().GetTenantId()
 	token := p.mintTenantAccessToken(t, tenantID)
 
-	_, err := p.tenantClient.CreateEvent(context.Background(), authorized(token, &tenantv1.CreateEventRequest{TenantId: tenantID, Name: "Festival"}))
+	_, err := p.tenantClient.CreateEvent(authorized(context.Background(), token), &tenantv1.CreateEventRequest{TenantId: tenantID, Name: "Festival"})
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodeFailedPrecondition; got != want {
 		t.Errorf("CreateEvent() error code = %v, want %v", got, want)
 	}
 
-	_, err = p.tenantClient.ListEvents(context.Background(), authorized(token, &tenantv1.ListEventsRequest{TenantId: tenantID}))
+	_, err = p.tenantClient.ListEvents(authorized(context.Background(), token), &tenantv1.ListEventsRequest{TenantId: tenantID})
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodeFailedPrecondition; got != want {
 		t.Errorf("ListEvents() error code = %v, want %v", got, want)
 	}
@@ -123,12 +123,12 @@ func TestClaimTenantOwnershipOverTransport(t *testing.T) {
 	token := p.mintTenantAccessToken(t, tenantID)
 
 	t.Run("the claiming subject owns the tenant", func(t *testing.T) {
-		res, err := p.relationClient.ListMemberships(context.Background(), authorized(token, &relationv1.ListMembershipsRequest{Filter: &relationv1.ListMembershipsRequest_TenantId{TenantId: tenantID}}))
+		res, err := p.relationClient.ListMemberships(authorized(context.Background(), token), &relationv1.ListMembershipsRequest{Filter: &relationv1.ListMembershipsRequest_TenantId{TenantId: tenantID}})
 		if err != nil {
 			t.Fatalf("ListMemberships() error = %v", err)
 		}
 
-		memberships := res.Msg.GetMemberships()
+		memberships := res.GetMemberships()
 		if len(memberships) != 1 || memberships[0].GetUserId() != callerSubject || memberships[0].GetTenantId() != tenantID || memberships[0].GetTenantRole() != relationv1.Role_ROLE_OWNER {
 			t.Errorf("ListMemberships() = %v, want %q as the owner of %q and nobody else", memberships, callerSubject, tenantID)
 		}
@@ -259,15 +259,15 @@ func TestCreateEventOverTransport(t *testing.T) {
 	tenant := p.createTenant(t, "0123456789abcdef", "Event Host")
 	token := p.mintTenantAccessToken(t, tenant.PublicID())
 
-	res, err := p.tenantClient.CreateEvent(context.Background(), authorized(token, &tenantv1.CreateEventRequest{
+	res, err := p.tenantClient.CreateEvent(authorized(context.Background(), token), &tenantv1.CreateEventRequest{
 		TenantId: tenant.PublicID(),
 		Name:     "Summer Festival",
-	}))
+	})
 	if err != nil {
 		t.Fatalf("CreateEvent() error = %v", err)
 	}
 
-	event := res.Msg.GetEvent()
+	event := res.GetEvent()
 	if got, want := event.GetTenantId(), tenant.PublicID(); got != want {
 		t.Errorf("Event.TenantId = %q, want %q", got, want)
 	}
@@ -307,7 +307,7 @@ func TestCreateEventOverTransportRejectsInvalidTenantSelection(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := p.tenantClient.CreateEvent(context.Background(), authorized(tt.token, &tenantv1.CreateEventRequest{TenantId: tt.tenantID, Name: "Festival"}))
+			_, err := p.tenantClient.CreateEvent(authorized(context.Background(), tt.token), &tenantv1.CreateEventRequest{TenantId: tt.tenantID, Name: "Festival"})
 			if got := connectrpc.CodeOf(err); got != tt.want {
 				t.Fatalf("CreateEvent() error code = %v, want %v", got, tt.want)
 			}
@@ -324,7 +324,7 @@ func TestCreateEventOverTransportRejectsMissingScope(t *testing.T) {
 	tenant := p.createTenant(t, "0123456789abcdef", "Scope Host")
 	token := p.mintTenantAccessTokenWithScope(t, tenant.PublicID(), "events.read")
 
-	_, err := p.tenantClient.CreateEvent(context.Background(), authorized(token, &tenantv1.CreateEventRequest{TenantId: tenant.PublicID(), Name: "Festival"}))
+	_, err := p.tenantClient.CreateEvent(authorized(context.Background(), token), &tenantv1.CreateEventRequest{TenantId: tenant.PublicID(), Name: "Festival"})
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodePermissionDenied; got != want {
 		t.Fatalf("CreateEvent() error code = %v, want %v", got, want)
 	}
@@ -344,15 +344,15 @@ func TestListEventsOverTransport(t *testing.T) {
 	list := func(t *testing.T, includeArchived bool) []*tenantv1.Event {
 		t.Helper()
 
-		res, err := p.tenantClient.ListEvents(context.Background(), authorized(token, &tenantv1.ListEventsRequest{
+		res, err := p.tenantClient.ListEvents(authorized(context.Background(), token), &tenantv1.ListEventsRequest{
 			TenantId:        tenant.PublicID(),
 			IncludeArchived: includeArchived,
-		}))
+		})
 		if err != nil {
 			t.Fatalf("ListEvents(include_archived=%t) error = %v", includeArchived, err)
 		}
 
-		return res.Msg.GetEvents()
+		return res.GetEvents()
 	}
 
 	events := list(t, false)
@@ -374,10 +374,10 @@ func TestListEventsOverTransport(t *testing.T) {
 
 	// Archiving the second event takes it out of the default listing; only
 	// include_archived brings it back.
-	if _, err := p.tenantClient.TransitionEventStatus(context.Background(), authorized(token, &tenantv1.TransitionEventStatusRequest{
+	if _, err := p.tenantClient.TransitionEventStatus(authorized(context.Background(), token), &tenantv1.TransitionEventStatusRequest{
 		EventId: second.GetEventId(),
 		To:      tenantv1.EventStatus_EVENT_STATUS_ARCHIVED,
-	})); err != nil {
+	}); err != nil {
 		t.Fatalf("TransitionEventStatus(archived) error = %v", err)
 	}
 
@@ -395,7 +395,7 @@ func TestListEventsOverTransport(t *testing.T) {
 		}
 	})
 
-	_, err := p.tenantClient.ListEvents(context.Background(), authorized(token, &tenantv1.ListEventsRequest{TenantId: other.PublicID()}))
+	_, err := p.tenantClient.ListEvents(authorized(context.Background(), token), &tenantv1.ListEventsRequest{TenantId: other.PublicID()})
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodePermissionDenied; got != want {
 		t.Fatalf("ListEvents(foreign tenant) error code = %v, want %v", got, want)
 	}
@@ -419,16 +419,16 @@ func TestGetEventOverTransport(t *testing.T) {
 	created := p.createEvent(t, token, tenant.PublicID(), "Festival")
 
 	t.Run("returns the event to a service token of its tenant", func(t *testing.T) {
-		res, err := p.tenantClient.GetEvent(context.Background(), authorized(p.mintServiceToken(t, tenant.PublicID()), &tenantv1.GetEventRequest{EventId: created.GetEventId()}))
+		res, err := p.tenantClient.GetEvent(authorized(context.Background(), p.mintServiceToken(t, tenant.PublicID())), &tenantv1.GetEventRequest{EventId: created.GetEventId()})
 		if err != nil {
 			t.Fatalf("GetEvent() error = %v", err)
 		}
 
-		if got, want := res.Msg.GetEvent().GetEventId(), created.GetEventId(); got != want {
+		if got, want := res.GetEvent().GetEventId(), created.GetEventId(); got != want {
 			t.Errorf("Event.EventId = %q, want %q", got, want)
 		}
 
-		if got, want := res.Msg.GetEvent().GetTenantId(), tenant.PublicID(); got != want {
+		if got, want := res.GetEvent().GetTenantId(), tenant.PublicID(); got != want {
 			t.Errorf("Event.TenantId = %q, want %q", got, want)
 		}
 	})
@@ -447,7 +447,7 @@ func TestGetEventOverTransport(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := p.tenantClient.GetEvent(context.Background(), authorized(tt.token, &tenantv1.GetEventRequest{EventId: tt.eventID}))
+			_, err := p.tenantClient.GetEvent(authorized(context.Background(), tt.token), &tenantv1.GetEventRequest{EventId: tt.eventID})
 			if got := connectrpc.CodeOf(err); got != tt.want {
 				t.Fatalf("GetEvent() error code = %v, want %v", got, tt.want)
 			}
@@ -464,12 +464,12 @@ func TestTransitionEventStatusOverTransport(t *testing.T) {
 	transition := func(eventID string, to tenantv1.EventStatus) (*tenantv1.Event, error) {
 		t.Helper()
 
-		response, err := p.tenantClient.TransitionEventStatus(context.Background(), authorized(token, &tenantv1.TransitionEventStatusRequest{EventId: eventID, To: to}))
+		response, err := p.tenantClient.TransitionEventStatus(authorized(context.Background(), token), &tenantv1.TransitionEventStatusRequest{EventId: eventID, To: to})
 		if err != nil {
 			return nil, err
 		}
 
-		return response.Msg.GetEvent(), nil
+		return response.GetEvent(), nil
 	}
 
 	for _, want := range []tenantv1.EventStatus{
@@ -524,10 +524,10 @@ func TestTransitionEventStatusOverTransportRejectsForeignEvent(t *testing.T) {
 	other := p.createTenant(t, "fedcba9876543210", "Other Tenant")
 	otherEvent := p.createEvent(t, p.mintTenantAccessToken(t, other.PublicID()), other.PublicID(), "Other Festival")
 
-	_, err := p.tenantClient.TransitionEventStatus(context.Background(), authorized(p.mintTenantAccessToken(t, tenant.PublicID()), &tenantv1.TransitionEventStatusRequest{
+	_, err := p.tenantClient.TransitionEventStatus(authorized(context.Background(), p.mintTenantAccessToken(t, tenant.PublicID())), &tenantv1.TransitionEventStatusRequest{
 		EventId: otherEvent.GetEventId(),
 		To:      tenantv1.EventStatus_EVENT_STATUS_OPEN,
-	}))
+	})
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodePermissionDenied; got != want {
 		t.Fatalf("TransitionEventStatus(foreign event) error code = %v, want %v", got, want)
 	}
@@ -536,33 +536,33 @@ func TestTransitionEventStatusOverTransportRejectsForeignEvent(t *testing.T) {
 func TestTransitionEventStatusOverTransportRejectsInvalidRequest(t *testing.T) {
 	p := newProcess(t)
 
-	_, err := p.tenantClient.TransitionEventStatus(context.Background(), authorized(internalJWTs(t).tenantAccess, &tenantv1.TransitionEventStatusRequest{}))
+	_, err := p.tenantClient.TransitionEventStatus(authorized(context.Background(), internalJWTs(t).tenantAccess), &tenantv1.TransitionEventStatusRequest{})
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodeInvalidArgument; got != want {
 		t.Fatalf("TransitionEventStatus() error code = %v, want %v", got, want)
 	}
 
-	_, err = p.tenantClient.TransitionEventStatus(context.Background(), authorized(internalJWTs(t).tenantAccess, &tenantv1.TransitionEventStatusRequest{
+	_, err = p.tenantClient.TransitionEventStatus(authorized(context.Background(), internalJWTs(t).tenantAccess), &tenantv1.TransitionEventStatusRequest{
 		EventId: "0000000000000000",
 		To:      tenantv1.EventStatus_EVENT_STATUS_OPEN,
-	}))
+	})
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodeNotFound; got != want {
 		t.Fatalf("TransitionEventStatus() error code = %v, want %v", got, want)
 	}
 }
 
 func (p *process) changeTenantContract(tenantID, contractPlan, token string) error {
-	_, err := p.tenantClient.ChangeTenantContract(context.Background(), authorized(token, &tenantv1.ChangeTenantContractRequest{TenantId: tenantID, ContractPlan: contractPlan}))
+	_, err := p.tenantClient.ChangeTenantContract(authorized(context.Background(), token), &tenantv1.ChangeTenantContractRequest{TenantId: tenantID, ContractPlan: contractPlan})
 
 	return err
 }
 
 func (p *process) archiveTenant(tenantID, token string) (*tenantv1.Tenant, error) {
-	res, err := p.tenantClient.ArchiveTenant(context.Background(), authorized(token, &tenantv1.ArchiveTenantRequest{TenantId: tenantID}))
+	res, err := p.tenantClient.ArchiveTenant(authorized(context.Background(), token), &tenantv1.ArchiveTenantRequest{TenantId: tenantID})
 	if err != nil {
 		return nil, err
 	}
 
-	return res.Msg.GetTenant(), nil
+	return res.GetTenant(), nil
 }
 
 func TestChangeTenantContractOverTransport(t *testing.T) {
@@ -571,16 +571,16 @@ func TestChangeTenantContractOverTransport(t *testing.T) {
 	p.addTenantMember(t, tenant.ID(), callerSubject, relationdomain.RoleOwner)
 	token := p.mintTenantAccessToken(t, tenant.PublicID())
 
-	res, err := p.tenantClient.ChangeTenantContract(context.Background(), authorized(token, &tenantv1.ChangeTenantContractRequest{TenantId: tenant.PublicID(), ContractPlan: "enterprise"}))
+	res, err := p.tenantClient.ChangeTenantContract(authorized(context.Background(), token), &tenantv1.ChangeTenantContractRequest{TenantId: tenant.PublicID(), ContractPlan: "enterprise"})
 	if err != nil {
 		t.Fatalf("ChangeTenantContract() error = %v", err)
 	}
 
-	if got, want := res.Msg.GetTenant().GetContractPlan(), "enterprise"; got != want {
+	if got, want := res.GetTenant().GetContractPlan(), "enterprise"; got != want {
 		t.Errorf("Tenant.ContractPlan = %q, want %q", got, want)
 	}
 
-	if got, want := res.Msg.GetTenant().GetTenantId(), tenant.PublicID(); got != want {
+	if got, want := res.GetTenant().GetTenantId(), tenant.PublicID(); got != want {
 		t.Errorf("Tenant.TenantId = %q, want %q", got, want)
 	}
 
@@ -627,7 +627,7 @@ func TestArchiveTenantOverTransport(t *testing.T) {
 	}
 
 	t.Run("writes are refused", func(t *testing.T) {
-		_, err := p.tenantClient.CreateEvent(context.Background(), authorized(token, &tenantv1.CreateEventRequest{TenantId: tenant.PublicID(), Name: "Second Festival"}))
+		_, err := p.tenantClient.CreateEvent(authorized(context.Background(), token), &tenantv1.CreateEventRequest{TenantId: tenant.PublicID(), Name: "Second Festival"})
 		if got, want := connectrpc.CodeOf(err), connectrpc.CodeFailedPrecondition; got != want {
 			t.Errorf("CreateEvent() error code = %v, want %v", got, want)
 		}
@@ -639,22 +639,22 @@ func TestArchiveTenantOverTransport(t *testing.T) {
 	})
 
 	t.Run("reads keep working", func(t *testing.T) {
-		list, err := p.tenantClient.ListEvents(context.Background(), authorized(token, &tenantv1.ListEventsRequest{TenantId: tenant.PublicID()}))
+		list, err := p.tenantClient.ListEvents(authorized(context.Background(), token), &tenantv1.ListEventsRequest{TenantId: tenant.PublicID()})
 		if err != nil {
 			t.Fatalf("ListEvents() after archiving error = %v", err)
 		}
 
-		if got, want := len(list.Msg.GetEvents()), 1; got != want {
+		if got, want := len(list.GetEvents()), 1; got != want {
 			t.Fatalf("event count = %d, want %d", got, want)
 		}
 
-		got, err := p.tenantClient.GetEvent(context.Background(), authorized(p.mintServiceToken(t, tenant.PublicID()), &tenantv1.GetEventRequest{EventId: event.GetEventId()}))
+		got, err := p.tenantClient.GetEvent(authorized(context.Background(), p.mintServiceToken(t, tenant.PublicID())), &tenantv1.GetEventRequest{EventId: event.GetEventId()})
 		if err != nil {
 			t.Fatalf("GetEvent() after archiving error = %v", err)
 		}
 
 		// The events of an archived tenant keep their status.
-		if got, want := got.Msg.GetEvent().GetStatus(), event.GetStatus(); got != want {
+		if got, want := got.GetEvent().GetStatus(), event.GetStatus(); got != want {
 			t.Errorf("Event.Status after archiving = %v, want %v", got, want)
 		}
 	})

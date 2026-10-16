@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	connectrpc "connectrpc.com/connect"
+	connectrpc "connectrpc.com/connect/v2"
 
 	relationv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/relation/v1"
 	infradb "github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"

@@ -87,7 +87,7 @@ func TestListMembershipsOverHTTP(t *testing.T) {
 		t.Fatalf("AddTenantMember(tenant B) error = %v", err)
 	}
 
-	if _, err := f.relationClient.GrantEventRole(ctx, authorized(f.tokenA, &relationv1.GrantEventRoleRequest{EventId: f.eventA, UserId: "user-1", Role: relationv1.Role_ROLE_STAFF})); err != nil {
+	if _, err := f.relationClient.GrantEventRole(authorized(ctx, f.tokenA), &relationv1.GrantEventRoleRequest{EventId: f.eventA, UserId: "user-1", Role: relationv1.Role_ROLE_STAFF}); err != nil {
 		t.Fatalf("GrantEventRole() error = %v", err)
 	}
 

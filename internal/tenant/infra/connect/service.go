@@ -7,7 +7,8 @@ import (
 	"fmt"
 	"net/http"
 
-	connectrpc "connectrpc.com/connect"
+	connectrpc "connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	tenantv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1"
@@ -39,17 +40,15 @@ func tenantContextErrorCode(err error) (connectrpc.Code, bool) {
 // service is guarded by an interceptor built from its own generated policy
 // table and runs with the process-wide interceptors (tracing) before it.
 func Mount(tenantService application.TenantUseCases) infraconnect.Mount {
-	return func(mux *http.ServeMux, auth infraconnect.AuthInterceptor, interceptors ...connectrpc.Interceptor) error {
+	return func(mux *http.ServeMux, auth infraconnect.AuthInterceptor, interceptors ...connectrpc.ServerInterceptor) error {
 		tenantAuth, err := auth(tenantv1connect.TenantServicePolicies)
 		if err != nil {
 			return fmt.Errorf("create TenantService authentication interceptor: %w", err)
 		}
 
-		path, handler := tenantv1connect.NewTenantServiceHandler(
-			NewService(tenantService),
-			connectrpc.WithInterceptors(append(interceptors, tenantAuth)...),
-		)
-		mux.Handle(path, handler)
+		server := connectrpc.NewServer(append(interceptors, tenantAuth)...)
+		tenantv1connect.RegisterTenantServiceHandler(server, NewService(tenantService))
+		connecthttp.Mount(mux, server)
 
 		return nil
 	}
@@ -68,18 +67,18 @@ func NewService(tenantService application.TenantUseCases) *Service {
 	}
 }
 
-func (s *Service) StartTenantRegistration(ctx context.Context, req *connectrpc.Request[tenantv1.StartTenantRegistrationRequest]) (*connectrpc.Response[tenantv1.StartTenantRegistrationResponse], error) {
+func (s *Service) StartTenantRegistration(ctx context.Context, req *tenantv1.StartTenantRegistrationRequest) (*tenantv1.StartTenantRegistrationResponse, error) {
 	registration, err := s.tenantService.StartTenantRegistration(ctx, application.StartTenantRegistrationInput{
-		Name:         req.Msg.GetName(),
-		ContractPlan: req.Msg.GetContractPlan(),
+		Name:         req.GetName(),
+		ContractPlan: req.GetContractPlan(),
 	})
 	if err != nil {
 		if errors.Is(err, application.ErrTenantNameRequired) || errors.Is(err, application.ErrTenantContractPlanRequired) {
-			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
+			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err.Error()).WithCause(err)
 		}
 
 		if errors.Is(err, repository.ErrTenantNameAlreadyExists) || errors.Is(err, repository.ErrTenantPublicIDExists) {
-			return nil, connectrpc.NewError(connectrpc.CodeAlreadyExists, err)
+			return nil, connectrpc.NewError(connectrpc.CodeAlreadyExists, err.Error()).WithCause(err)
 		}
 
 		return nil, infraconnect.InternalError(ctx, err)
@@ -87,40 +86,40 @@ func (s *Service) StartTenantRegistration(ctx context.Context, req *connectrpc.R
 
 	// The plaintext claim token appears in this response only; it is never
 	// persisted, logged, or echoed in errors.
-	return connectrpc.NewResponse(&tenantv1.StartTenantRegistrationResponse{
+	return &tenantv1.StartTenantRegistrationResponse{
 		Tenant:              tenantProto(registration.Tenant),
 		OwnershipClaimToken: registration.ClaimToken,
 		ExpiresAt:           timestamppb.New(registration.ExpiresAt),
-	}), nil
+	}, nil
 }
 
-func (s *Service) ClaimTenantOwnership(ctx context.Context, req *connectrpc.Request[tenantv1.ClaimTenantOwnershipRequest]) (*connectrpc.Response[tenantv1.ClaimTenantOwnershipResponse], error) {
+func (s *Service) ClaimTenantOwnership(ctx context.Context, req *tenantv1.ClaimTenantOwnershipRequest) (*tenantv1.ClaimTenantOwnershipResponse, error) {
 	tenant, err := s.tenantService.ClaimTenantOwnership(ctx, application.ClaimTenantOwnershipInput{
-		TenantPublicID: req.Msg.GetTenantId(),
-		ClaimToken:     req.Msg.GetOwnershipClaimToken(),
+		TenantPublicID: req.GetTenantId(),
+		ClaimToken:     req.GetOwnershipClaimToken(),
 	})
 	if err != nil {
 		if errors.Is(err, application.ErrTenantIDRequired) || errors.Is(err, application.ErrOwnershipClaimTokenRequired) {
-			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
+			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err.Error()).WithCause(err)
 		}
 
 		if errors.Is(err, repository.ErrTenantNotFound) {
-			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
+			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err.Error()).WithCause(err)
 		}
 
 		if errors.Is(err, application.ErrOwnershipClaimRejected) || errors.Is(err, tenantctx.ErrSubjectMissing) {
-			return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, err)
+			return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, err.Error()).WithCause(err)
 		}
 
 		// The claim runs in a transaction; an aborted one can be retried.
 		if errors.Is(err, infradb.ErrTransactionAborted) {
-			return nil, connectrpc.NewError(connectrpc.CodeAborted, err)
+			return nil, connectrpc.NewError(connectrpc.CodeAborted, err.Error()).WithCause(err)
 		}
 
 		return nil, infraconnect.InternalError(ctx, err)
 	}
 
-	return connectrpc.NewResponse(&tenantv1.ClaimTenantOwnershipResponse{Tenant: tenantProto(tenant)}), nil
+	return &tenantv1.ClaimTenantOwnershipResponse{Tenant: tenantProto(tenant)}, nil
 }
 
 // administrativeTenantWriteError maps the failures of the administrative
@@ -131,81 +130,81 @@ func (s *Service) ClaimTenantOwnership(ctx context.Context, req *connectrpc.Requ
 func administrativeTenantWriteError(ctx context.Context, err error) error {
 	switch {
 	case errors.Is(err, application.ErrTenantIDRequired), errors.Is(err, application.ErrTenantContractPlanRequired):
-		return connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
+		return connectrpc.NewError(connectrpc.CodeInvalidArgument, err.Error()).WithCause(err)
 	case errors.Is(err, repository.ErrTenantNotFound):
-		return connectrpc.NewError(connectrpc.CodeNotFound, err)
+		return connectrpc.NewError(connectrpc.CodeNotFound, err.Error()).WithCause(err)
 	case errors.Is(err, application.ErrTenantPendingOwner),
 		errors.Is(err, repository.ErrTenantArchived),
 		errors.Is(err, domain.ErrTenantAlreadyArchived):
-		return connectrpc.NewError(connectrpc.CodeFailedPrecondition, err)
+		return connectrpc.NewError(connectrpc.CodeFailedPrecondition, err.Error()).WithCause(err)
 	case errors.Is(err, application.ErrPermissionDenied):
-		return connectrpc.NewError(connectrpc.CodePermissionDenied, err)
+		return connectrpc.NewError(connectrpc.CodePermissionDenied, err.Error()).WithCause(err)
 	case errors.Is(err, tenantctx.ErrSubjectMissing):
-		return connectrpc.NewError(connectrpc.CodeUnauthenticated, err)
+		return connectrpc.NewError(connectrpc.CodeUnauthenticated, err.Error()).WithCause(err)
 	// The write runs in a transaction; an aborted one can be retried.
 	case errors.Is(err, infradb.ErrTransactionAborted):
-		return connectrpc.NewError(connectrpc.CodeAborted, err)
+		return connectrpc.NewError(connectrpc.CodeAborted, err.Error()).WithCause(err)
 	default:
 		if code, ok := tenantContextErrorCode(err); ok {
-			return connectrpc.NewError(code, err)
+			return connectrpc.NewError(code, err.Error()).WithCause(err)
 		}
 
 		return infraconnect.InternalError(ctx, err)
 	}
 }
 
-func (s *Service) ChangeTenantContract(ctx context.Context, req *connectrpc.Request[tenantv1.ChangeTenantContractRequest]) (*connectrpc.Response[tenantv1.ChangeTenantContractResponse], error) {
+func (s *Service) ChangeTenantContract(ctx context.Context, req *tenantv1.ChangeTenantContractRequest) (*tenantv1.ChangeTenantContractResponse, error) {
 	tenant, err := s.tenantService.ChangeTenantContract(ctx, application.ChangeTenantContractInput{
-		TenantPublicID: req.Msg.GetTenantId(),
-		ContractPlan:   req.Msg.GetContractPlan(),
+		TenantPublicID: req.GetTenantId(),
+		ContractPlan:   req.GetContractPlan(),
 	})
 	if err != nil {
 		return nil, administrativeTenantWriteError(ctx, err)
 	}
 
-	return connectrpc.NewResponse(&tenantv1.ChangeTenantContractResponse{Tenant: tenantProto(tenant)}), nil
+	return &tenantv1.ChangeTenantContractResponse{Tenant: tenantProto(tenant)}, nil
 }
 
-func (s *Service) ArchiveTenant(ctx context.Context, req *connectrpc.Request[tenantv1.ArchiveTenantRequest]) (*connectrpc.Response[tenantv1.ArchiveTenantResponse], error) {
-	tenant, err := s.tenantService.ArchiveTenant(ctx, application.ArchiveTenantInput{TenantPublicID: req.Msg.GetTenantId()})
+func (s *Service) ArchiveTenant(ctx context.Context, req *tenantv1.ArchiveTenantRequest) (*tenantv1.ArchiveTenantResponse, error) {
+	tenant, err := s.tenantService.ArchiveTenant(ctx, application.ArchiveTenantInput{TenantPublicID: req.GetTenantId()})
 	if err != nil {
 		return nil, administrativeTenantWriteError(ctx, err)
 	}
 
-	return connectrpc.NewResponse(&tenantv1.ArchiveTenantResponse{Tenant: tenantProto(tenant)}), nil
+	return &tenantv1.ArchiveTenantResponse{Tenant: tenantProto(tenant)}, nil
 }
 
-func (s *Service) CreateEvent(ctx context.Context, req *connectrpc.Request[tenantv1.CreateEventRequest]) (*connectrpc.Response[tenantv1.CreateEventResponse], error) {
+func (s *Service) CreateEvent(ctx context.Context, req *tenantv1.CreateEventRequest) (*tenantv1.CreateEventResponse, error) {
 	event, err := s.tenantService.CreateEvent(ctx, application.CreateEventInput{
-		TenantPublicID: req.Msg.GetTenantId(),
-		Name:           req.Msg.GetName(),
+		TenantPublicID: req.GetTenantId(),
+		Name:           req.GetName(),
 	})
 	if err != nil {
 		if errors.Is(err, application.ErrEventNameRequired) || errors.Is(err, application.ErrTenantIDRequired) {
-			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
+			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err.Error()).WithCause(err)
 		}
 
 		// A public ID collision is a conflict, not an internal failure.
 		if errors.Is(err, repository.ErrEventPublicIDExists) {
-			return nil, connectrpc.NewError(connectrpc.CodeAlreadyExists, err)
+			return nil, connectrpc.NewError(connectrpc.CodeAlreadyExists, err.Error()).WithCause(err)
 		}
 
 		if errors.Is(err, repository.ErrTenantNotFound) {
-			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
+			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err.Error()).WithCause(err)
 		}
 
 		if errors.Is(err, repository.ErrTenantArchived) || errors.Is(err, application.ErrTenantPendingOwner) {
-			return nil, connectrpc.NewError(connectrpc.CodeFailedPrecondition, err)
+			return nil, connectrpc.NewError(connectrpc.CodeFailedPrecondition, err.Error()).WithCause(err)
 		}
 
 		if code, ok := tenantContextErrorCode(err); ok {
-			return nil, connectrpc.NewError(code, err)
+			return nil, connectrpc.NewError(code, err.Error()).WithCause(err)
 		}
 
 		return nil, infraconnect.InternalError(ctx, err)
 	}
 
-	return connectrpc.NewResponse(&tenantv1.CreateEventResponse{Event: eventProto(event)}), nil
+	return &tenantv1.CreateEventResponse{Event: eventProto(event)}, nil
 }
 
 func eventStatusProto(eventStatus domain.EventStatus) tenantv1.EventStatus {
@@ -246,32 +245,32 @@ func eventStatusDomain(eventStatus tenantv1.EventStatus) domain.EventStatus {
 	}
 }
 
-func (s *Service) TransitionEventStatus(ctx context.Context, req *connectrpc.Request[tenantv1.TransitionEventStatusRequest]) (*connectrpc.Response[tenantv1.TransitionEventStatusResponse], error) {
+func (s *Service) TransitionEventStatus(ctx context.Context, req *tenantv1.TransitionEventStatusRequest) (*tenantv1.TransitionEventStatusResponse, error) {
 	event, err := s.tenantService.TransitionEventStatus(ctx, application.TransitionEventStatusInput{
-		EventPublicID: req.Msg.GetEventId(),
-		To:            eventStatusDomain(req.Msg.GetTo()),
+		EventPublicID: req.GetEventId(),
+		To:            eventStatusDomain(req.GetTo()),
 	})
 	if err != nil {
 		if errors.Is(err, application.ErrEventIDRequired) || errors.Is(err, application.ErrEventStatusRequired) {
-			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
+			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err.Error()).WithCause(err)
 		}
 
 		if errors.Is(err, repository.ErrEventNotFound) {
-			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
+			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err.Error()).WithCause(err)
 		}
 
 		if errors.Is(err, domain.ErrInvalidEventStatusTransition) || errors.Is(err, repository.ErrTenantArchived) {
-			return nil, connectrpc.NewError(connectrpc.CodeFailedPrecondition, err)
+			return nil, connectrpc.NewError(connectrpc.CodeFailedPrecondition, err.Error()).WithCause(err)
 		}
 
 		if code, ok := tenantContextErrorCode(err); ok {
-			return nil, connectrpc.NewError(code, err)
+			return nil, connectrpc.NewError(code, err.Error()).WithCause(err)
 		}
 
 		return nil, infraconnect.InternalError(ctx, err)
 	}
 
-	return connectrpc.NewResponse(&tenantv1.TransitionEventStatusResponse{Event: eventProto(event)}), nil
+	return &tenantv1.TransitionEventStatusResponse{Event: eventProto(event)}, nil
 }
 
 func tenantProto(tenant domain.Tenant) *tenantv1.Tenant {
@@ -308,44 +307,44 @@ func eventProto(event domain.Event) *tenantv1.Event {
 	}
 }
 
-func (s *Service) GetEvent(ctx context.Context, req *connectrpc.Request[tenantv1.GetEventRequest]) (*connectrpc.Response[tenantv1.GetEventResponse], error) {
-	event, err := s.tenantService.GetEvent(ctx, req.Msg.GetEventId())
+func (s *Service) GetEvent(ctx context.Context, req *tenantv1.GetEventRequest) (*tenantv1.GetEventResponse, error) {
+	event, err := s.tenantService.GetEvent(ctx, req.GetEventId())
 	if err != nil {
 		if errors.Is(err, application.ErrEventIDRequired) {
-			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
+			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err.Error()).WithCause(err)
 		}
 
 		if errors.Is(err, repository.ErrEventNotFound) {
-			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
+			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err.Error()).WithCause(err)
 		}
 
 		if code, ok := tenantContextErrorCode(err); ok {
-			return nil, connectrpc.NewError(code, err)
+			return nil, connectrpc.NewError(code, err.Error()).WithCause(err)
 		}
 
 		return nil, infraconnect.InternalError(ctx, err)
 	}
 
-	return connectrpc.NewResponse(&tenantv1.GetEventResponse{Event: eventProto(event)}), nil
+	return &tenantv1.GetEventResponse{Event: eventProto(event)}, nil
 }
 
-func (s *Service) ListEvents(ctx context.Context, req *connectrpc.Request[tenantv1.ListEventsRequest]) (*connectrpc.Response[tenantv1.ListEventsResponse], error) {
-	events, err := s.tenantService.ListEvents(ctx, req.Msg.GetTenantId(), req.Msg.GetIncludeArchived())
+func (s *Service) ListEvents(ctx context.Context, req *tenantv1.ListEventsRequest) (*tenantv1.ListEventsResponse, error) {
+	events, err := s.tenantService.ListEvents(ctx, req.GetTenantId(), req.GetIncludeArchived())
 	if err != nil {
 		if errors.Is(err, application.ErrTenantIDRequired) {
-			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err)
+			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err.Error()).WithCause(err)
 		}
 
 		if errors.Is(err, repository.ErrTenantNotFound) {
-			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err)
+			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err.Error()).WithCause(err)
 		}
 
 		if errors.Is(err, application.ErrTenantPendingOwner) {
-			return nil, connectrpc.NewError(connectrpc.CodeFailedPrecondition, err)
+			return nil, connectrpc.NewError(connectrpc.CodeFailedPrecondition, err.Error()).WithCause(err)
 		}
 
 		if code, ok := tenantContextErrorCode(err); ok {
-			return nil, connectrpc.NewError(code, err)
+			return nil, connectrpc.NewError(code, err.Error()).WithCause(err)
 		}
 
 		return nil, infraconnect.InternalError(ctx, err)
@@ -356,5 +355,5 @@ func (s *Service) ListEvents(ctx context.Context, req *connectrpc.Request[tenant
 		responseEvents = append(responseEvents, eventProto(event))
 	}
 
-	return connectrpc.NewResponse(&tenantv1.ListEventsResponse{Events: responseEvents}), nil
+	return &tenantv1.ListEventsResponse{Events: responseEvents}, nil
 }

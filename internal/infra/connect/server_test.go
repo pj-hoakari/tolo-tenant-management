@@ -12,7 +12,8 @@ import (
 	"testing"
 	"time"
 
-	connectrpc "connectrpc.com/connect"
+	connectrpc "connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	internaljwt "github.com/pj-hoakari/internal-jwt-handling"
 	"github.com/pj-hoakari/internal-jwt-handling/jwks"
 	"github.com/pj-hoakari/internal-jwt-handling/jwtgen"
@@ -62,7 +63,7 @@ func TestNewHandlerWithVerifierMountsEveryService(t *testing.T) {
 	var mounted []string
 
 	mount := func(name string) Mount {
-		return func(mux *http.ServeMux, auth AuthInterceptor, interceptors ...connectrpc.Interceptor) error {
+		return func(mux *http.ServeMux, auth AuthInterceptor, interceptors ...connectrpc.ServerInterceptor) error {
 			if mux == nil {
 				t.Errorf("mount %s: mux is nil", name)
 			}
@@ -90,7 +91,7 @@ func TestNewHandlerWithVerifierMountsEveryService(t *testing.T) {
 	}
 
 	errMount := errors.New("mount failed")
-	failing := func(*http.ServeMux, AuthInterceptor, ...connectrpc.Interceptor) error { return errMount }
+	failing := func(*http.ServeMux, AuthInterceptor, ...connectrpc.ServerInterceptor) error { return errMount }
 
 	if _, err := NewHandlerWithVerifier(verifierStub{}, mount("first"), failing); !errors.Is(err, errMount) {
 		t.Errorf("NewHandlerWithVerifier() error = %v, want %v", err, errMount)
@@ -103,23 +104,31 @@ const (
 )
 
 func mountAuthenticatedCall(procedure string) Mount {
-	return func(mux *http.ServeMux, auth AuthInterceptor, interceptors ...connectrpc.Interceptor) error {
+	return func(mux *http.ServeMux, auth AuthInterceptor, interceptors ...connectrpc.ServerInterceptor) error {
 		callAuth, err := auth(authz.Policies{procedure: {Level: authz.LevelAuthenticated}})
 		if err != nil {
 			return err
 		}
 
-		handler := connectrpc.NewUnaryHandler[emptypb.Empty, emptypb.Empty](
-			procedure,
-			func(context.Context, *connectrpc.Request[emptypb.Empty]) (*connectrpc.Response[emptypb.Empty], error) {
-				return connectrpc.NewResponse(&emptypb.Empty{}), nil
+		server := connectrpc.NewServer(append(interceptors, callAuth)...)
+		server.Register(connectrpc.Method{
+			Spec: testCallSpec(procedure),
+			Handler: func(_ context.Context, _ connectrpc.Spec, stream connectrpc.ServerStream) error {
+				if err := stream.Receive(&emptypb.Empty{}); err != nil {
+					return err
+				}
+
+				return stream.Send(&emptypb.Empty{})
 			},
-			connectrpc.WithInterceptors(append(interceptors, callAuth)...),
-		)
-		mux.Handle(procedure, handler)
+		})
+		connecthttp.Mount(mux, server)
 
 		return nil
 	}
+}
+
+func testCallSpec(procedure string) connectrpc.Spec {
+	return connectrpc.Spec{StreamType: connectrpc.StreamTypeUnary, Procedure: procedure}
 }
 
 func newAuthenticatedCallServer(t *testing.T, jwksURL string) *httptest.Server {
@@ -168,12 +177,12 @@ func mintCallToken(t *testing.T, keyID string) jwtgen.Output {
 func callAuthenticated(t *testing.T, server *httptest.Server, token string) error {
 	t.Helper()
 
-	client := connectrpc.NewClient[emptypb.Empty, emptypb.Empty](server.Client(), server.URL+testCallProcedure)
+	client := connectrpc.NewClient(connecthttp.NewTransport(server.Client(), server.URL))
 
-	req := connectrpc.NewRequest(&emptypb.Empty{})
-	req.Header().Set("Authorization", "Bearer "+token)
+	ctx, info := connectrpc.NewClientContext(context.Background())
+	info.RequestHeader().Set("Authorization", "Bearer "+token)
 
-	_, err := client.CallUnary(context.Background(), req)
+	err := client.CallUnary(ctx, testCallSpec(testCallProcedure), &emptypb.Empty{}, &emptypb.Empty{})
 
 	return err
 }
