@@ -17,6 +17,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	internaljwt "github.com/pj-hoakari/internal-jwt-handling"
 	tenantv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1"
+	infradb "github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/logging"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/domain"
@@ -451,6 +452,92 @@ func TestEveryHandlerHidesInternalErrorDetail(t *testing.T) {
 
 			if !strings.Contains(logs.String(), "secret detail") {
 				t.Errorf("%s log = %q, want the cause to be logged", name, logs.String())
+			}
+		})
+	}
+}
+
+func TestErrorMessageOmitsTheErrorChain(t *testing.T) {
+	t.Parallel()
+
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStatePendingOwner, false)
+	ctx := internaljwt.ContextWithClaims(context.Background(), internaljwt.Claims{TenantPublicID: tenant.PublicID(), RegisteredClaims: jwt.RegisteredClaims{Subject: "user-1"}})
+
+	listEvents := func(service *Service) error {
+		_, err := service.ListEvents(ctx, &tenantv1.ListEventsRequest{TenantId: tenant.PublicID()})
+
+		return err
+	}
+
+	tests := []struct {
+		name        string
+		expect      func(repo *MockTenantRepository)
+		call        func(service *Service) error
+		wantCode    connectrpc.Code
+		wantMessage string
+	}{
+		{
+			name: "wrapped sentinel",
+			expect: func(repo *MockTenantRepository) {
+				repo.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(domain.Tenant{}, fmt.Errorf("find tenant: %w", repository.ErrTenantNotFound))
+			},
+			call:        listEvents,
+			wantCode:    connectrpc.CodeNotFound,
+			wantMessage: "tenant not found",
+		},
+		{
+			name: "aborted transaction joined to the database error",
+			expect: func(repo *MockTenantRepository) {
+				dbErr := errors.New("ERROR: could not serialize access due to concurrent update (SQLSTATE 40001)")
+				repo.EXPECT().FindTenantByPublicIDForUpdate(gomock.Any(), tenant.PublicID()).Return(domain.Tenant{}, domain.OwnershipClaim{}, fmt.Errorf("lock tenant: %w", errors.Join(dbErr, infradb.ErrTransactionAborted)))
+			},
+			call: func(service *Service) error {
+				_, err := service.ClaimTenantOwnership(ctx, &tenantv1.ClaimTenantOwnershipRequest{TenantId: tenant.PublicID(), OwnershipClaimToken: "token"})
+
+				return err
+			},
+			wantCode:    connectrpc.CodeAborted,
+			wantMessage: "transaction aborted; retry the request",
+		},
+		{
+			name: "canceled request",
+			expect: func(repo *MockTenantRepository) {
+				repo.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(domain.Tenant{}, fmt.Errorf("find tenant: %w", context.Canceled))
+			},
+			call:        listEvents,
+			wantCode:    connectrpc.CodeCanceled,
+			wantMessage: "canceled",
+		},
+		{
+			name: "expired deadline",
+			expect: func(repo *MockTenantRepository) {
+				repo.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(domain.Tenant{}, fmt.Errorf("find tenant: %w", context.DeadlineExceeded))
+			},
+			call:        listEvents,
+			wantCode:    connectrpc.CodeDeadlineExceeded,
+			wantMessage: "deadline exceeded",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			repo := NewMockTenantRepository(gomock.NewController(t))
+			tt.expect(repo)
+			service := NewService(application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{}, permissionStub{allowed: true}))
+
+			var connectErr *connectrpc.Error
+			if err := tt.call(service); !errors.As(err, &connectErr) {
+				t.Fatalf("error = %v, want a Connect error", err)
+			}
+
+			if got := connectErr.Code(); got != tt.wantCode {
+				t.Errorf("Code() = %v, want %v", got, tt.wantCode)
+			}
+
+			if got := connectErr.Message(); got != tt.wantMessage {
+				t.Errorf("Message() = %q, want %q", got, tt.wantMessage)
 			}
 		})
 	}

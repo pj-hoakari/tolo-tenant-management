@@ -142,8 +142,8 @@ func TestConnectError(t *testing.T) {
 		t.Run(tt.err.Error(), func(t *testing.T) {
 			t.Parallel()
 
-			if got := connectrpc.CodeOf(connectError(context.Background(), tt.err)); got != tt.want {
-				t.Errorf("connectError(%v) code = %v, want %v", tt.err, got, tt.want)
+			if got := connectrpc.CodeOf(clientErrors.For(context.Background(), tt.err)); got != tt.want {
+				t.Errorf("clientErrors.For(%v) code = %v, want %v", tt.err, got, tt.want)
 			}
 		})
 	}
@@ -156,11 +156,11 @@ func TestConnectError(t *testing.T) {
 func TestConnectErrorHidesInternalDetail(t *testing.T) {
 	logs := captureLog(t)
 
-	err := connectError(context.Background(), errors.New("secret detail"))
+	err := clientErrors.For(context.Background(), errors.New("secret detail"))
 
 	var connectErr *connectrpc.Error
 	if !errors.As(err, &connectErr) {
-		t.Fatalf("connectError() = %v, want a Connect error", err)
+		t.Fatalf("clientErrors.For() = %v, want a Connect error", err)
 	}
 
 	if got, want := connectErr.Message(), "internal error"; got != want {
@@ -193,9 +193,9 @@ func TestConnectErrorHidesInternalDetail(t *testing.T) {
 func TestConnectErrorReportsCanceledWithoutLogging(t *testing.T) {
 	logs := captureLog(t)
 
-	err := connectError(context.Background(), context.Canceled)
+	err := clientErrors.For(context.Background(), context.Canceled)
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodeCanceled; got != want {
-		t.Errorf("connectError(context.Canceled) code = %v, want %v", got, want)
+		t.Errorf("clientErrors.For(context.Canceled) code = %v, want %v", got, want)
 	}
 
 	if logs.Len() != 0 {
@@ -240,4 +240,72 @@ func decodeLogEntry(t *testing.T, logs *bytes.Buffer) map[string]any {
 	}
 
 	return entry
+}
+
+type failingRelations struct {
+	application.RelationUseCases
+	err error
+}
+
+func (r failingRelations) AddTenantMember(context.Context, application.AddTenantMemberInput) (relationdomain.Membership, error) {
+	return relationdomain.Membership{}, r.err
+}
+
+func TestErrorMessageOmitsTheErrorChain(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		err         error
+		wantCode    connectrpc.Code
+		wantMessage string
+	}{
+		{
+			name:        "wrapped sentinel",
+			err:         fmt.Errorf("add member: %w", fmt.Errorf("find tenant: %w", tenantrepository.ErrTenantNotFound)),
+			wantCode:    connectrpc.CodeNotFound,
+			wantMessage: "tenant not found",
+		},
+		{
+			name:        "aborted transaction joined to the database error",
+			err:         fmt.Errorf("add member: %w", errors.Join(errors.New("ERROR: could not serialize access due to concurrent update (SQLSTATE 40001)"), infradb.ErrTransactionAborted)),
+			wantCode:    connectrpc.CodeAborted,
+			wantMessage: "transaction aborted; retry the request",
+		},
+		{
+			name:        "canceled request",
+			err:         fmt.Errorf("find tenant: %w", context.Canceled),
+			wantCode:    connectrpc.CodeCanceled,
+			wantMessage: "canceled",
+		},
+		{
+			name:        "expired deadline",
+			err:         fmt.Errorf("find tenant: %w", context.DeadlineExceeded),
+			wantCode:    connectrpc.CodeDeadlineExceeded,
+			wantMessage: "deadline exceeded",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			service := NewService(failingRelations{RelationUseCases: nil, err: tt.err})
+
+			_, err := service.AddTenantMember(context.Background(), &relationv1.AddTenantMemberRequest{TenantId: "0123456789abcdef", UserId: "user-1", TenantRole: relationv1.Role_ROLE_STAFF})
+
+			var connectErr *connectrpc.Error
+			if !errors.As(err, &connectErr) {
+				t.Fatalf("AddTenantMember() error = %v, want a Connect error", err)
+			}
+
+			if got := connectErr.Code(); got != tt.wantCode {
+				t.Errorf("Code() = %v, want %v", got, tt.wantCode)
+			}
+
+			if got := connectErr.Message(); got != tt.wantMessage {
+				t.Errorf("Message() = %q, want %q", got, tt.wantMessage)
+			}
+		})
+	}
 }

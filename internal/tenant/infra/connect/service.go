@@ -3,7 +3,6 @@ package connect
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 
@@ -21,19 +20,29 @@ import (
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
 
-// tenantContextErrorCode maps the tenant-context guard errors to Connect codes.
-// A mismatch between the requested tenant and the authenticated tenant is a
-// cross-tenant access attempt (permission denied); a missing context tenant on
-// a tenant-scoped call means the caller is not authenticated as any tenant.
-func tenantContextErrorCode(err error) (connectrpc.Code, bool) {
-	switch {
-	case errors.Is(err, tenantctx.ErrMismatch):
-		return connectrpc.CodePermissionDenied, true
-	case errors.Is(err, tenantctx.ErrMissing):
-		return connectrpc.CodeUnauthenticated, true
-	default:
-		return 0, false
-	}
+var clientErrors = infraconnect.ClientErrors{
+	{Target: application.ErrTenantNameRequired, Code: connectrpc.CodeInvalidArgument, Message: "name is required"},
+	{Target: application.ErrTenantContractPlanRequired, Code: connectrpc.CodeInvalidArgument, Message: "contract_plan is required"},
+	{Target: application.ErrTenantIDRequired, Code: connectrpc.CodeInvalidArgument, Message: "tenant_id is required"},
+	{Target: application.ErrOwnershipClaimTokenRequired, Code: connectrpc.CodeInvalidArgument, Message: "ownership_claim_token is required"},
+	{Target: application.ErrEventNameRequired, Code: connectrpc.CodeInvalidArgument, Message: "name is required"},
+	{Target: application.ErrEventIDRequired, Code: connectrpc.CodeInvalidArgument, Message: "event_id is required"},
+	{Target: application.ErrEventStatusRequired, Code: connectrpc.CodeInvalidArgument, Message: "to is required"},
+	{Target: repository.ErrTenantNameAlreadyExists, Code: connectrpc.CodeAlreadyExists, Message: "tenant name already exists"},
+	{Target: repository.ErrTenantPublicIDExists, Code: connectrpc.CodeAlreadyExists, Message: "generated tenant ID already exists; retry the request"},
+	{Target: repository.ErrEventPublicIDExists, Code: connectrpc.CodeAlreadyExists, Message: "generated event ID already exists; retry the request"},
+	{Target: repository.ErrTenantNotFound, Code: connectrpc.CodeNotFound, Message: "tenant not found"},
+	{Target: repository.ErrEventNotFound, Code: connectrpc.CodeNotFound, Message: "event not found"},
+	{Target: application.ErrTenantPendingOwner, Code: connectrpc.CodeFailedPrecondition, Message: "tenant is pending an owner"},
+	{Target: repository.ErrTenantArchived, Code: connectrpc.CodeFailedPrecondition, Message: "tenant is archived"},
+	{Target: domain.ErrTenantAlreadyArchived, Code: connectrpc.CodeFailedPrecondition, Message: "tenant is already archived"},
+	{Target: domain.ErrInvalidEventStatusTransition, Code: connectrpc.CodeFailedPrecondition, Message: "event status transition is not allowed"},
+	{Target: application.ErrPermissionDenied, Code: connectrpc.CodePermissionDenied, Message: "permission denied"},
+	{Target: tenantctx.ErrMismatch, Code: connectrpc.CodePermissionDenied, Message: "tenant does not match the token"},
+	{Target: application.ErrOwnershipClaimRejected, Code: connectrpc.CodeUnauthenticated, Message: "ownership claim rejected"},
+	{Target: tenantctx.ErrSubjectMissing, Code: connectrpc.CodeUnauthenticated, Message: "subject is missing from the token"},
+	{Target: tenantctx.ErrMissing, Code: connectrpc.CodeUnauthenticated, Message: "tenant ID is missing from the token"},
+	{Target: infradb.ErrTransactionAborted, Code: connectrpc.CodeAborted, Message: "transaction aborted; retry the request"},
 }
 
 // Mount returns the mount of TenantService for the process's handler. The
@@ -73,15 +82,7 @@ func (s *Service) StartTenantRegistration(ctx context.Context, req *tenantv1.Sta
 		ContractPlan: req.GetContractPlan(),
 	})
 	if err != nil {
-		if errors.Is(err, application.ErrTenantNameRequired) || errors.Is(err, application.ErrTenantContractPlanRequired) {
-			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err.Error()).WithCause(err)
-		}
-
-		if errors.Is(err, repository.ErrTenantNameAlreadyExists) || errors.Is(err, repository.ErrTenantPublicIDExists) {
-			return nil, connectrpc.NewError(connectrpc.CodeAlreadyExists, err.Error()).WithCause(err)
-		}
-
-		return nil, infraconnect.InternalError(ctx, err)
+		return nil, clientErrors.For(ctx, err)
 	}
 
 	// The plaintext claim token appears in this response only; it is never
@@ -99,58 +100,10 @@ func (s *Service) ClaimTenantOwnership(ctx context.Context, req *tenantv1.ClaimT
 		ClaimToken:     req.GetOwnershipClaimToken(),
 	})
 	if err != nil {
-		if errors.Is(err, application.ErrTenantIDRequired) || errors.Is(err, application.ErrOwnershipClaimTokenRequired) {
-			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err.Error()).WithCause(err)
-		}
-
-		if errors.Is(err, repository.ErrTenantNotFound) {
-			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err.Error()).WithCause(err)
-		}
-
-		if errors.Is(err, application.ErrOwnershipClaimRejected) || errors.Is(err, tenantctx.ErrSubjectMissing) {
-			return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, err.Error()).WithCause(err)
-		}
-
-		// The claim runs in a transaction; an aborted one can be retried.
-		if errors.Is(err, infradb.ErrTransactionAborted) {
-			return nil, connectrpc.NewError(connectrpc.CodeAborted, err.Error()).WithCause(err)
-		}
-
-		return nil, infraconnect.InternalError(ctx, err)
+		return nil, clientErrors.For(ctx, err)
 	}
 
 	return &tenantv1.ClaimTenantOwnershipResponse{Tenant: tenantProto(tenant)}, nil
-}
-
-// administrativeTenantWriteError maps the failures of the administrative
-// tenant writes (ChangeTenantContract, ArchiveTenant) to Connect codes. Both
-// re-check the caller's current membership, so a caller whose permission has
-// been revoked or downgraded is answered with permission_denied even though
-// the scope of its token still says otherwise.
-func administrativeTenantWriteError(ctx context.Context, err error) error {
-	switch {
-	case errors.Is(err, application.ErrTenantIDRequired), errors.Is(err, application.ErrTenantContractPlanRequired):
-		return connectrpc.NewError(connectrpc.CodeInvalidArgument, err.Error()).WithCause(err)
-	case errors.Is(err, repository.ErrTenantNotFound):
-		return connectrpc.NewError(connectrpc.CodeNotFound, err.Error()).WithCause(err)
-	case errors.Is(err, application.ErrTenantPendingOwner),
-		errors.Is(err, repository.ErrTenantArchived),
-		errors.Is(err, domain.ErrTenantAlreadyArchived):
-		return connectrpc.NewError(connectrpc.CodeFailedPrecondition, err.Error()).WithCause(err)
-	case errors.Is(err, application.ErrPermissionDenied):
-		return connectrpc.NewError(connectrpc.CodePermissionDenied, err.Error()).WithCause(err)
-	case errors.Is(err, tenantctx.ErrSubjectMissing):
-		return connectrpc.NewError(connectrpc.CodeUnauthenticated, err.Error()).WithCause(err)
-	// The write runs in a transaction; an aborted one can be retried.
-	case errors.Is(err, infradb.ErrTransactionAborted):
-		return connectrpc.NewError(connectrpc.CodeAborted, err.Error()).WithCause(err)
-	default:
-		if code, ok := tenantContextErrorCode(err); ok {
-			return connectrpc.NewError(code, err.Error()).WithCause(err)
-		}
-
-		return infraconnect.InternalError(ctx, err)
-	}
 }
 
 func (s *Service) ChangeTenantContract(ctx context.Context, req *tenantv1.ChangeTenantContractRequest) (*tenantv1.ChangeTenantContractResponse, error) {
@@ -159,7 +112,7 @@ func (s *Service) ChangeTenantContract(ctx context.Context, req *tenantv1.Change
 		ContractPlan:   req.GetContractPlan(),
 	})
 	if err != nil {
-		return nil, administrativeTenantWriteError(ctx, err)
+		return nil, clientErrors.For(ctx, err)
 	}
 
 	return &tenantv1.ChangeTenantContractResponse{Tenant: tenantProto(tenant)}, nil
@@ -168,7 +121,7 @@ func (s *Service) ChangeTenantContract(ctx context.Context, req *tenantv1.Change
 func (s *Service) ArchiveTenant(ctx context.Context, req *tenantv1.ArchiveTenantRequest) (*tenantv1.ArchiveTenantResponse, error) {
 	tenant, err := s.tenantService.ArchiveTenant(ctx, application.ArchiveTenantInput{TenantPublicID: req.GetTenantId()})
 	if err != nil {
-		return nil, administrativeTenantWriteError(ctx, err)
+		return nil, clientErrors.For(ctx, err)
 	}
 
 	return &tenantv1.ArchiveTenantResponse{Tenant: tenantProto(tenant)}, nil
@@ -180,28 +133,7 @@ func (s *Service) CreateEvent(ctx context.Context, req *tenantv1.CreateEventRequ
 		Name:           req.GetName(),
 	})
 	if err != nil {
-		if errors.Is(err, application.ErrEventNameRequired) || errors.Is(err, application.ErrTenantIDRequired) {
-			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err.Error()).WithCause(err)
-		}
-
-		// A public ID collision is a conflict, not an internal failure.
-		if errors.Is(err, repository.ErrEventPublicIDExists) {
-			return nil, connectrpc.NewError(connectrpc.CodeAlreadyExists, err.Error()).WithCause(err)
-		}
-
-		if errors.Is(err, repository.ErrTenantNotFound) {
-			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err.Error()).WithCause(err)
-		}
-
-		if errors.Is(err, repository.ErrTenantArchived) || errors.Is(err, application.ErrTenantPendingOwner) {
-			return nil, connectrpc.NewError(connectrpc.CodeFailedPrecondition, err.Error()).WithCause(err)
-		}
-
-		if code, ok := tenantContextErrorCode(err); ok {
-			return nil, connectrpc.NewError(code, err.Error()).WithCause(err)
-		}
-
-		return nil, infraconnect.InternalError(ctx, err)
+		return nil, clientErrors.For(ctx, err)
 	}
 
 	return &tenantv1.CreateEventResponse{Event: eventProto(event)}, nil
@@ -251,23 +183,7 @@ func (s *Service) TransitionEventStatus(ctx context.Context, req *tenantv1.Trans
 		To:            eventStatusDomain(req.GetTo()),
 	})
 	if err != nil {
-		if errors.Is(err, application.ErrEventIDRequired) || errors.Is(err, application.ErrEventStatusRequired) {
-			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err.Error()).WithCause(err)
-		}
-
-		if errors.Is(err, repository.ErrEventNotFound) {
-			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err.Error()).WithCause(err)
-		}
-
-		if errors.Is(err, domain.ErrInvalidEventStatusTransition) || errors.Is(err, repository.ErrTenantArchived) {
-			return nil, connectrpc.NewError(connectrpc.CodeFailedPrecondition, err.Error()).WithCause(err)
-		}
-
-		if code, ok := tenantContextErrorCode(err); ok {
-			return nil, connectrpc.NewError(code, err.Error()).WithCause(err)
-		}
-
-		return nil, infraconnect.InternalError(ctx, err)
+		return nil, clientErrors.For(ctx, err)
 	}
 
 	return &tenantv1.TransitionEventStatusResponse{Event: eventProto(event)}, nil
@@ -310,19 +226,7 @@ func eventProto(event domain.Event) *tenantv1.Event {
 func (s *Service) GetEvent(ctx context.Context, req *tenantv1.GetEventRequest) (*tenantv1.GetEventResponse, error) {
 	event, err := s.tenantService.GetEvent(ctx, req.GetEventId())
 	if err != nil {
-		if errors.Is(err, application.ErrEventIDRequired) {
-			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err.Error()).WithCause(err)
-		}
-
-		if errors.Is(err, repository.ErrEventNotFound) {
-			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err.Error()).WithCause(err)
-		}
-
-		if code, ok := tenantContextErrorCode(err); ok {
-			return nil, connectrpc.NewError(code, err.Error()).WithCause(err)
-		}
-
-		return nil, infraconnect.InternalError(ctx, err)
+		return nil, clientErrors.For(ctx, err)
 	}
 
 	return &tenantv1.GetEventResponse{Event: eventProto(event)}, nil
@@ -331,23 +235,7 @@ func (s *Service) GetEvent(ctx context.Context, req *tenantv1.GetEventRequest) (
 func (s *Service) ListEvents(ctx context.Context, req *tenantv1.ListEventsRequest) (*tenantv1.ListEventsResponse, error) {
 	events, err := s.tenantService.ListEvents(ctx, req.GetTenantId(), req.GetIncludeArchived())
 	if err != nil {
-		if errors.Is(err, application.ErrTenantIDRequired) {
-			return nil, connectrpc.NewError(connectrpc.CodeInvalidArgument, err.Error()).WithCause(err)
-		}
-
-		if errors.Is(err, repository.ErrTenantNotFound) {
-			return nil, connectrpc.NewError(connectrpc.CodeNotFound, err.Error()).WithCause(err)
-		}
-
-		if errors.Is(err, application.ErrTenantPendingOwner) {
-			return nil, connectrpc.NewError(connectrpc.CodeFailedPrecondition, err.Error()).WithCause(err)
-		}
-
-		if code, ok := tenantContextErrorCode(err); ok {
-			return nil, connectrpc.NewError(code, err.Error()).WithCause(err)
-		}
-
-		return nil, infraconnect.InternalError(ctx, err)
+		return nil, clientErrors.For(ctx, err)
 	}
 
 	responseEvents := make([]*tenantv1.Event, 0, len(events))

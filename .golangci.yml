@@ -30,6 +30,8 @@ linters:
                 # cause is logged server-side and never reaches the client.
                 - pattern: '^connectrpc\.CodeInternal$'
                   msg: "build internal errors with InternalError(ctx, err) instead of connectrpc.CodeInternal"
+                - pattern: '^connectrpc\.NewError$'
+                  msg: "answer errors through an infraconnect.ClientErrors table or InternalError(ctx, err) instead of connectrpc.NewError"
                 # Logging goes through log/slog, so that every record comes out
                 # in the structure Cloud Logging parses and carries the trace of
                 # its request context.
@@ -53,6 +55,10 @@ linters:
             branch-max-lines: 2
     exclusions:
         rules:
+            - path: internal/infra/connect/error\.go
+              linters:
+                  - forbidigo
+              text: NewError
             # The one transport whose callers carry no internal JWT, and
             # therefore the one place allowed to bind the tenant itself.
             - path: internal/relation/infra/httpapi/handler\.go

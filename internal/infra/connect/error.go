@@ -24,14 +24,32 @@ var errInternal = errors.New("internal error")
 // all answer an internal failure the same way.
 func InternalError(ctx context.Context, err error) *connectrpc.Error {
 	if errors.Is(err, context.Canceled) {
-		return connectrpc.NewError(connectrpc.CodeCanceled, err.Error()).WithCause(err)
+		return connectrpc.NewError(connectrpc.CodeCanceled, "canceled").WithCause(err)
 	}
 
 	if errors.Is(err, context.DeadlineExceeded) {
-		return connectrpc.NewError(connectrpc.CodeDeadlineExceeded, err.Error()).WithCause(err)
+		return connectrpc.NewError(connectrpc.CodeDeadlineExceeded, "deadline exceeded").WithCause(err)
 	}
 
 	slog.ErrorContext(ctx, "internal error", "error", err)
 
 	return connectrpc.NewError(connectrpc.CodeInternal, errInternal.Error()).WithCause(errInternal) //nolint:forbidigo // the one place that builds internal errors
+}
+
+type ClientError struct {
+	Target  error
+	Code    connectrpc.Code
+	Message string
+}
+
+type ClientErrors []ClientError
+
+func (c ClientErrors) For(ctx context.Context, err error) *connectrpc.Error {
+	for _, clientError := range c {
+		if errors.Is(err, clientError.Target) {
+			return connectrpc.NewError(clientError.Code, clientError.Message).WithCause(err)
+		}
+	}
+
+	return InternalError(ctx, err)
 }
