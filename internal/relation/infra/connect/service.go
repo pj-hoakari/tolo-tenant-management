@@ -3,7 +3,6 @@ package connect
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 
@@ -59,7 +58,7 @@ func (s *Service) AddTenantMember(ctx context.Context, req *relationv1.AddTenant
 		Role:           roleDomain(req.GetTenantRole()),
 	})
 	if err != nil {
-		return nil, connectError(ctx, err)
+		return nil, clientErrors.For(ctx, err)
 	}
 
 	return &relationv1.AddTenantMemberResponse{Membership: membershipProto(membership)}, nil
@@ -72,7 +71,7 @@ func (s *Service) ChangeTenantRole(ctx context.Context, req *relationv1.ChangeTe
 		Role:           roleDomain(req.GetTenantRole()),
 	})
 	if err != nil {
-		return nil, connectError(ctx, err)
+		return nil, clientErrors.For(ctx, err)
 	}
 
 	return &relationv1.ChangeTenantRoleResponse{Membership: membershipProto(membership)}, nil
@@ -85,7 +84,7 @@ func (s *Service) GrantEventRole(ctx context.Context, req *relationv1.GrantEvent
 		Role:          roleDomain(req.GetRole()),
 	})
 	if err != nil {
-		return nil, connectError(ctx, err)
+		return nil, clientErrors.For(ctx, err)
 	}
 
 	return &relationv1.GrantEventRoleResponse{Membership: membershipProto(membership)}, nil
@@ -98,7 +97,7 @@ func (s *Service) RevokeRole(ctx context.Context, req *relationv1.RevokeRoleRequ
 		EventPublicID:  req.GetEventId(),
 	})
 	if err != nil {
-		return nil, connectError(ctx, err)
+		return nil, clientErrors.For(ctx, err)
 	}
 
 	return &relationv1.RevokeRoleResponse{}, nil
@@ -110,7 +109,7 @@ func (s *Service) ListMemberships(ctx context.Context, req *relationv1.ListMembe
 		UserID:         req.GetUserId(),
 	})
 	if err != nil {
-		return nil, connectError(ctx, err)
+		return nil, clientErrors.For(ctx, err)
 	}
 
 	response := make([]*relationv1.Membership, 0, len(memberships))
@@ -121,51 +120,32 @@ func (s *Service) ListMemberships(ctx context.Context, req *relationv1.ListMembe
 	return &relationv1.ListMembershipsResponse{Memberships: response}, nil
 }
 
-// connectError maps use case and repository errors to Connect codes
-// (tenant_management_spec.md「エラー」). Missing identifiers and the reserved
-// role are invalid arguments; unknown tenants, events, and memberships are not
-// found; relation model violations and frozen (archived / pending) targets are
-// failed preconditions. A caller whose current membership no longer permits
-// the write is denied, and one without a subject is unauthenticated. A
-// transaction PostgreSQL aborted is reported as aborted, which tells the
-// client the call can be retried as it stands. Anything else is an internal
-// failure, reported without its detail (infraconnect.InternalError).
-func connectError(ctx context.Context, err error) error {
-	switch {
-	case errors.Is(err, application.ErrTenantIDRequired),
-		errors.Is(err, application.ErrEventIDRequired),
-		errors.Is(err, application.ErrUserIDRequired),
-		errors.Is(err, application.ErrScopeRequired),
-		errors.Is(err, application.ErrScopeAmbiguous),
-		errors.Is(err, application.ErrFilterRequired),
-		errors.Is(err, application.ErrFilterAmbiguous),
-		errors.Is(err, domain.ErrRoleRequired),
-		errors.Is(err, domain.ErrRoleReserved):
-		return connectrpc.NewError(connectrpc.CodeInvalidArgument, err.Error()).WithCause(err)
-	case errors.Is(err, tenantrepository.ErrTenantNotFound),
-		errors.Is(err, tenantrepository.ErrEventNotFound),
-		errors.Is(err, repository.ErrTenantNotFound),
-		errors.Is(err, repository.ErrEventNotFound),
-		errors.Is(err, repository.ErrMembershipNotFound),
-		errors.Is(err, repository.ErrEventRoleNotFound):
-		return connectrpc.NewError(connectrpc.CodeNotFound, err.Error()).WithCause(err)
-	case errors.Is(err, tenantrepository.ErrTenantArchived),
-		errors.Is(err, tenantrepository.ErrEventArchived),
-		errors.Is(err, application.ErrTenantPendingOwner),
-		errors.Is(err, repository.ErrMembershipAlreadyExists),
-		errors.Is(err, repository.ErrTenantMembershipRequired):
-		return connectrpc.NewError(connectrpc.CodeFailedPrecondition, err.Error()).WithCause(err)
-	case errors.Is(err, tenantctx.ErrMismatch),
-		errors.Is(err, application.ErrPermissionDenied):
-		return connectrpc.NewError(connectrpc.CodePermissionDenied, err.Error()).WithCause(err)
-	case errors.Is(err, tenantctx.ErrMissing),
-		errors.Is(err, tenantctx.ErrSubjectMissing):
-		return connectrpc.NewError(connectrpc.CodeUnauthenticated, err.Error()).WithCause(err)
-	case errors.Is(err, infradb.ErrTransactionAborted):
-		return connectrpc.NewError(connectrpc.CodeAborted, err.Error()).WithCause(err)
-	default:
-		return infraconnect.InternalError(ctx, err)
-	}
+var clientErrors = infraconnect.ClientErrors{
+	{Target: application.ErrTenantIDRequired, Code: connectrpc.CodeInvalidArgument, Message: "tenant_id is required"},
+	{Target: application.ErrEventIDRequired, Code: connectrpc.CodeInvalidArgument, Message: "event_id is required"},
+	{Target: application.ErrUserIDRequired, Code: connectrpc.CodeInvalidArgument, Message: "user_id is required"},
+	{Target: application.ErrScopeRequired, Code: connectrpc.CodeInvalidArgument, Message: "scope is required"},
+	{Target: application.ErrScopeAmbiguous, Code: connectrpc.CodeInvalidArgument, Message: "scope must name either a tenant or an event"},
+	{Target: application.ErrFilterRequired, Code: connectrpc.CodeInvalidArgument, Message: "filter is required"},
+	{Target: application.ErrFilterAmbiguous, Code: connectrpc.CodeInvalidArgument, Message: "filter must name either a tenant or a user"},
+	{Target: domain.ErrRoleRequired, Code: connectrpc.CodeInvalidArgument, Message: "role is required"},
+	{Target: domain.ErrRoleReserved, Code: connectrpc.CodeInvalidArgument, Message: "role is reserved and cannot be granted"},
+	{Target: tenantrepository.ErrTenantNotFound, Code: connectrpc.CodeNotFound, Message: "tenant not found"},
+	{Target: tenantrepository.ErrEventNotFound, Code: connectrpc.CodeNotFound, Message: "event not found"},
+	{Target: repository.ErrTenantNotFound, Code: connectrpc.CodeNotFound, Message: "tenant not found"},
+	{Target: repository.ErrEventNotFound, Code: connectrpc.CodeNotFound, Message: "event not found"},
+	{Target: repository.ErrMembershipNotFound, Code: connectrpc.CodeNotFound, Message: "membership not found"},
+	{Target: repository.ErrEventRoleNotFound, Code: connectrpc.CodeNotFound, Message: "event role not found"},
+	{Target: tenantrepository.ErrTenantArchived, Code: connectrpc.CodeFailedPrecondition, Message: "tenant is archived"},
+	{Target: tenantrepository.ErrEventArchived, Code: connectrpc.CodeFailedPrecondition, Message: "event is archived"},
+	{Target: application.ErrTenantPendingOwner, Code: connectrpc.CodeFailedPrecondition, Message: "tenant is pending an owner"},
+	{Target: repository.ErrMembershipAlreadyExists, Code: connectrpc.CodeFailedPrecondition, Message: "membership already exists"},
+	{Target: repository.ErrTenantMembershipRequired, Code: connectrpc.CodeFailedPrecondition, Message: "event role requires membership of the event's tenant"},
+	{Target: tenantctx.ErrMismatch, Code: connectrpc.CodePermissionDenied, Message: "tenant does not match the token"},
+	{Target: application.ErrPermissionDenied, Code: connectrpc.CodePermissionDenied, Message: "permission denied"},
+	{Target: tenantctx.ErrMissing, Code: connectrpc.CodeUnauthenticated, Message: "tenant ID is missing from the token"},
+	{Target: tenantctx.ErrSubjectMissing, Code: connectrpc.CodeUnauthenticated, Message: "subject is missing from the token"},
+	{Target: infradb.ErrTransactionAborted, Code: connectrpc.CodeAborted, Message: "transaction aborted; retry the request"},
 }
 
 func membershipProto(membership domain.Membership) *relationv1.Membership {
