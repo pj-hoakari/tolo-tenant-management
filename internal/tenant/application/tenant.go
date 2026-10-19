@@ -31,7 +31,7 @@ var (
 )
 
 // DefaultOwnershipClaimTTL is how long a pending_owner tenant waits for
-// ClaimTenantOwnership before it expires and its name is released.
+// ClaimTenantOwnership before it expires.
 const DefaultOwnershipClaimTTL = time.Hour
 
 // StartTenantRegistrationInput contains the values accepted by the
@@ -179,8 +179,7 @@ func NewTenantService(tenantRepository repository.TenantRepository, transactor r
 }
 
 // StartTenantRegistration creates a pending_owner tenant and hands out the
-// one-time claim token. Expired pending tenants are swept first, so a name
-// held by an abandoned registration becomes available again.
+// one-time claim token. Expired pending tenants are swept first.
 func (s *TenantService) StartTenantRegistration(ctx context.Context, input StartTenantRegistrationInput) (TenantRegistration, error) {
 	if input.Name == "" {
 		return TenantRegistration{}, ErrTenantNameRequired

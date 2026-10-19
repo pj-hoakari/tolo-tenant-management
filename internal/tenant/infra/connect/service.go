@@ -28,7 +28,6 @@ var clientErrors = infraconnect.ClientErrors{
 	{Target: application.ErrEventNameRequired, Code: connectrpc.CodeInvalidArgument, Message: "name is required"},
 	{Target: application.ErrEventIDRequired, Code: connectrpc.CodeInvalidArgument, Message: "event_id is required"},
 	{Target: application.ErrEventStatusRequired, Code: connectrpc.CodeInvalidArgument, Message: "to is required"},
-	{Target: repository.ErrTenantNameAlreadyExists, Code: connectrpc.CodeAlreadyExists, Message: "tenant name already exists"},
 	{Target: repository.ErrTenantPublicIDExists, Code: connectrpc.CodeAlreadyExists, Message: "generated tenant ID already exists; retry the request"},
 	{Target: repository.ErrEventPublicIDExists, Code: connectrpc.CodeAlreadyExists, Message: "generated event ID already exists; retry the request"},
 	{Target: repository.ErrTenantNotFound, Code: connectrpc.CodeNotFound, Message: "tenant not found"},

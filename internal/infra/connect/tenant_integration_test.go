@@ -50,10 +50,10 @@ func TestStartTenantRegistrationOverTransport(t *testing.T) {
 		t.Errorf("ExpiresAt = %v, want %v", got, want)
 	}
 
-	t.Run("rejects duplicate names while the registration is pending", func(t *testing.T) {
-		_, err := p.tenantClient.StartTenantRegistration(context.Background(), &tenantv1.StartTenantRegistrationRequest{Name: "Acme", ContractPlan: "standard"})
-		if got, want := connectrpc.CodeOf(err), connectrpc.CodeAlreadyExists; got != want {
-			t.Fatalf("StartTenantRegistration() error code = %v, want %v", got, want)
+	t.Run("accepts a name another tenant already has", func(t *testing.T) {
+		namesake := p.startRegistration(t, "Acme").GetTenant()
+		if namesake.GetTenantId() == tenant.GetTenantId() {
+			t.Fatalf("second registration of %q returned the first tenant %q", namesake.GetName(), tenant.GetTenantId())
 		}
 	})
 
@@ -82,14 +82,13 @@ func TestPendingOwnerTenantRejectsTenantScopedCalls(t *testing.T) {
 	}
 }
 
-func TestStartTenantRegistrationOverTransportReleasesExpiredNames(t *testing.T) {
+func TestStartTenantRegistrationOverTransportDeletesExpiredRegistrations(t *testing.T) {
 	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
 	p := newProcess(t, application.WithClock(func() time.Time { return now }), application.WithOwnershipClaimTTL(time.Hour))
 
 	first := p.startRegistration(t, "Acme")
 
-	// Once the first registration expires, the next registration sweeps it
-	// and the name is free again.
+	// Once the first registration expires, the next registration sweeps it.
 	now = now.Add(2 * time.Hour)
 
 	second := p.startRegistration(t, "Acme")

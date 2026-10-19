@@ -136,7 +136,7 @@ func (EventStatus) EnumDescriptor() ([]byte, []int) {
 type Tenant struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	TenantId       string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`             // public ID (random 16-character hex)
-	Name           string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`                                     // unique
+	Name           string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`                                     // display only; duplicates are allowed
 	ContractPlan   string                 `protobuf:"bytes,3,opt,name=contract_plan,json=contractPlan,proto3" json:"contract_plan,omitempty"` // identifier only; billing details are out of scope
 	Archived       bool                   `protobuf:"varint,4,opt,name=archived,proto3" json:"archived,omitempty"`
 	OwnershipState TenantOwnershipState   `protobuf:"varint,5,opt,name=ownership_state,json=ownershipState,proto3,enum=tolo.tenant.v1.TenantOwnershipState" json:"ownership_state,omitempty"`

@@ -88,9 +88,9 @@ func (t Tenant) ChangeContractPlan(plan string) Tenant {
 }
 
 // Archive returns a copy of the tenant marked as archived. Archiving is a soft
-// delete: the tenant keeps its identifier, its name (which is never released),
-// its events and its memberships, and only refuses further writes. A tenant
-// that is already archived cannot be archived again.
+// delete: the tenant keeps its identifier, its name, its events and its
+// memberships, and only refuses further writes. A tenant that is already
+// archived cannot be archived again.
 func (t Tenant) Archive() (Tenant, error) {
 	if t.archived {
 		return Tenant{}, ErrTenantAlreadyArchived

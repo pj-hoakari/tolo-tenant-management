@@ -72,7 +72,7 @@ service TenantService {
 // Tenant is the customer-organization, billing, and onboarding boundary.
 message Tenant {
   string tenant_id = 1;      // public ID (random 16-character hex)
-  string name = 2;           // unique
+  string name = 2;           // display only; duplicates are allowed
   string contract_plan = 3;  // identifier only; billing details are out of scope
   bool archived = 4;
   TenantOwnershipState ownership_state = 5;

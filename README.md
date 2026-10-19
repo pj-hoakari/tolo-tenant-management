@@ -226,14 +226,15 @@ proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16
 3. 以降は `tenantId` 指定で再認可した `tenant_access` でテナント配下を操作する。
 
 `pending_owner` のテナントは `ClaimTenantOwnership` 以外のテナント配下の RPC（`CreateEvent`、`ListEvents` など）を `failed_precondition` で拒否する。
-期限切れの `pending_owner` は次の `StartTenantRegistration` の際に物理削除し、その名前を解放する。
+期限切れの `pending_owner` は次の `StartTenantRegistration` の際に物理削除する。
+テナント名は表示用で、重複を許す。
 トークンの不正、期限切れ、使用済みはいずれも `unauthenticated` で、理由は区別しない。
 
 ### 契約変更とアーカイブ
 
 `ChangeTenantContract` と `ArchiveTenant` はいずれも `tenant_access` の内部 JWT と scope `tenant.write` を要求する。
 `ChangeTenantContract` は契約プランを変更し、`contract_plan` の欠落は `invalid_argument` で拒否する。
-`ArchiveTenant` は論理削除で、テナントは識別子と名前（名前は解放しない）、イベント（状態は変えない）、所属をそのまま保持する。
+`ArchiveTenant` は論理削除で、テナントは識別子と名前、イベント（状態は変えない）、所属をそのまま保持する。
 アーカイブ後はそのテナント配下の書き込み RPC を `failed_precondition` で拒否し、参照（`GetEvent`、`ListEvents`、`ListMemberships`）はそのまま利用できる。
 
 どちらの RPC も、JWT の scope 検証に加えて呼び出し元の現在権限を確認する（「管理系書き込みの現在権限確認」）。

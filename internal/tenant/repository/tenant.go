@@ -10,13 +10,12 @@ import (
 )
 
 var (
-	ErrTenantNameAlreadyExists = errors.New("tenant name already exists")
-	ErrTenantNotFound          = errors.New("tenant not found")
-	ErrTenantArchived          = errors.New("tenant is archived")
-	ErrTenantPublicIDExists    = errors.New("tenant public ID already exists")
-	ErrEventNotFound           = errors.New("event not found")
-	ErrEventArchived           = errors.New("event is archived")
-	ErrEventPublicIDExists     = errors.New("event public ID already exists")
+	ErrTenantNotFound       = errors.New("tenant not found")
+	ErrTenantArchived       = errors.New("tenant is archived")
+	ErrTenantPublicIDExists = errors.New("tenant public ID already exists")
+	ErrEventNotFound        = errors.New("event not found")
+	ErrEventArchived        = errors.New("event is archived")
+	ErrEventPublicIDExists  = errors.New("event public ID already exists")
 )
 
 // Transactor runs a unit of work inside one database transaction. The
@@ -53,7 +52,7 @@ type TenantRepository interface {
 	// and expiry of its one-time ownership claim token.
 	CreatePendingTenant(context.Context, domain.Tenant, domain.OwnershipClaim) error
 	// DeleteExpiredPendingTenants physically removes pending_owner tenants
-	// whose claim expired before now, releasing their names.
+	// whose claim expired before now.
 	DeleteExpiredPendingTenants(context.Context, time.Time) (int64, error)
 	// FindTenantByPublicIDForUpdate loads a tenant and its pending ownership
 	// claim (zero for an owned tenant), locking the row for the rest of the

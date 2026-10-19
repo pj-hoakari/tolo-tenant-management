@@ -213,8 +213,6 @@ func mapTenantConstraintError(err error) error {
 	}
 
 	switch pgErr.ConstraintName {
-	case "tenants_name_key":
-		return repository.ErrTenantNameAlreadyExists
 	case "tenants_public_id_key":
 		return repository.ErrTenantPublicIDExists
 	default:

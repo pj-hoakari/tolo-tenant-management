@@ -116,16 +116,32 @@ func TestPostgresTenantRepositoryTenantErrors(t *testing.T) {
 		t.Fatalf("CreateTenant() error = %v", err)
 	}
 
-	if err := repository.CreateTenant(ctx, newTenant("00000000-0000-0000-0000-000000000002", "tenant-002", tenant.Name(), false)); !errors.Is(err, repositorypkg.ErrTenantNameAlreadyExists) {
-		t.Errorf("duplicate name error = %v, want %v", err, repositorypkg.ErrTenantNameAlreadyExists)
-	}
-
 	if err := repository.CreateTenant(ctx, newTenant("00000000-0000-0000-0000-000000000003", tenant.PublicID(), "Globex", false)); !errors.Is(err, repositorypkg.ErrTenantPublicIDExists) {
 		t.Errorf("duplicate public ID error = %v, want %v", err, repositorypkg.ErrTenantPublicIDExists)
 	}
 
 	if _, err := repository.FindTenantByID(ctx, "00000000-0000-0000-0000-000000000099"); !errors.Is(err, repositorypkg.ErrTenantNotFound) {
 		t.Errorf("FindTenantByID() error = %v, want %v", err, repositorypkg.ErrTenantNotFound)
+	}
+}
+
+func TestPostgresTenantRepositoryTenantsMayShareAName(t *testing.T) {
+	repository := newTestRepository(t)
+	ctx := context.Background()
+
+	first := newTenant("00000000-0000-0000-0000-000000000001", "tenant-001", "Acme", false)
+	second := newTenant("00000000-0000-0000-0000-000000000002", "tenant-002", "Acme", false)
+
+	for _, tenant := range []domain.Tenant{first, second} {
+		if err := repository.CreateTenant(ctx, tenant); err != nil {
+			t.Fatalf("CreateTenant(%q) error = %v", tenant.PublicID(), err)
+		}
+	}
+
+	for _, tenant := range []domain.Tenant{first, second} {
+		if got, err := repository.FindTenantByPublicID(ctx, tenant.PublicID()); err != nil || got != tenant {
+			t.Errorf("FindTenantByPublicID(%q) = %#v, %v, want %#v", tenant.PublicID(), got, err, tenant)
+		}
 	}
 }
 
