@@ -21,9 +21,9 @@ import (
 )
 
 var (
-	ownedTenant    = tenantdomain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", tenantdomain.TenantOwnershipStateOwned, false)
-	pendingTenant  = tenantdomain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", tenantdomain.TenantOwnershipStatePendingOwner, false)
-	archivedTenant = tenantdomain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", tenantdomain.TenantOwnershipStateOwned, true)
+	ownedTenant    = tenantdomain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", tenantdomain.TenantOwnershipStateOwned, tenantdomain.Subdomain{}, false)
+	pendingTenant  = tenantdomain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", tenantdomain.TenantOwnershipStatePendingOwner, tenantdomain.Subdomain{}, false)
+	archivedTenant = tenantdomain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", tenantdomain.TenantOwnershipStateOwned, tenantdomain.Subdomain{}, true)
 	draftEvent     = tenantdomain.NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", tenantdomain.EventStatusDraft)
 	archivedEvent  = tenantdomain.NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", tenantdomain.EventStatusArchived)
 )

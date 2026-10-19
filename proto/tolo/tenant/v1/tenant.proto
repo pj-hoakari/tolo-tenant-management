@@ -27,6 +27,9 @@ service TenantService {
       token_uses: "registration"
     };
   }
+  rpc ResolveTenantSubdomain(ResolveTenantSubdomainRequest) returns (ResolveTenantSubdomainResponse) {
+    option (authz.v1.auth_policy) = { level: AUTH_LEVEL_PUBLIC };
+  }
   rpc ChangeTenantContract(ChangeTenantContractRequest) returns (ChangeTenantContractResponse) {
     option (authz.v1.auth_policy) = {
       level: AUTH_LEVEL_AUTHENTICATED
@@ -72,10 +75,11 @@ service TenantService {
 // Tenant is the customer-organization, billing, and onboarding boundary.
 message Tenant {
   string tenant_id = 1;      // public ID (random 16-character hex)
-  string name = 2;           // unique
+  string name = 2;           // display only; duplicates are allowed
   string contract_plan = 3;  // identifier only; billing details are out of scope
   bool archived = 4;
   TenantOwnershipState ownership_state = 5;
+  string subdomain = 6;
 }
 
 enum TenantOwnershipState {
@@ -119,8 +123,12 @@ message StartTenantRegistrationResponse {
 message ClaimTenantOwnershipRequest {
   string tenant_id = 1;
   string ownership_claim_token = 2;
+  string subdomain = 3;
 }
 message ClaimTenantOwnershipResponse { Tenant tenant = 1; }
+
+message ResolveTenantSubdomainRequest { string subdomain = 1; }
+message ResolveTenantSubdomainResponse { string tenant_id = 1; }
 
 message ChangeTenantContractRequest {
   string tenant_id = 1;

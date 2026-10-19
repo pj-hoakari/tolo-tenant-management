@@ -145,7 +145,7 @@ func TestGetEvent(t *testing.T) {
 func TestListEvents(t *testing.T) {
 	t.Parallel()
 
-	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, false)
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, domain.Subdomain{}, false)
 	events := []domain.Event{
 		domain.NewEvent("event-1", "event-public-id-1", tenant.ID(), tenant.PublicID(), "Festival 1", domain.EventStatusDraft),
 		domain.NewEvent("event-2", "event-public-id-2", tenant.ID(), tenant.PublicID(), "Festival 2", domain.EventStatusDraft),
@@ -193,7 +193,7 @@ func TestListEvents(t *testing.T) {
 func TestCreateEventPublicIDCollision(t *testing.T) {
 	t.Parallel()
 
-	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, false)
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, domain.Subdomain{}, false)
 
 	ctrl := gomock.NewController(t)
 	repo := NewMockTenantRepository(ctrl)
@@ -287,7 +287,7 @@ func TestCanceledRequestIsNotLogged(t *testing.T) {
 func newFailingService(t *testing.T, err error) (*Service, domain.Tenant) {
 	t.Helper()
 
-	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, false)
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, domain.Subdomain{}, false)
 
 	repo := NewMockTenantRepository(gomock.NewController(t))
 	repo.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(domain.Tenant{}, err)
@@ -359,7 +359,7 @@ func withSampledSpan(t *testing.T, ctx context.Context) context.Context {
 func newReadService(t *testing.T) (*Service, domain.Tenant, []domain.Event) {
 	t.Helper()
 
-	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, false)
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, domain.Subdomain{}, false)
 	events := []domain.Event{
 		domain.NewEvent("event-1", "event-public-id-1", tenant.ID(), tenant.PublicID(), "Festival 1", domain.EventStatusDraft),
 		domain.NewEvent("event-2", "event-public-id-2", tenant.ID(), tenant.PublicID(), "Festival 2", domain.EventStatusDraft),
@@ -382,13 +382,14 @@ func newReadService(t *testing.T) (*Service, domain.Tenant, []domain.Event) {
 func TestEveryHandlerHidesInternalErrorDetail(t *testing.T) {
 	logs := captureLog(t)
 	errDetail := errors.New("secret detail")
-	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, false)
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, domain.Subdomain{}, false)
 
 	repo := NewMockTenantRepository(gomock.NewController(t))
 	repo.EXPECT().FindTenantByPublicID(gomock.Any(), gomock.Any()).Return(domain.Tenant{}, errDetail).AnyTimes()
 	repo.EXPECT().FindTenantByPublicIDForUpdate(gomock.Any(), gomock.Any()).Return(domain.Tenant{}, domain.OwnershipClaim{}, errDetail).AnyTimes()
 	repo.EXPECT().FindEventByPublicID(gomock.Any(), gomock.Any()).Return(domain.Event{}, errDetail).AnyTimes()
 	repo.EXPECT().DeleteExpiredPendingTenants(gomock.Any(), gomock.Any()).Return(int64(0), errDetail).AnyTimes()
+	repo.EXPECT().FindTenantPublicIDBySubdomain(gomock.Any(), gomock.Any()).Return("", errDetail).AnyTimes()
 	service := NewService(application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{}, permissionStub{allowed: true}))
 
 	ctx := internaljwt.ContextWithClaims(context.Background(), internaljwt.Claims{TenantPublicID: tenant.PublicID(), RegisteredClaims: jwt.RegisteredClaims{Subject: "user-1"}})
@@ -401,7 +402,12 @@ func TestEveryHandlerHidesInternalErrorDetail(t *testing.T) {
 			return err
 		},
 		"ClaimTenantOwnership": func() error {
-			_, err := service.ClaimTenantOwnership(ctx, &tenantv1.ClaimTenantOwnershipRequest{TenantId: tenant.PublicID(), OwnershipClaimToken: "token"})
+			_, err := service.ClaimTenantOwnership(ctx, &tenantv1.ClaimTenantOwnershipRequest{TenantId: tenant.PublicID(), OwnershipClaimToken: "token", Subdomain: "acme"})
+
+			return err
+		},
+		"ResolveTenantSubdomain": func() error {
+			_, err := service.ResolveTenantSubdomain(ctx, &tenantv1.ResolveTenantSubdomainRequest{Subdomain: "acme"})
 
 			return err
 		},
@@ -460,7 +466,7 @@ func TestEveryHandlerHidesInternalErrorDetail(t *testing.T) {
 func TestErrorMessageOmitsTheErrorChain(t *testing.T) {
 	t.Parallel()
 
-	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStatePendingOwner, false)
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStatePendingOwner, domain.Subdomain{}, false)
 	ctx := internaljwt.ContextWithClaims(context.Background(), internaljwt.Claims{TenantPublicID: tenant.PublicID(), RegisteredClaims: jwt.RegisteredClaims{Subject: "user-1"}})
 
 	listEvents := func(service *Service) error {
@@ -492,7 +498,7 @@ func TestErrorMessageOmitsTheErrorChain(t *testing.T) {
 				repo.EXPECT().FindTenantByPublicIDForUpdate(gomock.Any(), tenant.PublicID()).Return(domain.Tenant{}, domain.OwnershipClaim{}, fmt.Errorf("lock tenant: %w", errors.Join(dbErr, infradb.ErrTransactionAborted)))
 			},
 			call: func(service *Service) error {
-				_, err := service.ClaimTenantOwnership(ctx, &tenantv1.ClaimTenantOwnershipRequest{TenantId: tenant.PublicID(), OwnershipClaimToken: "token"})
+				_, err := service.ClaimTenantOwnership(ctx, &tenantv1.ClaimTenantOwnershipRequest{TenantId: tenant.PublicID(), OwnershipClaimToken: "token", Subdomain: "acme"})
 
 				return err
 			},

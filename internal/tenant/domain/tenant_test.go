@@ -8,7 +8,7 @@ import (
 func TestNewTenant(t *testing.T) {
 	t.Parallel()
 
-	tenant := NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", TenantOwnershipStateOwned, false)
+	tenant := NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", TenantOwnershipStateOwned, Subdomain{}, false)
 
 	if got, want := tenant.ID(), "tenant-id"; got != want {
 		t.Errorf("ID() = %q, want %q", got, want)
@@ -42,12 +42,21 @@ func TestNewTenant(t *testing.T) {
 func TestTenantClaimOwnership(t *testing.T) {
 	t.Parallel()
 
-	pending := NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", TenantOwnershipStatePendingOwner, false)
+	pending := NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", TenantOwnershipStatePendingOwner, Subdomain{}, false)
 	if pending.Owned() {
 		t.Error("Owned() = true for pending_owner, want false")
 	}
 
-	owned, err := pending.ClaimOwnership()
+	if got := pending.Subdomain().String(); got != "" {
+		t.Errorf("Subdomain() of pending_owner = %q, want none", got)
+	}
+
+	subdomain, err := ParseSubdomain("acme")
+	if err != nil {
+		t.Fatalf("ParseSubdomain() error = %v", err)
+	}
+
+	owned, err := pending.ClaimOwnership(subdomain)
 	if err != nil {
 		t.Fatalf("ClaimOwnership() error = %v", err)
 	}
@@ -56,7 +65,11 @@ func TestTenantClaimOwnership(t *testing.T) {
 		t.Errorf("OwnershipState() after claim = %v, want %v", got, want)
 	}
 
-	if _, err := owned.ClaimOwnership(); !errors.Is(err, ErrTenantNotPendingOwner) {
+	if got, want := owned.Subdomain(), subdomain; got != want {
+		t.Errorf("Subdomain() after claim = %q, want %q", got, want)
+	}
+
+	if _, err := owned.ClaimOwnership(subdomain); !errors.Is(err, ErrTenantNotPendingOwner) {
 		t.Errorf("second ClaimOwnership() error = %v, want %v", err, ErrTenantNotPendingOwner)
 	}
 }
@@ -79,7 +92,7 @@ func TestParseTenantOwnershipState(t *testing.T) {
 func TestTenantChangeContractPlan(t *testing.T) {
 	t.Parallel()
 
-	tenant := NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", TenantOwnershipStateOwned, false)
+	tenant := NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", TenantOwnershipStateOwned, Subdomain{}, false)
 
 	changed := tenant.ChangeContractPlan("enterprise")
 	if got, want := changed.ContractPlan(), "enterprise"; got != want {
@@ -92,7 +105,7 @@ func TestTenantChangeContractPlan(t *testing.T) {
 		t.Errorf("ContractPlan() of the original = %q, want %q", got, want)
 	}
 
-	if got, want := changed, NewTenant(tenant.ID(), tenant.PublicID(), tenant.Name(), "enterprise", tenant.OwnershipState(), tenant.Archived()); got != want {
+	if got, want := changed, NewTenant(tenant.ID(), tenant.PublicID(), tenant.Name(), "enterprise", tenant.OwnershipState(), tenant.Subdomain(), tenant.Archived()); got != want {
 		t.Errorf("changed tenant = %#v, want %#v", got, want)
 	}
 }
@@ -100,7 +113,7 @@ func TestTenantChangeContractPlan(t *testing.T) {
 func TestTenantArchive(t *testing.T) {
 	t.Parallel()
 
-	tenant := NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", TenantOwnershipStateOwned, false)
+	tenant := NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", TenantOwnershipStateOwned, Subdomain{}, false)
 
 	archived, err := tenant.Archive()
 	if err != nil {
@@ -116,7 +129,7 @@ func TestTenantArchive(t *testing.T) {
 	}
 
 	// Archiving keeps the identifier, the name, the plan and the ownership.
-	if got, want := archived, NewTenant(tenant.ID(), tenant.PublicID(), tenant.Name(), tenant.ContractPlan(), tenant.OwnershipState(), true); got != want {
+	if got, want := archived, NewTenant(tenant.ID(), tenant.PublicID(), tenant.Name(), tenant.ContractPlan(), tenant.OwnershipState(), tenant.Subdomain(), true); got != want {
 		t.Errorf("archived tenant = %#v, want %#v", got, want)
 	}
 

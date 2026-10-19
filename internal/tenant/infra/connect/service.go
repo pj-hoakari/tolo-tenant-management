@@ -28,7 +28,9 @@ var clientErrors = infraconnect.ClientErrors{
 	{Target: application.ErrEventNameRequired, Code: connectrpc.CodeInvalidArgument, Message: "name is required"},
 	{Target: application.ErrEventIDRequired, Code: connectrpc.CodeInvalidArgument, Message: "event_id is required"},
 	{Target: application.ErrEventStatusRequired, Code: connectrpc.CodeInvalidArgument, Message: "to is required"},
-	{Target: repository.ErrTenantNameAlreadyExists, Code: connectrpc.CodeAlreadyExists, Message: "tenant name already exists"},
+	{Target: application.ErrSubdomainRequired, Code: connectrpc.CodeInvalidArgument, Message: "subdomain is required"},
+	{Target: domain.ErrInvalidSubdomain, Code: connectrpc.CodeInvalidArgument, Message: "subdomain is invalid"},
+	{Target: repository.ErrTenantSubdomainExists, Code: connectrpc.CodeAlreadyExists, Message: "subdomain already exists"},
 	{Target: repository.ErrTenantPublicIDExists, Code: connectrpc.CodeAlreadyExists, Message: "generated tenant ID already exists; retry the request"},
 	{Target: repository.ErrEventPublicIDExists, Code: connectrpc.CodeAlreadyExists, Message: "generated event ID already exists; retry the request"},
 	{Target: repository.ErrTenantNotFound, Code: connectrpc.CodeNotFound, Message: "tenant not found"},
@@ -98,12 +100,22 @@ func (s *Service) ClaimTenantOwnership(ctx context.Context, req *tenantv1.ClaimT
 	tenant, err := s.tenantService.ClaimTenantOwnership(ctx, application.ClaimTenantOwnershipInput{
 		TenantPublicID: req.GetTenantId(),
 		ClaimToken:     req.GetOwnershipClaimToken(),
+		Subdomain:      req.GetSubdomain(),
 	})
 	if err != nil {
 		return nil, clientErrors.For(ctx, err)
 	}
 
 	return &tenantv1.ClaimTenantOwnershipResponse{Tenant: tenantProto(tenant)}, nil
+}
+
+func (s *Service) ResolveTenantSubdomain(ctx context.Context, req *tenantv1.ResolveTenantSubdomainRequest) (*tenantv1.ResolveTenantSubdomainResponse, error) {
+	tenantID, err := s.tenantService.ResolveTenantSubdomain(ctx, req.GetSubdomain())
+	if err != nil {
+		return nil, clientErrors.For(ctx, err)
+	}
+
+	return &tenantv1.ResolveTenantSubdomainResponse{TenantId: tenantID}, nil
 }
 
 func (s *Service) ChangeTenantContract(ctx context.Context, req *tenantv1.ChangeTenantContractRequest) (*tenantv1.ChangeTenantContractResponse, error) {
@@ -196,6 +208,7 @@ func tenantProto(tenant domain.Tenant) *tenantv1.Tenant {
 		ContractPlan:   tenant.ContractPlan(),
 		Archived:       tenant.Archived(),
 		OwnershipState: tenantOwnershipStateProto(tenant.OwnershipState()),
+		Subdomain:      tenant.Subdomain().String(),
 	}
 }
 

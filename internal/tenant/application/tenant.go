@@ -19,6 +19,7 @@ var (
 	ErrEventNameRequired          = errors.New("event name is required")
 	ErrEventIDRequired            = errors.New("event ID is required")
 	ErrEventStatusRequired        = errors.New("event status is required")
+	ErrSubdomainRequired          = errors.New("subdomain is required")
 	// ErrTenantPendingOwner rejects business operations on a tenant whose
 	// owner has not claimed it yet.
 	ErrTenantPendingOwner = errors.New("tenant is pending an owner")
@@ -31,7 +32,7 @@ var (
 )
 
 // DefaultOwnershipClaimTTL is how long a pending_owner tenant waits for
-// ClaimTenantOwnership before it expires and its name is released.
+// ClaimTenantOwnership before it expires.
 const DefaultOwnershipClaimTTL = time.Hour
 
 // StartTenantRegistrationInput contains the values accepted by the
@@ -75,11 +76,16 @@ type StartTenantRegistrationUseCase interface {
 type ClaimTenantOwnershipInput struct {
 	TenantPublicID string
 	ClaimToken     string
+	Subdomain      string
 }
 
 // ClaimTenantOwnershipUseCase turns a pending_owner tenant into an owned one.
 type ClaimTenantOwnershipUseCase interface {
 	ClaimTenantOwnership(context.Context, ClaimTenantOwnershipInput) (domain.Tenant, error)
+}
+
+type ResolveTenantSubdomainUseCase interface {
+	ResolveTenantSubdomain(context.Context, string) (string, error)
 }
 
 // ChangeTenantContractInput contains the values accepted by the
@@ -130,6 +136,7 @@ type ListEventsUseCase interface {
 type TenantUseCases interface {
 	StartTenantRegistrationUseCase
 	ClaimTenantOwnershipUseCase
+	ResolveTenantSubdomainUseCase
 	ChangeTenantContractUseCase
 	ArchiveTenantUseCase
 	CreateEventUseCase
@@ -179,8 +186,7 @@ func NewTenantService(tenantRepository repository.TenantRepository, transactor r
 }
 
 // StartTenantRegistration creates a pending_owner tenant and hands out the
-// one-time claim token. Expired pending tenants are swept first, so a name
-// held by an abandoned registration becomes available again.
+// one-time claim token. Expired pending tenants are swept first.
 func (s *TenantService) StartTenantRegistration(ctx context.Context, input StartTenantRegistrationInput) (TenantRegistration, error) {
 	if input.Name == "" {
 		return TenantRegistration{}, ErrTenantNameRequired
@@ -211,7 +217,7 @@ func (s *TenantService) StartTenantRegistration(ctx context.Context, input Start
 		return TenantRegistration{}, err
 	}
 
-	tenant := domain.NewTenant(tenantID, publicID, input.Name, input.ContractPlan, domain.TenantOwnershipStatePendingOwner, false)
+	tenant := domain.NewTenant(tenantID, publicID, input.Name, input.ContractPlan, domain.TenantOwnershipStatePendingOwner, domain.Subdomain{}, false)
 	claim := domain.OwnershipClaim{TokenHash: tokenHash, ExpiresAt: now.Add(s.ownershipClaimTTL)}
 
 	if err := s.tenantRepository.CreatePendingTenant(ctx, tenant, claim); err != nil {
@@ -234,6 +240,11 @@ func (s *TenantService) ClaimTenantOwnership(ctx context.Context, input ClaimTen
 		return domain.Tenant{}, ErrOwnershipClaimTokenRequired
 	}
 
+	subdomain, err := domain.ParseSubdomain(input.Subdomain)
+	if err != nil {
+		return domain.Tenant{}, err
+	}
+
 	subject, ok := tenantctx.SubjectFromContext(ctx)
 	if !ok {
 		return domain.Tenant{}, tenantctx.ErrSubjectMissing
@@ -241,7 +252,7 @@ func (s *TenantService) ClaimTenantOwnership(ctx context.Context, input ClaimTen
 
 	var owned domain.Tenant
 
-	err := s.transactor.WithinTransaction(ctx, func(ctx context.Context) error {
+	err = s.transactor.WithinTransaction(ctx, func(ctx context.Context) error {
 		tenant, claim, err := s.tenantRepository.FindTenantByPublicIDForUpdate(ctx, input.TenantPublicID)
 		if err != nil {
 			return err
@@ -258,7 +269,7 @@ func (s *TenantService) ClaimTenantOwnership(ctx context.Context, input ClaimTen
 			return ErrOwnershipClaimRejected
 		}
 
-		owned, err = tenant.ClaimOwnership()
+		owned, err = tenant.ClaimOwnership(subdomain)
 		if err != nil {
 			return err
 		}
@@ -274,6 +285,14 @@ func (s *TenantService) ClaimTenantOwnership(ctx context.Context, input ClaimTen
 	}
 
 	return owned, nil
+}
+
+func (s *TenantService) ResolveTenantSubdomain(ctx context.Context, subdomain string) (string, error) {
+	if subdomain == "" {
+		return "", ErrSubdomainRequired
+	}
+
+	return s.tenantRepository.FindTenantPublicIDBySubdomain(ctx, subdomain)
 }
 
 // ChangeTenantContract moves the tenant to another contract plan.

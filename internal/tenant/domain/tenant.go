@@ -43,16 +43,18 @@ type Tenant struct {
 	name           string
 	contractPlan   string
 	ownershipState TenantOwnershipState
+	subdomain      Subdomain
 	archived       bool
 }
 
-func NewTenant(id, publicID, name, contractPlan string, ownershipState TenantOwnershipState, archived bool) Tenant {
+func NewTenant(id, publicID, name, contractPlan string, ownershipState TenantOwnershipState, subdomain Subdomain, archived bool) Tenant {
 	return Tenant{
 		id:             id,
 		publicID:       publicID,
 		name:           name,
 		contractPlan:   contractPlan,
 		ownershipState: ownershipState,
+		subdomain:      subdomain,
 		archived:       archived,
 	}
 }
@@ -62,6 +64,7 @@ func (t Tenant) PublicID() string                     { return t.publicID }
 func (t Tenant) Name() string                         { return t.name }
 func (t Tenant) ContractPlan() string                 { return t.contractPlan }
 func (t Tenant) OwnershipState() TenantOwnershipState { return t.ownershipState }
+func (t Tenant) Subdomain() Subdomain                 { return t.subdomain }
 func (t Tenant) Archived() bool                       { return t.archived }
 
 // Owned reports whether the tenant has a confirmed owner and may be used for
@@ -70,12 +73,13 @@ func (t Tenant) Owned() bool { return t.ownershipState == TenantOwnershipStateOw
 
 // ClaimOwnership returns a copy of the tenant with its ownership confirmed.
 // Only a pending_owner tenant can be claimed; the transition never reverses.
-func (t Tenant) ClaimOwnership() (Tenant, error) {
+func (t Tenant) ClaimOwnership(subdomain Subdomain) (Tenant, error) {
 	if t.ownershipState != TenantOwnershipStatePendingOwner {
 		return Tenant{}, ErrTenantNotPendingOwner
 	}
 
 	t.ownershipState = TenantOwnershipStateOwned
+	t.subdomain = subdomain
 
 	return t, nil
 }
@@ -88,9 +92,9 @@ func (t Tenant) ChangeContractPlan(plan string) Tenant {
 }
 
 // Archive returns a copy of the tenant marked as archived. Archiving is a soft
-// delete: the tenant keeps its identifier, its name (which is never released),
-// its events and its memberships, and only refuses further writes. A tenant
-// that is already archived cannot be archived again.
+// delete: the tenant keeps its identifier, its name, its events and its
+// memberships, and only refuses further writes. A tenant that is already
+// archived cannot be archived again.
 func (t Tenant) Archive() (Tenant, error) {
 	if t.archived {
 		return Tenant{}, ErrTenantAlreadyArchived
