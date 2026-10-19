@@ -132,7 +132,7 @@ func TestFrozenTenantsRejectMembershipWrites(t *testing.T) {
 	f := newRelationFixture(t)
 	ctx := context.Background()
 
-	archived := tenantdomain.NewTenant("00000000-0000-0000-0000-0000000000c1", "ccccccccccccccc1", "Gamma", "standard", tenantdomain.TenantOwnershipStateOwned, tenantdomain.Subdomain{}, true)
+	archived := tenantdomain.NewTenant("00000000-0000-0000-0000-0000000000c1", "ccccccccccccccc1", "Gamma", "standard", tenantdomain.TenantOwnershipStateOwned, mustParseSubdomain(t, "gamma"), true)
 	if err := f.tenants.CreateTenant(ctx, archived); err != nil {
 		t.Fatalf("CreateTenant(archived) error = %v", err)
 	}

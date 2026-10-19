@@ -376,7 +376,7 @@ func authorized(ctx context.Context, token string) context.Context {
 func (p *process) createTenant(t *testing.T, publicID, name string) tenantdomain.Tenant {
 	t.Helper()
 
-	tenant := tenantdomain.NewTenant(uuid.Must(uuid.NewV7()).String(), publicID, name, "standard", tenantdomain.TenantOwnershipStateOwned, tenantdomain.Subdomain{}, false)
+	tenant := tenantdomain.NewTenant(uuid.Must(uuid.NewV7()).String(), publicID, name, "standard", tenantdomain.TenantOwnershipStateOwned, mustParseSubdomain(t, "t"+publicID), false)
 	if err := p.tenants.CreateTenant(context.Background(), tenant); err != nil {
 		t.Fatalf("CreateTenant(%q) error = %v", name, err)
 	}
@@ -438,4 +438,15 @@ func (p *process) createEvent(t *testing.T, token, tenantPublicID, name string) 
 	}
 
 	return res.GetEvent()
+}
+
+func mustParseSubdomain(t *testing.T, s string) tenantdomain.Subdomain {
+	t.Helper()
+
+	subdomain, err := tenantdomain.ParseSubdomain(s)
+	if err != nil {
+		t.Fatalf("ParseSubdomain(%q) error = %v", s, err)
+	}
+
+	return subdomain
 }

@@ -240,10 +240,10 @@ proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16
 16 文字の hex（公開 ID と紛らわしい）、3 文字目と 4 文字目がともにハイフンの名前（`xn--` を含む）、予約語の `www`、`api`、`admin`、`s` の後に数字だけが続く名前（プレビュー環境のスロット）は拒否する。
 規則に合わない名前と空の名前は `invalid_argument` を返す。
 
-サブドメイン名は所有権取得で確定し、`pending_owner` のテナントは持たない。
+サブドメイン名は所有権取得で確定する。`owned` のテナントは必ず持ち、`pending_owner` のテナントは持たない。
 確定後は変更できない。
 アーカイブ済みのテナントのサブドメイン名も含めて一意とし、一度使った名前をほかのテナントには使わせない。
-スキーマでは `tenants.subdomain` の一意制約（`tenants_subdomain_key`）と、`owned` 以外のテナントのサブドメイン名を `NULL` に限る検査制約で担保する。
+スキーマでは `tenants.subdomain` の一意制約（`tenants_subdomain_key`）と、`owned` のテナントだけがサブドメイン名を持つことを保証する検査制約（`tenants_subdomain_check`）で担保する。
 
 `ResolveTenantSubdomain`（未認証）はサブドメイン名を持つテナントの公開 ID（`tenant_id`）だけを返す。
 Web はこれでホスト名からテナントを決める。
