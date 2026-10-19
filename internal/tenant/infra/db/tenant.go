@@ -150,6 +150,19 @@ func (r *PostgresTenantRepository) FindTenantByPublicID(ctx context.Context, pub
 	return r.findTenant(ctx, `SELECT id, public_id, name, contract_plan, ownership_state, subdomain, archived FROM tenants WHERE public_id = $1`, publicID)
 }
 
+func (r *PostgresTenantRepository) FindTenantPublicIDBySubdomain(ctx context.Context, subdomain string) (string, error) {
+	var publicID string
+	if err := sqlx.GetContext(ctx, r.executor(ctx), &publicID, `SELECT public_id FROM tenants WHERE subdomain = $1`, subdomain); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", repository.ErrTenantNotFound
+		}
+
+		return "", err
+	}
+
+	return publicID, nil
+}
+
 type tenantRow struct {
 	ID             string         `db:"id"`
 	PublicID       string         `db:"public_id"`

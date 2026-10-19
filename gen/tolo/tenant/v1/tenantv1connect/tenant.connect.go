@@ -30,6 +30,9 @@ const (
 	// TenantServiceClaimTenantOwnershipProcedure is the procedure name of the TenantService's
 	// ClaimTenantOwnership RPC.
 	TenantServiceClaimTenantOwnershipProcedure = "/tolo.tenant.v1.TenantService/ClaimTenantOwnership"
+	// TenantServiceResolveTenantSubdomainProcedure is the procedure name of the TenantService's
+	// ResolveTenantSubdomain RPC.
+	TenantServiceResolveTenantSubdomainProcedure = "/tolo.tenant.v1.TenantService/ResolveTenantSubdomain"
 	// TenantServiceChangeTenantContractProcedure is the procedure name of the TenantService's
 	// ChangeTenantContract RPC.
 	TenantServiceChangeTenantContractProcedure = "/tolo.tenant.v1.TenantService/ChangeTenantContract"
@@ -60,6 +63,13 @@ var (
 			StreamType: connect.StreamTypeUnary,
 			Schema:     v1.File_tolo_tenant_v1_tenant_proto.Services().ByName("TenantService").Methods().ByName("ClaimTenantOwnership"),
 			Procedure:  TenantServiceClaimTenantOwnershipProcedure,
+		}
+	})
+	tenantServiceResolveTenantSubdomainSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_tolo_tenant_v1_tenant_proto.Services().ByName("TenantService").Methods().ByName("ResolveTenantSubdomain"),
+			Procedure:  TenantServiceResolveTenantSubdomainProcedure,
 		}
 	})
 	tenantServiceChangeTenantContractSpec = sync.OnceValue(func() connect.Spec {
@@ -115,6 +125,7 @@ type TenantServiceClient interface {
 	// and registers the authenticated user as its owner. It requires
 	// token_use=registration, which carries no tenant context.
 	ClaimTenantOwnership(context.Context, *v1.ClaimTenantOwnershipRequest) (*v1.ClaimTenantOwnershipResponse, error)
+	ResolveTenantSubdomain(context.Context, *v1.ResolveTenantSubdomainRequest) (*v1.ResolveTenantSubdomainResponse, error)
 	ChangeTenantContract(context.Context, *v1.ChangeTenantContractRequest) (*v1.ChangeTenantContractResponse, error)
 	ArchiveTenant(context.Context, *v1.ArchiveTenantRequest) (*v1.ArchiveTenantResponse, error)
 	CreateEvent(context.Context, *v1.CreateEventRequest) (*v1.CreateEventResponse, error)
@@ -140,6 +151,7 @@ type TenantServiceHandler interface {
 	// and registers the authenticated user as its owner. It requires
 	// token_use=registration, which carries no tenant context.
 	ClaimTenantOwnership(context.Context, *v1.ClaimTenantOwnershipRequest) (*v1.ClaimTenantOwnershipResponse, error)
+	ResolveTenantSubdomain(context.Context, *v1.ResolveTenantSubdomainRequest) (*v1.ResolveTenantSubdomainResponse, error)
 	ChangeTenantContract(context.Context, *v1.ChangeTenantContractRequest) (*v1.ChangeTenantContractResponse, error)
 	ArchiveTenant(context.Context, *v1.ArchiveTenantRequest) (*v1.ArchiveTenantResponse, error)
 	CreateEvent(context.Context, *v1.CreateEventRequest) (*v1.CreateEventResponse, error)
@@ -157,6 +169,7 @@ func RegisterTenantServiceHandler(server *connect.Server, svc TenantServiceHandl
 	server.Register(
 		connect.Method{Spec: tenantServiceStartTenantRegistrationSpec(), Handler: adapter.startTenantRegistration},
 		connect.Method{Spec: tenantServiceClaimTenantOwnershipSpec(), Handler: adapter.claimTenantOwnership},
+		connect.Method{Spec: tenantServiceResolveTenantSubdomainSpec(), Handler: adapter.resolveTenantSubdomain},
 		connect.Method{Spec: tenantServiceChangeTenantContractSpec(), Handler: adapter.changeTenantContract},
 		connect.Method{Spec: tenantServiceArchiveTenantSpec(), Handler: adapter.archiveTenant},
 		connect.Method{Spec: tenantServiceCreateEventSpec(), Handler: adapter.createEvent},
@@ -175,6 +188,10 @@ func (UnimplementedTenantServiceHandler) StartTenantRegistration(context.Context
 
 func (UnimplementedTenantServiceHandler) ClaimTenantOwnership(context.Context, *v1.ClaimTenantOwnershipRequest) (*v1.ClaimTenantOwnershipResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "tolo.tenant.v1.TenantService.ClaimTenantOwnership is not implemented")
+}
+
+func (UnimplementedTenantServiceHandler) ResolveTenantSubdomain(context.Context, *v1.ResolveTenantSubdomainRequest) (*v1.ResolveTenantSubdomainResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "tolo.tenant.v1.TenantService.ResolveTenantSubdomain is not implemented")
 }
 
 func (UnimplementedTenantServiceHandler) ChangeTenantContract(context.Context, *v1.ChangeTenantContractRequest) (*v1.ChangeTenantContractResponse, error) {
@@ -216,6 +233,14 @@ func (c *tenantServiceClient) StartTenantRegistration(ctx context.Context, req *
 func (c *tenantServiceClient) ClaimTenantOwnership(ctx context.Context, req *v1.ClaimTenantOwnershipRequest) (*v1.ClaimTenantOwnershipResponse, error) {
 	var res v1.ClaimTenantOwnershipResponse
 	if err := c.client.CallUnary(ctx, tenantServiceClaimTenantOwnershipSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *tenantServiceClient) ResolveTenantSubdomain(ctx context.Context, req *v1.ResolveTenantSubdomainRequest) (*v1.ResolveTenantSubdomainResponse, error) {
+	var res v1.ResolveTenantSubdomainResponse
+	if err := c.client.CallUnary(ctx, tenantServiceResolveTenantSubdomainSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -289,6 +314,18 @@ func (h tenantServiceHandler) claimTenantOwnership(ctx context.Context, _ connec
 		return err
 	}
 	res, err := h.svc.ClaimTenantOwnership(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h tenantServiceHandler) resolveTenantSubdomain(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ResolveTenantSubdomainRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ResolveTenantSubdomain(ctx, &req)
 	if err != nil {
 		return err
 	}

@@ -227,6 +227,65 @@ func TestClaimTenantOwnershipOverTransportRejectsATakenSubdomain(t *testing.T) {
 	}
 }
 
+func TestResolveTenantSubdomainOverTransport(t *testing.T) {
+	p := newProcess(t)
+	registration := p.startRegistration(t, "Acme")
+	tenantID := registration.GetTenant().GetTenantId()
+
+	if _, err := p.claim(t, internalJWTs(t).registration, tenantID, registration.GetOwnershipClaimToken(), "acme"); err != nil {
+		t.Fatalf("ClaimTenantOwnership() error = %v", err)
+	}
+
+	resolve := func(subdomain string) (string, error) {
+		res, err := p.tenantClient.ResolveTenantSubdomain(context.Background(), &tenantv1.ResolveTenantSubdomainRequest{Subdomain: subdomain})
+
+		return res.GetTenantId(), err
+	}
+
+	t.Run("returns the public ID of the owned tenant without a bearer token", func(t *testing.T) {
+		got, err := resolve("acme")
+		if err != nil {
+			t.Fatalf("ResolveTenantSubdomain() error = %v", err)
+		}
+
+		if got != tenantID {
+			t.Errorf("TenantId = %q, want %q", got, tenantID)
+		}
+	})
+
+	for _, tt := range []struct {
+		name      string
+		subdomain string
+		want      connectrpc.Code
+	}{
+		{name: "a subdomain no tenant has", subdomain: "globex", want: connectrpc.CodeNotFound},
+		{name: "a name outside the naming rules", subdomain: "Acme", want: connectrpc.CodeNotFound},
+		{name: "an empty subdomain", subdomain: "", want: connectrpc.CodeInvalidArgument},
+	} {
+		t.Run("answers "+tt.name+" with "+tt.want.String(), func(t *testing.T) {
+			_, err := resolve(tt.subdomain)
+			if got := connectrpc.CodeOf(err); got != tt.want {
+				t.Fatalf("ResolveTenantSubdomain(%q) error code = %v, want %v", tt.subdomain, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("keeps resolving the tenant after it is archived", func(t *testing.T) {
+		if _, err := p.archiveTenant(tenantID, p.mintTenantAccessToken(t, tenantID)); err != nil {
+			t.Fatalf("ArchiveTenant() error = %v", err)
+		}
+
+		got, err := resolve("acme")
+		if err != nil {
+			t.Fatalf("ResolveTenantSubdomain() error = %v", err)
+		}
+
+		if got != tenantID {
+			t.Errorf("TenantId = %q, want %q", got, tenantID)
+		}
+	})
+}
+
 // TestClaimTenantOwnershipOverTransportRejectsMissingScope checks that a
 // procedure whose policy names its own token_uses still has its required
 // scopes enforced: the credential is of the accepted class (registration), but

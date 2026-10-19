@@ -19,6 +19,7 @@ var (
 	ErrEventNameRequired          = errors.New("event name is required")
 	ErrEventIDRequired            = errors.New("event ID is required")
 	ErrEventStatusRequired        = errors.New("event status is required")
+	ErrSubdomainRequired          = errors.New("subdomain is required")
 	// ErrTenantPendingOwner rejects business operations on a tenant whose
 	// owner has not claimed it yet.
 	ErrTenantPendingOwner = errors.New("tenant is pending an owner")
@@ -83,6 +84,10 @@ type ClaimTenantOwnershipUseCase interface {
 	ClaimTenantOwnership(context.Context, ClaimTenantOwnershipInput) (domain.Tenant, error)
 }
 
+type ResolveTenantSubdomainUseCase interface {
+	ResolveTenantSubdomain(context.Context, string) (string, error)
+}
+
 // ChangeTenantContractInput contains the values accepted by the
 // ChangeTenantContract use case.
 type ChangeTenantContractInput struct {
@@ -131,6 +136,7 @@ type ListEventsUseCase interface {
 type TenantUseCases interface {
 	StartTenantRegistrationUseCase
 	ClaimTenantOwnershipUseCase
+	ResolveTenantSubdomainUseCase
 	ChangeTenantContractUseCase
 	ArchiveTenantUseCase
 	CreateEventUseCase
@@ -279,6 +285,14 @@ func (s *TenantService) ClaimTenantOwnership(ctx context.Context, input ClaimTen
 	}
 
 	return owned, nil
+}
+
+func (s *TenantService) ResolveTenantSubdomain(ctx context.Context, subdomain string) (string, error) {
+	if subdomain == "" {
+		return "", ErrSubdomainRequired
+	}
+
+	return s.tenantRepository.FindTenantPublicIDBySubdomain(ctx, subdomain)
 }
 
 // ChangeTenantContract moves the tenant to another contract plan.

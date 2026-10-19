@@ -27,6 +27,9 @@ service TenantService {
       token_uses: "registration"
     };
   }
+  rpc ResolveTenantSubdomain(ResolveTenantSubdomainRequest) returns (ResolveTenantSubdomainResponse) {
+    option (authz.v1.auth_policy) = { level: AUTH_LEVEL_PUBLIC };
+  }
   rpc ChangeTenantContract(ChangeTenantContractRequest) returns (ChangeTenantContractResponse) {
     option (authz.v1.auth_policy) = {
       level: AUTH_LEVEL_AUTHENTICATED
@@ -123,6 +126,9 @@ message ClaimTenantOwnershipRequest {
   string subdomain = 3;
 }
 message ClaimTenantOwnershipResponse { Tenant tenant = 1; }
+
+message ResolveTenantSubdomainRequest { string subdomain = 1; }
+message ResolveTenantSubdomainResponse { string tenant_id = 1; }
 
 message ChangeTenantContractRequest {
   string tenant_id = 1;

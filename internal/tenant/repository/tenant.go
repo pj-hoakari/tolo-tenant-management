@@ -69,6 +69,7 @@ type TenantRepository interface {
 	UpdateTenant(context.Context, domain.Tenant) error
 	FindTenantByID(context.Context, string) (domain.Tenant, error)
 	FindTenantByPublicID(context.Context, string) (domain.Tenant, error)
+	FindTenantPublicIDBySubdomain(context.Context, string) (string, error)
 	CreateEvent(context.Context, domain.Event) error
 	FindEventByPublicID(context.Context, string) (domain.Event, error)
 	// ListEventsByTenantID lists a tenant's events in creation order,

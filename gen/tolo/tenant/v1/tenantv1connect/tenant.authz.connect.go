@@ -10,6 +10,7 @@ import (
 var TenantServicePolicies = authz.Policies{
 	TenantServiceStartTenantRegistrationProcedure: {Level: authz.LevelPublic},
 	TenantServiceClaimTenantOwnershipProcedure:    {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.claim"}, TokenUses: []string{"registration"}},
+	TenantServiceResolveTenantSubdomainProcedure:  {Level: authz.LevelPublic},
 	TenantServiceChangeTenantContractProcedure:    {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.write"}, TokenUses: []string{"tenant_access"}},
 	TenantServiceArchiveTenantProcedure:           {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.write"}, TokenUses: []string{"tenant_access"}},
 	TenantServiceCreateEventProcedure:             {Level: authz.LevelAuthenticated, RequiredScopes: []string{"events.manage"}, TokenUses: []string{"tenant_access"}},

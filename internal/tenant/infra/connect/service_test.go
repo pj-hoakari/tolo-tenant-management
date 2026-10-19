@@ -389,6 +389,7 @@ func TestEveryHandlerHidesInternalErrorDetail(t *testing.T) {
 	repo.EXPECT().FindTenantByPublicIDForUpdate(gomock.Any(), gomock.Any()).Return(domain.Tenant{}, domain.OwnershipClaim{}, errDetail).AnyTimes()
 	repo.EXPECT().FindEventByPublicID(gomock.Any(), gomock.Any()).Return(domain.Event{}, errDetail).AnyTimes()
 	repo.EXPECT().DeleteExpiredPendingTenants(gomock.Any(), gomock.Any()).Return(int64(0), errDetail).AnyTimes()
+	repo.EXPECT().FindTenantPublicIDBySubdomain(gomock.Any(), gomock.Any()).Return("", errDetail).AnyTimes()
 	service := NewService(application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{}, permissionStub{allowed: true}))
 
 	ctx := internaljwt.ContextWithClaims(context.Background(), internaljwt.Claims{TenantPublicID: tenant.PublicID(), RegisteredClaims: jwt.RegisteredClaims{Subject: "user-1"}})
@@ -402,6 +403,11 @@ func TestEveryHandlerHidesInternalErrorDetail(t *testing.T) {
 		},
 		"ClaimTenantOwnership": func() error {
 			_, err := service.ClaimTenantOwnership(ctx, &tenantv1.ClaimTenantOwnershipRequest{TenantId: tenant.PublicID(), OwnershipClaimToken: "token", Subdomain: "acme"})
+
+			return err
+		},
+		"ResolveTenantSubdomain": func() error {
+			_, err := service.ResolveTenantSubdomain(ctx, &tenantv1.ResolveTenantSubdomainRequest{Subdomain: "acme"})
 
 			return err
 		},

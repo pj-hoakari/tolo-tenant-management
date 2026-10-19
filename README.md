@@ -187,6 +187,7 @@ proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16
 |---|---|---|---|---|
 | StartTenantRegistration | `TenantService` | 未認証（`AUTH_LEVEL_PUBLIC`） | なし | なし |
 | ClaimTenantOwnership | `TenantService` | 認証済み | `registration` | `tenant.claim` |
+| ResolveTenantSubdomain | `TenantService` | 未認証（`AUTH_LEVEL_PUBLIC`） | なし | なし |
 | ChangeTenantContract、ArchiveTenant | `TenantService` | 認証済み | `tenant_access` | `tenant.write` |
 | CreateEvent、TransitionEventStatus | `TenantService` | 認証済み | `tenant_access` | `events.manage` |
 | ListEvents | `TenantService` | 認証済み | `tenant_access` | `events.read` |
@@ -243,6 +244,11 @@ proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16
 確定後は変更できない。
 アーカイブ済みのテナントのサブドメイン名も含めて一意とし、一度使った名前をほかのテナントには使わせない。
 スキーマでは `tenants.subdomain` の一意制約（`tenants_subdomain_key`）と、`owned` 以外のテナントのサブドメイン名を `NULL` に限る検査制約で担保する。
+
+`ResolveTenantSubdomain`（未認証）はサブドメイン名を持つテナントの公開 ID（`tenant_id`）だけを返す。
+Web はこれでホスト名からテナントを決める。
+アーカイブ済みのテナントも返し、テナント名、所有状態、アーカイブの有無は返さない。
+空の名前は `invalid_argument`、どのテナントも持たない名前（規則に合わない名前を含む）は `not_found` を返す。
 
 ### 契約変更とアーカイブ
 
