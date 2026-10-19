@@ -78,7 +78,7 @@ func TestMain(m *testing.M) {
 func TestPostgresTenantRepositoryTenants(t *testing.T) {
 	repository := newTestRepository(t)
 	ctx := context.Background()
-	tenant := newTenant("00000000-0000-0000-0000-000000000001", "tenant-001", "Acme", false)
+	tenant := newTenant(t, "00000000-0000-0000-0000-000000000001", "tenant-001", "Acme", false)
 
 	if err := repository.CreateTenant(ctx, tenant); err != nil {
 		t.Fatalf("CreateTenant() error = %v", err)
@@ -112,12 +112,12 @@ func TestPostgresTenantRepositoryTenantErrors(t *testing.T) {
 	repository := newTestRepository(t)
 	ctx := context.Background()
 
-	tenant := newTenant("00000000-0000-0000-0000-000000000001", "tenant-001", "Acme", false)
+	tenant := newTenant(t, "00000000-0000-0000-0000-000000000001", "tenant-001", "Acme", false)
 	if err := repository.CreateTenant(ctx, tenant); err != nil {
 		t.Fatalf("CreateTenant() error = %v", err)
 	}
 
-	if err := repository.CreateTenant(ctx, newTenant("00000000-0000-0000-0000-000000000003", tenant.PublicID(), "Globex", false)); !errors.Is(err, repositorypkg.ErrTenantPublicIDExists) {
+	if err := repository.CreateTenant(ctx, newTenant(t, "00000000-0000-0000-0000-000000000003", tenant.PublicID(), "Globex", false)); !errors.Is(err, repositorypkg.ErrTenantPublicIDExists) {
 		t.Errorf("duplicate public ID error = %v, want %v", err, repositorypkg.ErrTenantPublicIDExists)
 	}
 
@@ -130,8 +130,8 @@ func TestPostgresTenantRepositoryTenantsMayShareAName(t *testing.T) {
 	repository := newTestRepository(t)
 	ctx := context.Background()
 
-	first := newTenant("00000000-0000-0000-0000-000000000001", "tenant-001", "Acme", false)
-	second := newTenant("00000000-0000-0000-0000-000000000002", "tenant-002", "Acme", false)
+	first := newTenant(t, "00000000-0000-0000-0000-000000000001", "tenant-001", "Acme", false)
+	second := newTenant(t, "00000000-0000-0000-0000-000000000002", "tenant-002", "Acme", false)
 
 	for _, tenant := range []domain.Tenant{first, second} {
 		if err := repository.CreateTenant(ctx, tenant); err != nil {
@@ -150,7 +150,7 @@ func TestPostgresTenantRepositoryEvents(t *testing.T) {
 	repository := newTestRepository(t)
 	ctx := context.Background()
 
-	tenant := newTenant("00000000-0000-0000-0000-000000000001", "tenant-001", "Acme", false)
+	tenant := newTenant(t, "00000000-0000-0000-0000-000000000001", "tenant-001", "Acme", false)
 	if err := repository.CreateTenant(ctx, tenant); err != nil {
 		t.Fatalf("CreateTenant() error = %v", err)
 	}
@@ -226,9 +226,9 @@ func TestPostgresTenantRepositoryEvents(t *testing.T) {
 func TestPostgresTenantRepositoryEventErrors(t *testing.T) {
 	repository := newTestRepository(t)
 	ctx := context.Background()
-	activeTenant := newTenant("00000000-0000-0000-0000-000000000001", "tenant-001", "Acme", false)
+	activeTenant := newTenant(t, "00000000-0000-0000-0000-000000000001", "tenant-001", "Acme", false)
 
-	archivedTenant := newTenant("00000000-0000-0000-0000-000000000002", "tenant-002", "Initech", true)
+	archivedTenant := newTenant(t, "00000000-0000-0000-0000-000000000002", "tenant-002", "Initech", true)
 	for _, tenant := range []domain.Tenant{activeTenant, archivedTenant} {
 		if err := repository.CreateTenant(ctx, tenant); err != nil {
 			t.Fatalf("CreateTenant(%q) error = %v", tenant.ID(), err)
@@ -311,8 +311,8 @@ func TestPostgresTenantRepositoryRejectsForeignTenantOnReconstitution(t *testing
 	repository := newTestRepository(t)
 	ctx := context.Background()
 
-	tenantA := newTenant("00000000-0000-0000-0000-0000000000a1", "tenant-aaa", "Acme", false)
-	tenantB := newTenant("00000000-0000-0000-0000-0000000000b1", "tenant-bbb", "Beta", false)
+	tenantA := newTenant(t, "00000000-0000-0000-0000-0000000000a1", "tenant-aaa", "Acme", false)
+	tenantB := newTenant(t, "00000000-0000-0000-0000-0000000000b1", "tenant-bbb", "Beta", false)
 
 	for _, tenant := range []domain.Tenant{tenantA, tenantB} {
 		if err := repository.CreateTenant(ctx, tenant); err != nil {
@@ -369,8 +369,10 @@ func newTestRepository(t *testing.T) *PostgresTenantRepository {
 	return NewPostgresTenantRepository(testDB)
 }
 
-func newTenant(id, publicID, name string, archived bool) domain.Tenant {
-	return domain.NewTenant(id, publicID, name, "standard", domain.TenantOwnershipStateOwned, domain.Subdomain{}, archived)
+func newTenant(t *testing.T, id, publicID, name string, archived bool) domain.Tenant {
+	t.Helper()
+
+	return domain.NewTenant(id, publicID, name, "standard", domain.TenantOwnershipStateOwned, mustParseSubdomain(t, "t-"+id[len(id)-12:]), archived)
 }
 
 func newEvent(id, publicID string, tenant domain.Tenant, name string, status domain.EventStatus) domain.Event {
@@ -398,7 +400,7 @@ func TestPostgresTenantRepositoryWithinTransaction(t *testing.T) {
 	ctx := context.Background()
 	errAbort := errors.New("abort")
 
-	rolledBack := newTenant("00000000-0000-0000-0000-000000000001", "tenant-001", "Rolled Back", false)
+	rolledBack := newTenant(t, "00000000-0000-0000-0000-000000000001", "tenant-001", "Rolled Back", false)
 
 	err := repository.WithinTransaction(ctx, func(ctx context.Context) error {
 		if err := repository.CreateTenant(ctx, rolledBack); err != nil {
@@ -420,7 +422,7 @@ func TestPostgresTenantRepositoryWithinTransaction(t *testing.T) {
 		t.Errorf("FindTenantByID() after rollback error = %v, want %v", err, repositorypkg.ErrTenantNotFound)
 	}
 
-	committed := newTenant("00000000-0000-0000-0000-000000000002", "tenant-002", "Committed", false)
+	committed := newTenant(t, "00000000-0000-0000-0000-000000000002", "tenant-002", "Committed", false)
 
 	err = repository.WithinTransaction(ctx, func(ctx context.Context) error {
 		// A nested call joins the surrounding transaction instead of opening
@@ -450,7 +452,7 @@ func TestPostgresTenantRepositoryPendingTenants(t *testing.T) {
 
 	expired := domain.NewTenant("00000000-0000-0000-0000-000000000001", "tenant-001", "Expired", "standard", domain.TenantOwnershipStatePendingOwner, domain.Subdomain{}, false)
 	live := domain.NewTenant("00000000-0000-0000-0000-000000000002", "tenant-002", "Live", "standard", domain.TenantOwnershipStatePendingOwner, domain.Subdomain{}, false)
-	owned := newTenant("00000000-0000-0000-0000-000000000003", "tenant-003", "Owned", false)
+	owned := newTenant(t, "00000000-0000-0000-0000-000000000003", "tenant-003", "Owned", false)
 
 	if err := repository.CreatePendingTenant(ctx, expired, domain.OwnershipClaim{TokenHash: hash, ExpiresAt: now.Add(-time.Minute)}); err != nil {
 		t.Fatalf("CreatePendingTenant(expired) error = %v", err)
@@ -619,6 +621,27 @@ func TestPostgresTenantRepositoryPendingTenantHasNoSubdomain(t *testing.T) {
 	}
 }
 
+func TestPostgresTenantRepositoryOwnedTenantHasSubdomain(t *testing.T) {
+	repository := newTestRepository(t)
+
+	owned := newTenant(t, "00000000-0000-0000-0000-000000000001", "tenant-001", "Acme", false)
+	if err := repository.CreateTenant(context.Background(), owned); err != nil {
+		t.Fatalf("CreateTenant() error = %v", err)
+	}
+
+	_, err := testDB.Exec(`UPDATE tenants SET subdomain = NULL WHERE id = $1`, owned.ID())
+
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.ConstraintName != "tenants_subdomain_check" {
+		t.Errorf("removing the subdomain of an owned tenant error = %v, want a violation of tenants_subdomain_check", err)
+	}
+
+	_, err = testDB.Exec(`INSERT INTO tenants (id, public_id, name, contract_plan, ownership_state, archived) VALUES ($1, 'tenant-002', 'Globex', 'standard', 'owned', false)`, "00000000-0000-0000-0000-000000000002")
+	if !errors.As(err, &pgErr) || pgErr.ConstraintName != "tenants_subdomain_check" {
+		t.Errorf("inserting an owned tenant without a subdomain error = %v, want a violation of tenants_subdomain_check", err)
+	}
+}
+
 func newPendingTenant(t *testing.T, repository *PostgresTenantRepository, id, publicID string) domain.Tenant {
 	t.Helper()
 
@@ -650,7 +673,7 @@ func TestPostgresTenantRepositoryUpdateTenant(t *testing.T) {
 	repository := newTestRepository(t)
 	ctx := context.Background()
 
-	tenant := newTenant("00000000-0000-0000-0000-000000000001", "tenant-001", "Acme", false)
+	tenant := newTenant(t, "00000000-0000-0000-0000-000000000001", "tenant-001", "Acme", false)
 	if err := repository.CreateTenant(ctx, tenant); err != nil {
 		t.Fatalf("CreateTenant() error = %v", err)
 	}
@@ -673,7 +696,7 @@ func TestPostgresTenantRepositoryUpdateTenant(t *testing.T) {
 		t.Errorf("updated tenant = %#v, want %#v", got, updated)
 	}
 
-	missing := newTenant("00000000-0000-0000-0000-000000000099", "tenant-099", "Missing", false)
+	missing := newTenant(t, "00000000-0000-0000-0000-000000000099", "tenant-099", "Missing", false)
 	if err := repository.UpdateTenant(ctx, missing); !errors.Is(err, repositorypkg.ErrTenantNotFound) {
 		t.Errorf("UpdateTenant(unknown) error = %v, want %v", err, repositorypkg.ErrTenantNotFound)
 	}
