@@ -10,12 +10,13 @@ import (
 )
 
 var (
-	ErrTenantNotFound       = errors.New("tenant not found")
-	ErrTenantArchived       = errors.New("tenant is archived")
-	ErrTenantPublicIDExists = errors.New("tenant public ID already exists")
-	ErrEventNotFound        = errors.New("event not found")
-	ErrEventArchived        = errors.New("event is archived")
-	ErrEventPublicIDExists  = errors.New("event public ID already exists")
+	ErrTenantNotFound        = errors.New("tenant not found")
+	ErrTenantArchived        = errors.New("tenant is archived")
+	ErrTenantPublicIDExists  = errors.New("tenant public ID already exists")
+	ErrTenantSubdomainExists = errors.New("tenant subdomain already exists")
+	ErrEventNotFound         = errors.New("event not found")
+	ErrEventArchived         = errors.New("event is archived")
+	ErrEventPublicIDExists   = errors.New("event public ID already exists")
 )
 
 // Transactor runs a unit of work inside one database transaction. The

@@ -76,6 +76,7 @@ message Tenant {
   string contract_plan = 3;  // identifier only; billing details are out of scope
   bool archived = 4;
   TenantOwnershipState ownership_state = 5;
+  string subdomain = 6;
 }
 
 enum TenantOwnershipState {
@@ -119,6 +120,7 @@ message StartTenantRegistrationResponse {
 message ClaimTenantOwnershipRequest {
   string tenant_id = 1;
   string ownership_claim_token = 2;
+  string subdomain = 3;
 }
 message ClaimTenantOwnershipResponse { Tenant tenant = 1; }
 

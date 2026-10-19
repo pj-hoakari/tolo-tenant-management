@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"
 	internaljwt "github.com/pj-hoakari/internal-jwt-handling"
 	infradb "github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
@@ -247,7 +248,7 @@ func TestPostgresTenantRepositoryEventErrors(t *testing.T) {
 		t.Errorf("archived tenant create error = %v, want %v", err, repositorypkg.ErrTenantArchived)
 	}
 
-	missingTenant := domain.NewTenant("00000000-0000-0000-0000-000000000099", "tenant-099", "", "", domain.TenantOwnershipStateOwned, false)
+	missingTenant := domain.NewTenant("00000000-0000-0000-0000-000000000099", "tenant-099", "", "", domain.TenantOwnershipStateOwned, domain.Subdomain{}, false)
 	if err := repository.CreateEvent(ctx, newEvent("00000000-0000-0000-0000-000000000014", "event-004", missingTenant, "Missing tenant festival", domain.EventStatusDraft)); !errors.Is(err, repositorypkg.ErrTenantNotFound) {
 		t.Errorf("missing tenant create error = %v, want %v", err, repositorypkg.ErrTenantNotFound)
 	}
@@ -369,7 +370,7 @@ func newTestRepository(t *testing.T) *PostgresTenantRepository {
 }
 
 func newTenant(id, publicID, name string, archived bool) domain.Tenant {
-	return domain.NewTenant(id, publicID, name, "standard", domain.TenantOwnershipStateOwned, archived)
+	return domain.NewTenant(id, publicID, name, "standard", domain.TenantOwnershipStateOwned, domain.Subdomain{}, archived)
 }
 
 func newEvent(id, publicID string, tenant domain.Tenant, name string, status domain.EventStatus) domain.Event {
@@ -447,8 +448,8 @@ func TestPostgresTenantRepositoryPendingTenants(t *testing.T) {
 		t.Fatalf("NewOwnershipClaimToken() error = %v", err)
 	}
 
-	expired := domain.NewTenant("00000000-0000-0000-0000-000000000001", "tenant-001", "Expired", "standard", domain.TenantOwnershipStatePendingOwner, false)
-	live := domain.NewTenant("00000000-0000-0000-0000-000000000002", "tenant-002", "Live", "standard", domain.TenantOwnershipStatePendingOwner, false)
+	expired := domain.NewTenant("00000000-0000-0000-0000-000000000001", "tenant-001", "Expired", "standard", domain.TenantOwnershipStatePendingOwner, domain.Subdomain{}, false)
+	live := domain.NewTenant("00000000-0000-0000-0000-000000000002", "tenant-002", "Live", "standard", domain.TenantOwnershipStatePendingOwner, domain.Subdomain{}, false)
 	owned := newTenant("00000000-0000-0000-0000-000000000003", "tenant-003", "Owned", false)
 
 	if err := repository.CreatePendingTenant(ctx, expired, domain.OwnershipClaim{TokenHash: hash, ExpiresAt: now.Add(-time.Minute)}); err != nil {
@@ -506,7 +507,7 @@ func TestPostgresTenantRepositoryOwnershipClaim(t *testing.T) {
 		t.Fatalf("NewOwnershipClaimToken() error = %v", err)
 	}
 
-	pending := domain.NewTenant("00000000-0000-0000-0000-000000000001", "tenant-001", "Acme", "standard", domain.TenantOwnershipStatePendingOwner, false)
+	pending := domain.NewTenant("00000000-0000-0000-0000-000000000001", "tenant-001", "Acme", "standard", domain.TenantOwnershipStatePendingOwner, domain.Subdomain{}, false)
 	if err := repository.CreatePendingTenant(ctx, pending, domain.OwnershipClaim{TokenHash: hash, ExpiresAt: now}); err != nil {
 		t.Fatalf("CreatePendingTenant() error = %v", err)
 	}
@@ -525,7 +526,7 @@ func TestPostgresTenantRepositoryOwnershipClaim(t *testing.T) {
 			t.Errorf("locked claim = %#v, want hash of token expiring at %v", claim, now)
 		}
 
-		owned, err := tenant.ClaimOwnership()
+		owned, err := tenant.ClaimOwnership(mustParseSubdomain(t, "acme"))
 		if err != nil {
 			return err
 		}
@@ -545,6 +546,10 @@ func TestPostgresTenantRepositoryOwnershipClaim(t *testing.T) {
 		t.Errorf("OwnershipState() after claim = %v, want %v", got, want)
 	}
 
+	if got, want := tenant.Subdomain().String(), "acme"; got != want {
+		t.Errorf("Subdomain() after claim = %q, want %q", got, want)
+	}
+
 	// The claim token is consumed: the stored claim is cleared.
 	if claim != (domain.OwnershipClaim{}) {
 		t.Errorf("claim after ownership = %#v, want zero", claim)
@@ -557,6 +562,88 @@ func TestPostgresTenantRepositoryOwnershipClaim(t *testing.T) {
 	if _, _, err := repository.FindTenantByPublicIDForUpdate(ctx, "tenant-999"); !errors.Is(err, repositorypkg.ErrTenantNotFound) {
 		t.Errorf("FindTenantByPublicIDForUpdate(unknown) error = %v, want %v", err, repositorypkg.ErrTenantNotFound)
 	}
+}
+
+func TestPostgresTenantRepositorySubdomainIsNeverReused(t *testing.T) {
+	repository := newTestRepository(t)
+	ctx := context.Background()
+
+	first, err := newPendingTenant(t, repository, "00000000-0000-0000-0000-000000000001", "tenant-001").ClaimOwnership(mustParseSubdomain(t, "acme"))
+	if err != nil {
+		t.Fatalf("ClaimOwnership() error = %v", err)
+	}
+
+	if err := repository.MarkTenantOwned(ctx, first); err != nil {
+		t.Fatalf("MarkTenantOwned(first) error = %v", err)
+	}
+
+	archived, err := first.Archive()
+	if err != nil {
+		t.Fatalf("Archive() error = %v", err)
+	}
+
+	if err := repository.UpdateTenant(ctx, archived); err != nil {
+		t.Fatalf("UpdateTenant(archive) error = %v", err)
+	}
+
+	pending := newPendingTenant(t, repository, "00000000-0000-0000-0000-000000000002", "tenant-002")
+
+	taken, err := pending.ClaimOwnership(mustParseSubdomain(t, "acme"))
+	if err != nil {
+		t.Fatalf("ClaimOwnership() error = %v", err)
+	}
+
+	if err := repository.MarkTenantOwned(ctx, taken); !errors.Is(err, repositorypkg.ErrTenantSubdomainExists) {
+		t.Fatalf("MarkTenantOwned(subdomain of an archived tenant) error = %v, want %v", err, repositorypkg.ErrTenantSubdomainExists)
+	}
+
+	stored, err := repository.FindTenantByPublicID(ctx, pending.PublicID())
+	if err != nil {
+		t.Fatalf("FindTenantByPublicID() error = %v", err)
+	}
+
+	if stored != pending {
+		t.Errorf("tenant after the rejected claim = %#v, want it still pending %#v", stored, pending)
+	}
+}
+
+func TestPostgresTenantRepositoryPendingTenantHasNoSubdomain(t *testing.T) {
+	repository := newTestRepository(t)
+	pending := newPendingTenant(t, repository, "00000000-0000-0000-0000-000000000001", "tenant-001")
+
+	_, err := testDB.Exec(`UPDATE tenants SET subdomain = 'acme' WHERE id = $1`, pending.ID())
+
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.ConstraintName != "tenants_subdomain_check" {
+		t.Errorf("giving a pending_owner tenant a subdomain error = %v, want a violation of tenants_subdomain_check", err)
+	}
+}
+
+func newPendingTenant(t *testing.T, repository *PostgresTenantRepository, id, publicID string) domain.Tenant {
+	t.Helper()
+
+	_, hash, err := domain.NewOwnershipClaimToken()
+	if err != nil {
+		t.Fatalf("NewOwnershipClaimToken() error = %v", err)
+	}
+
+	tenant := domain.NewTenant(id, publicID, "Acme", "standard", domain.TenantOwnershipStatePendingOwner, domain.Subdomain{}, false)
+	if err := repository.CreatePendingTenant(context.Background(), tenant, domain.OwnershipClaim{TokenHash: hash, ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
+		t.Fatalf("CreatePendingTenant(%q) error = %v", publicID, err)
+	}
+
+	return tenant
+}
+
+func mustParseSubdomain(t *testing.T, s string) domain.Subdomain {
+	t.Helper()
+
+	subdomain, err := domain.ParseSubdomain(s)
+	if err != nil {
+		t.Fatalf("ParseSubdomain(%q) error = %v", s, err)
+	}
+
+	return subdomain
 }
 
 func TestPostgresTenantRepositoryUpdateTenant(t *testing.T) {
@@ -600,7 +687,7 @@ func TestPostgresTenantRepositoryUpdateTenant(t *testing.T) {
 		t.Fatalf("NewOwnershipClaimToken() error = %v", err)
 	}
 
-	pending := domain.NewTenant("00000000-0000-0000-0000-000000000002", "tenant-002", "Pending", "standard", domain.TenantOwnershipStatePendingOwner, false)
+	pending := domain.NewTenant("00000000-0000-0000-0000-000000000002", "tenant-002", "Pending", "standard", domain.TenantOwnershipStatePendingOwner, domain.Subdomain{}, false)
 	if err := repository.CreatePendingTenant(ctx, pending, domain.OwnershipClaim{TokenHash: hash, ExpiresAt: expiresAt}); err != nil {
 		t.Fatalf("CreatePendingTenant() error = %v", err)
 	}

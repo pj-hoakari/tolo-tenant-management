@@ -110,13 +110,17 @@ func TestClaimTenantOwnershipOverTransport(t *testing.T) {
 	registration := p.startRegistration(t, "Acme")
 	tenantID := registration.GetTenant().GetTenantId()
 
-	owned, err := p.claim(t, internalJWTs(t).registration, tenantID, registration.GetOwnershipClaimToken())
+	owned, err := p.claim(t, internalJWTs(t).registration, tenantID, registration.GetOwnershipClaimToken(), "acme")
 	if err != nil {
 		t.Fatalf("ClaimTenantOwnership() error = %v", err)
 	}
 
 	if got, want := owned.GetOwnershipState(), tenantv1.TenantOwnershipState_TENANT_OWNERSHIP_STATE_OWNED; got != want {
 		t.Errorf("Tenant.OwnershipState = %v, want %v", got, want)
+	}
+
+	if got, want := owned.GetSubdomain(), "acme"; got != want {
+		t.Errorf("Tenant.Subdomain = %q, want %q", got, want)
 	}
 
 	token := p.mintTenantAccessToken(t, tenantID)
@@ -145,7 +149,7 @@ func TestClaimTenantOwnershipOverTransport(t *testing.T) {
 	})
 
 	t.Run("the claim token is consumed", func(t *testing.T) {
-		_, err := p.claim(t, internalJWTs(t).registration, tenantID, registration.GetOwnershipClaimToken())
+		_, err := p.claim(t, internalJWTs(t).registration, tenantID, registration.GetOwnershipClaimToken(), "globex")
 		if got, want := connectrpc.CodeOf(err), connectrpc.CodeUnauthenticated; got != want {
 			t.Fatalf("second ClaimTenantOwnership() error code = %v, want %v", got, want)
 		}
@@ -163,18 +167,22 @@ func TestClaimTenantOwnershipOverTransportRejections(t *testing.T) {
 		token      string
 		tenantID   string
 		claimToken string
+		subdomain  string
 		want       connectrpc.Code
 	}{
-		{name: "missing bearer token", token: "", tenantID: tenantID, claimToken: claimToken, want: connectrpc.CodeUnauthenticated},
-		{name: "tenant_access token", token: internalJWTs(t).tenantAccess, tenantID: tenantID, claimToken: claimToken, want: connectrpc.CodeUnauthenticated},
-		{name: "wrong claim token", token: internalJWTs(t).registration, tenantID: tenantID, claimToken: claimToken + "x", want: connectrpc.CodeUnauthenticated},
-		{name: "unknown tenant", token: internalJWTs(t).registration, tenantID: "0000000000000000", claimToken: claimToken, want: connectrpc.CodeNotFound},
-		{name: "missing claim token", token: internalJWTs(t).registration, tenantID: tenantID, claimToken: "", want: connectrpc.CodeInvalidArgument},
+		{name: "missing bearer token", token: "", tenantID: tenantID, claimToken: claimToken, subdomain: "acme", want: connectrpc.CodeUnauthenticated},
+		{name: "tenant_access token", token: internalJWTs(t).tenantAccess, tenantID: tenantID, claimToken: claimToken, subdomain: "acme", want: connectrpc.CodeUnauthenticated},
+		{name: "wrong claim token", token: internalJWTs(t).registration, tenantID: tenantID, claimToken: claimToken + "x", subdomain: "acme", want: connectrpc.CodeUnauthenticated},
+		{name: "unknown tenant", token: internalJWTs(t).registration, tenantID: "0000000000000000", claimToken: claimToken, subdomain: "acme", want: connectrpc.CodeNotFound},
+		{name: "missing claim token", token: internalJWTs(t).registration, tenantID: tenantID, claimToken: "", subdomain: "acme", want: connectrpc.CodeInvalidArgument},
+		{name: "missing subdomain", token: internalJWTs(t).registration, tenantID: tenantID, claimToken: claimToken, subdomain: "", want: connectrpc.CodeInvalidArgument},
+		{name: "subdomain outside the naming rules", token: internalJWTs(t).registration, tenantID: tenantID, claimToken: claimToken, subdomain: "Acme", want: connectrpc.CodeInvalidArgument},
+		{name: "reserved subdomain", token: internalJWTs(t).registration, tenantID: tenantID, claimToken: claimToken, subdomain: "admin", want: connectrpc.CodeInvalidArgument},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := p.claim(t, tt.token, tt.tenantID, tt.claimToken)
+			_, err := p.claim(t, tt.token, tt.tenantID, tt.claimToken, tt.subdomain)
 			if got := connectrpc.CodeOf(err); got != tt.want {
 				t.Fatalf("ClaimTenantOwnership() error code = %v, want %v", got, tt.want)
 			}
@@ -182,8 +190,40 @@ func TestClaimTenantOwnershipOverTransportRejections(t *testing.T) {
 	}
 
 	// None of the rejections consumed the token: the valid claim still works.
-	if _, err := p.claim(t, internalJWTs(t).registration, tenantID, claimToken); err != nil {
+	if _, err := p.claim(t, internalJWTs(t).registration, tenantID, claimToken, "acme"); err != nil {
 		t.Fatalf("ClaimTenantOwnership() after rejections error = %v", err)
+	}
+}
+
+func TestClaimTenantOwnershipOverTransportRejectsATakenSubdomain(t *testing.T) {
+	p := newProcess(t)
+
+	first := p.startRegistration(t, "Acme")
+	firstID := first.GetTenant().GetTenantId()
+
+	if _, err := p.claim(t, internalJWTs(t).registration, firstID, first.GetOwnershipClaimToken(), "acme"); err != nil {
+		t.Fatalf("ClaimTenantOwnership(first) error = %v", err)
+	}
+
+	if _, err := p.archiveTenant(firstID, p.mintTenantAccessToken(t, firstID)); err != nil {
+		t.Fatalf("ArchiveTenant(first) error = %v", err)
+	}
+
+	second := p.startRegistration(t, "Acme")
+	secondID := second.GetTenant().GetTenantId()
+
+	_, err := p.claim(t, internalJWTs(t).registration, secondID, second.GetOwnershipClaimToken(), "acme")
+	if got, want := connectrpc.CodeOf(err), connectrpc.CodeAlreadyExists; got != want {
+		t.Fatalf("ClaimTenantOwnership(subdomain of an archived tenant) error code = %v, want %v", got, want)
+	}
+
+	owned, err := p.claim(t, internalJWTs(t).registration, secondID, second.GetOwnershipClaimToken(), "acme-2")
+	if err != nil {
+		t.Fatalf("ClaimTenantOwnership(another subdomain, same claim token) error = %v", err)
+	}
+
+	if got, want := owned.GetSubdomain(), "acme-2"; got != want {
+		t.Errorf("Tenant.Subdomain = %q, want %q", got, want)
 	}
 }
 
@@ -197,7 +237,7 @@ func TestClaimTenantOwnershipOverTransportRejectsMissingScope(t *testing.T) {
 
 	token := p.mintRegistrationTokenWithScope(t, "tenant.read")
 
-	_, err := p.claim(t, token, registration.GetTenant().GetTenantId(), registration.GetOwnershipClaimToken())
+	_, err := p.claim(t, token, registration.GetTenant().GetTenantId(), registration.GetOwnershipClaimToken(), "acme")
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodePermissionDenied; got != want {
 		t.Fatalf("ClaimTenantOwnership() error code = %v, want %v", got, want)
 	}
@@ -220,7 +260,7 @@ func TestClaimTenantOwnershipOverTransportRollsBackWhenMembershipFails(t *testin
 
 	p.addTenantMember(t, pending.ID(), callerSubject, relationdomain.RoleStaff)
 
-	_, err = p.claim(t, internalJWTs(t).registration, tenantID, registration.GetOwnershipClaimToken())
+	_, err = p.claim(t, internalJWTs(t).registration, tenantID, registration.GetOwnershipClaimToken(), "acme")
 	if got, want := connectrpc.CodeOf(err), connectrpc.CodeInternal; got != want {
 		t.Fatalf("ClaimTenantOwnership() error code = %v, want %v", got, want)
 	}
@@ -239,7 +279,7 @@ func TestClaimTenantOwnershipOverTransportRollsBackWhenMembershipFails(t *testin
 		t.Fatalf("RevokeTenantMembership() error = %v", err)
 	}
 
-	if _, err := p.claim(t, internalJWTs(t).registration, tenantID, registration.GetOwnershipClaimToken()); err != nil {
+	if _, err := p.claim(t, internalJWTs(t).registration, tenantID, registration.GetOwnershipClaimToken(), "acme"); err != nil {
 		t.Fatalf("ClaimTenantOwnership() after recovery error = %v", err)
 	}
 

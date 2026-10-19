@@ -376,7 +376,7 @@ func authorized(ctx context.Context, token string) context.Context {
 func (p *process) createTenant(t *testing.T, publicID, name string) tenantdomain.Tenant {
 	t.Helper()
 
-	tenant := tenantdomain.NewTenant(uuid.Must(uuid.NewV7()).String(), publicID, name, "standard", tenantdomain.TenantOwnershipStateOwned, false)
+	tenant := tenantdomain.NewTenant(uuid.Must(uuid.NewV7()).String(), publicID, name, "standard", tenantdomain.TenantOwnershipStateOwned, tenantdomain.Subdomain{}, false)
 	if err := p.tenants.CreateTenant(context.Background(), tenant); err != nil {
 		t.Fatalf("CreateTenant(%q) error = %v", name, err)
 	}
@@ -416,10 +416,10 @@ func (p *process) startRegistration(t *testing.T, name string) *tenantv1.StartTe
 }
 
 // claim calls ClaimTenantOwnership with token as the bearer credential.
-func (p *process) claim(t *testing.T, token, tenantID, claimToken string) (*tenantv1.Tenant, error) {
+func (p *process) claim(t *testing.T, token, tenantID, claimToken, subdomain string) (*tenantv1.Tenant, error) {
 	t.Helper()
 
-	res, err := p.tenantClient.ClaimTenantOwnership(authorized(context.Background(), token), &tenantv1.ClaimTenantOwnershipRequest{TenantId: tenantID, OwnershipClaimToken: claimToken})
+	res, err := p.tenantClient.ClaimTenantOwnership(authorized(context.Background(), token), &tenantv1.ClaimTenantOwnershipRequest{TenantId: tenantID, OwnershipClaimToken: claimToken, Subdomain: subdomain})
 	if err != nil {
 		return nil, err
 	}

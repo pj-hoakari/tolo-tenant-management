@@ -89,8 +89,8 @@ func newFixture(t *testing.T) fixture {
 	f := fixture{
 		tenants:     tenantdb.NewPostgresTenantRepository(testDB),
 		memberships: NewPostgresMembershipRepository(testDB),
-		tenantA:     tenantdomain.NewTenant("00000000-0000-0000-0000-0000000000a1", "aaaaaaaaaaaaaaa1", "Alpha", "standard", tenantdomain.TenantOwnershipStateOwned, false),
-		tenantB:     tenantdomain.NewTenant("00000000-0000-0000-0000-0000000000b1", "bbbbbbbbbbbbbbb1", "Beta", "standard", tenantdomain.TenantOwnershipStateOwned, false),
+		tenantA:     tenantdomain.NewTenant("00000000-0000-0000-0000-0000000000a1", "aaaaaaaaaaaaaaa1", "Alpha", "standard", tenantdomain.TenantOwnershipStateOwned, tenantdomain.Subdomain{}, false),
+		tenantB:     tenantdomain.NewTenant("00000000-0000-0000-0000-0000000000b1", "bbbbbbbbbbbbbbb1", "Beta", "standard", tenantdomain.TenantOwnershipStateOwned, tenantdomain.Subdomain{}, false),
 	}
 	f.eventA = tenantdomain.NewEvent("00000000-0000-0000-0000-0000000000a2", "aaaaaaaaaaaaaaa2", f.tenantA.ID(), f.tenantA.PublicID(), "Alpha Festival", tenantdomain.EventStatusDraft)
 	f.eventB = tenantdomain.NewEvent("00000000-0000-0000-0000-0000000000b2", "bbbbbbbbbbbbbbb2", f.tenantB.ID(), f.tenantB.PublicID(), "Beta Festival", tenantdomain.EventStatusDraft)

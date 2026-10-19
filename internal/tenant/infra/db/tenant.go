@@ -27,9 +27,9 @@ func NewPostgresTenantRepository(db *sqlx.DB) *PostgresTenantRepository {
 
 func (r *PostgresTenantRepository) CreateTenant(ctx context.Context, tenant domain.Tenant) error {
 	_, err := r.executor(ctx).ExecContext(ctx, `
-		INSERT INTO tenants (id, public_id, name, contract_plan, ownership_state, archived)
-		VALUES ($1, $2, $3, $4, $5, $6)`,
-		tenant.ID(), tenant.PublicID(), tenant.Name(), tenant.ContractPlan(), tenant.OwnershipState().String(), tenant.Archived())
+		INSERT INTO tenants (id, public_id, name, contract_plan, ownership_state, subdomain, archived)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		tenant.ID(), tenant.PublicID(), tenant.Name(), tenant.ContractPlan(), tenant.OwnershipState().String(), nullableSubdomain(tenant.Subdomain()), tenant.Archived())
 	if err != nil {
 		return mapTenantConstraintError(err)
 	}
@@ -73,7 +73,7 @@ func (r *PostgresTenantRepository) DeleteExpiredPendingTenants(ctx context.Conte
 func (r *PostgresTenantRepository) FindTenantByPublicIDForUpdate(ctx context.Context, publicID string) (domain.Tenant, domain.OwnershipClaim, error) {
 	var row tenantClaimRow
 	if err := sqlx.GetContext(ctx, r.executor(ctx), &row, `
-		SELECT id, public_id, name, contract_plan, ownership_state, archived, ownership_claim_token_hash, ownership_claim_expires_at
+		SELECT id, public_id, name, contract_plan, ownership_state, subdomain, archived, ownership_claim_token_hash, ownership_claim_expires_at
 		FROM tenants WHERE public_id = $1
 		FOR UPDATE`, publicID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -98,11 +98,11 @@ func (r *PostgresTenantRepository) MarkTenantOwned(ctx context.Context, tenant d
 
 	result, err := r.executor(ctx).ExecContext(ctx, `
 		UPDATE tenants
-		SET ownership_state = $2, ownership_claim_token_hash = NULL, ownership_claim_expires_at = NULL
+		SET ownership_state = $2, subdomain = $4, ownership_claim_token_hash = NULL, ownership_claim_expires_at = NULL
 		WHERE id = $1 AND ownership_state = $3`,
-		tenant.ID(), domain.TenantOwnershipStateOwned.String(), domain.TenantOwnershipStatePendingOwner.String())
+		tenant.ID(), domain.TenantOwnershipStateOwned.String(), domain.TenantOwnershipStatePendingOwner.String(), nullableSubdomain(tenant.Subdomain()))
 	if err != nil {
-		return fmt.Errorf("mark tenant owned: %w", err)
+		return fmt.Errorf("mark tenant owned: %w", mapTenantConstraintError(err))
 	}
 
 	rows, err := result.RowsAffected()
@@ -143,20 +143,21 @@ func (r *PostgresTenantRepository) UpdateTenant(ctx context.Context, tenant doma
 }
 
 func (r *PostgresTenantRepository) FindTenantByID(ctx context.Context, tenantID string) (domain.Tenant, error) {
-	return r.findTenant(ctx, `SELECT id, public_id, name, contract_plan, ownership_state, archived FROM tenants WHERE id = $1`, tenantID)
+	return r.findTenant(ctx, `SELECT id, public_id, name, contract_plan, ownership_state, subdomain, archived FROM tenants WHERE id = $1`, tenantID)
 }
 
 func (r *PostgresTenantRepository) FindTenantByPublicID(ctx context.Context, publicID string) (domain.Tenant, error) {
-	return r.findTenant(ctx, `SELECT id, public_id, name, contract_plan, ownership_state, archived FROM tenants WHERE public_id = $1`, publicID)
+	return r.findTenant(ctx, `SELECT id, public_id, name, contract_plan, ownership_state, subdomain, archived FROM tenants WHERE public_id = $1`, publicID)
 }
 
 type tenantRow struct {
-	ID             string `db:"id"`
-	PublicID       string `db:"public_id"`
-	Name           string `db:"name"`
-	ContractPlan   string `db:"contract_plan"`
-	OwnershipState string `db:"ownership_state"`
-	Archived       bool   `db:"archived"`
+	ID             string         `db:"id"`
+	PublicID       string         `db:"public_id"`
+	Name           string         `db:"name"`
+	ContractPlan   string         `db:"contract_plan"`
+	OwnershipState string         `db:"ownership_state"`
+	Subdomain      sql.NullString `db:"subdomain"`
+	Archived       bool           `db:"archived"`
 }
 
 type tenantClaimRow struct {
@@ -184,13 +185,24 @@ func (r tenantRow) domain(ctx context.Context) (domain.Tenant, error) {
 		return domain.Tenant{}, fmt.Errorf("parse tenant ownership state: %w", err)
 	}
 
+	var subdomain domain.Subdomain
+	if r.Subdomain.Valid {
+		if subdomain, err = domain.ParseSubdomain(r.Subdomain.String); err != nil {
+			return domain.Tenant{}, fmt.Errorf("parse tenant subdomain: %w", err)
+		}
+	}
+
 	// Defense in depth: never return a tenant that differs from the
 	// authenticated tenant carried in the context.
 	if err := tenantctx.VerifyOwnership(ctx, r.PublicID); err != nil {
 		return domain.Tenant{}, err
 	}
 
-	return domain.NewTenant(r.ID, r.PublicID, r.Name, r.ContractPlan, ownershipState, r.Archived), nil
+	return domain.NewTenant(r.ID, r.PublicID, r.Name, r.ContractPlan, ownershipState, subdomain, r.Archived), nil
+}
+
+func nullableSubdomain(subdomain domain.Subdomain) sql.NullString {
+	return sql.NullString{String: subdomain.String(), Valid: subdomain.String() != ""}
 }
 
 func (r *PostgresTenantRepository) findTenant(ctx context.Context, query, value string) (domain.Tenant, error) {
@@ -215,6 +227,8 @@ func mapTenantConstraintError(err error) error {
 	switch pgErr.ConstraintName {
 	case "tenants_public_id_key":
 		return repository.ErrTenantPublicIDExists
+	case "tenants_subdomain_key":
+		return repository.ErrTenantSubdomainExists
 	default:
 		return err
 	}

@@ -75,6 +75,7 @@ type StartTenantRegistrationUseCase interface {
 type ClaimTenantOwnershipInput struct {
 	TenantPublicID string
 	ClaimToken     string
+	Subdomain      string
 }
 
 // ClaimTenantOwnershipUseCase turns a pending_owner tenant into an owned one.
@@ -210,7 +211,7 @@ func (s *TenantService) StartTenantRegistration(ctx context.Context, input Start
 		return TenantRegistration{}, err
 	}
 
-	tenant := domain.NewTenant(tenantID, publicID, input.Name, input.ContractPlan, domain.TenantOwnershipStatePendingOwner, false)
+	tenant := domain.NewTenant(tenantID, publicID, input.Name, input.ContractPlan, domain.TenantOwnershipStatePendingOwner, domain.Subdomain{}, false)
 	claim := domain.OwnershipClaim{TokenHash: tokenHash, ExpiresAt: now.Add(s.ownershipClaimTTL)}
 
 	if err := s.tenantRepository.CreatePendingTenant(ctx, tenant, claim); err != nil {
@@ -233,6 +234,11 @@ func (s *TenantService) ClaimTenantOwnership(ctx context.Context, input ClaimTen
 		return domain.Tenant{}, ErrOwnershipClaimTokenRequired
 	}
 
+	subdomain, err := domain.ParseSubdomain(input.Subdomain)
+	if err != nil {
+		return domain.Tenant{}, err
+	}
+
 	subject, ok := tenantctx.SubjectFromContext(ctx)
 	if !ok {
 		return domain.Tenant{}, tenantctx.ErrSubjectMissing
@@ -240,7 +246,7 @@ func (s *TenantService) ClaimTenantOwnership(ctx context.Context, input ClaimTen
 
 	var owned domain.Tenant
 
-	err := s.transactor.WithinTransaction(ctx, func(ctx context.Context) error {
+	err = s.transactor.WithinTransaction(ctx, func(ctx context.Context) error {
 		tenant, claim, err := s.tenantRepository.FindTenantByPublicIDForUpdate(ctx, input.TenantPublicID)
 		if err != nil {
 			return err
@@ -257,7 +263,7 @@ func (s *TenantService) ClaimTenantOwnership(ctx context.Context, input ClaimTen
 			return ErrOwnershipClaimRejected
 		}
 
-		owned, err = tenant.ClaimOwnership()
+		owned, err = tenant.ClaimOwnership(subdomain)
 		if err != nil {
 			return err
 		}

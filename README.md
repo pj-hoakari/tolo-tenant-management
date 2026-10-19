@@ -221,8 +221,10 @@ proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16
 1. `StartTenantRegistration`（未認証）が `pending_owner` のテナントを作成し、所有権取得トークンの平文をこの応答でのみ返す。
    永続化するのは SHA-256 ハッシュだけで、トークンの有効期限は既定 1 時間（`application.DefaultOwnershipClaimTTL`）である。
    `contract_plan` の欠落は `invalid_argument` で拒否する。
-2. `ClaimTenantOwnership`（`registration` トークン、scope `tenant.claim`）が、対象が期限内の `pending_owner` であることとトークンのハッシュ一致を検証し、内部 JWT の `sub` をオーナーとして所属させ、`owned` へ遷移させ、トークンを消費する。
+2. `ClaimTenantOwnership`（`registration` トークン、scope `tenant.claim`）が、対象が期限内の `pending_owner` であることとトークンのハッシュ一致を検証し、内部 JWT の `sub` をオーナーとして所属させ、`owned` へ遷移させ、要求の `subdomain` をサブドメイン名として確定し、トークンを消費する。
    これらは 1 つの DB トランザクションで確定する。
+   サブドメイン名が既に使われている場合は `already_exists` を返し、トランザクションを取り消すのでトークンは消費しない。
+   呼び出し側は同じトークンで別の名前を指定して再試行できる。
 3. 以降は `tenantId` 指定で再認可した `tenant_access` でテナント配下を操作する。
 
 `pending_owner` のテナントは `ClaimTenantOwnership` 以外のテナント配下の RPC（`CreateEvent`、`ListEvents` など）を `failed_precondition` で拒否する。
@@ -230,11 +232,23 @@ proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16
 テナント名は表示用で、重複を許す。
 トークンの不正、期限切れ、使用済みはいずれも `unauthenticated` で、理由は区別しない。
 
+### サブドメイン名
+
+サブドメイン名は、Web がホスト名からテナントを決めるための識別子で、テナント名とは別に持つ（`docs/tenant_management_spec.md` の「サブドメイン名」）。
+英小文字、数字、ハイフンからなる 63 文字以内の名前で、先頭と末尾にはハイフンを置けない。
+16 文字の hex（公開 ID と紛らわしい）、3 文字目と 4 文字目がともにハイフンの名前（`xn--` を含む）、予約語の `www`、`api`、`admin`、`s` の後に数字だけが続く名前（プレビュー環境のスロット）は拒否する。
+規則に合わない名前と空の名前は `invalid_argument` を返す。
+
+サブドメイン名は所有権取得で確定し、`pending_owner` のテナントは持たない。
+確定後は変更できない。
+アーカイブ済みのテナントのサブドメイン名も含めて一意とし、一度使った名前をほかのテナントには使わせない。
+スキーマでは `tenants.subdomain` の一意制約（`tenants_subdomain_key`）と、`owned` 以外のテナントのサブドメイン名を `NULL` に限る検査制約で担保する。
+
 ### 契約変更とアーカイブ
 
 `ChangeTenantContract` と `ArchiveTenant` はいずれも `tenant_access` の内部 JWT と scope `tenant.write` を要求する。
 `ChangeTenantContract` は契約プランを変更し、`contract_plan` の欠落は `invalid_argument` で拒否する。
-`ArchiveTenant` は論理削除で、テナントは識別子と名前、イベント（状態は変えない）、所属をそのまま保持する。
+`ArchiveTenant` は論理削除で、テナントは識別子、名前、サブドメイン名、イベント（状態は変えない）、所属をそのまま保持する。
 アーカイブ後はそのテナント配下の書き込み RPC を `failed_precondition` で拒否し、参照（`GetEvent`、`ListEvents`、`ListMemberships`）はそのまま利用できる。
 
 どちらの RPC も、JWT の scope 検証に加えて呼び出し元の現在権限を確認する（「管理系書き込みの現在権限確認」）。

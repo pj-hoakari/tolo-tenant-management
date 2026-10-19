@@ -79,7 +79,7 @@ func newService(repo *MockTenantRepository, options ...application.Option) *appl
 func TestCreateEvent(t *testing.T) {
 	t.Parallel()
 
-	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, false)
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, domain.Subdomain{}, false)
 	ctrl := gomock.NewController(t)
 	repo := NewMockTenantRepository(ctrl)
 	repo.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(tenant, nil)
@@ -137,7 +137,7 @@ func TestCreateEventRequiresTenantID(t *testing.T) {
 func TestCreateEventRejectsPendingOwnerTenant(t *testing.T) {
 	t.Parallel()
 
-	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStatePendingOwner, false)
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStatePendingOwner, domain.Subdomain{}, false)
 	ctrl := gomock.NewController(t)
 	repo := NewMockTenantRepository(ctrl)
 	repo.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(tenant, nil)
@@ -314,7 +314,7 @@ func TestGetEventEnforcesTenantBoundary(t *testing.T) {
 func TestListEvents(t *testing.T) {
 	t.Parallel()
 
-	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, false)
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, domain.Subdomain{}, false)
 	events := []domain.Event{
 		domain.NewEvent("event-1", "event-public-id-1", tenant.ID(), tenant.PublicID(), "Festival 1", domain.EventStatusDraft),
 		domain.NewEvent("event-2", "event-public-id-2", tenant.ID(), tenant.PublicID(), "Festival 2", domain.EventStatusDraft),
@@ -446,7 +446,7 @@ func TestClaimTenantOwnership(t *testing.T) {
 		t.Fatalf("NewOwnershipClaimToken() error = %v", err)
 	}
 
-	pending := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStatePendingOwner, false)
+	pending := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStatePendingOwner, domain.Subdomain{}, false)
 	claim := domain.OwnershipClaim{TokenHash: hash, ExpiresAt: now.Add(time.Hour)}
 	ctrl := gomock.NewController(t)
 	repo := NewMockTenantRepository(ctrl)
@@ -470,13 +470,17 @@ func TestClaimTenantOwnership(t *testing.T) {
 
 	ctx := withSubject(context.Background(), "user-1")
 
-	owned, err := service.ClaimTenantOwnership(ctx, application.ClaimTenantOwnershipInput{TenantPublicID: pending.PublicID(), ClaimToken: token})
+	owned, err := service.ClaimTenantOwnership(ctx, application.ClaimTenantOwnershipInput{TenantPublicID: pending.PublicID(), ClaimToken: token, Subdomain: "acme"})
 	if err != nil {
 		t.Fatalf("ClaimTenantOwnership() error = %v", err)
 	}
 
 	if got, want := owned.OwnershipState(), domain.TenantOwnershipStateOwned; got != want {
 		t.Errorf("OwnershipState() = %v, want %v", got, want)
+	}
+
+	if got, want := owned.Subdomain().String(), "acme"; got != want {
+		t.Errorf("Subdomain() = %q, want %q", got, want)
 	}
 
 	if got, want := marked, owned; got != want {
@@ -498,25 +502,28 @@ func TestClaimTenantOwnershipRejections(t *testing.T) {
 		t.Fatalf("NewOwnershipClaimToken() error = %v", err)
 	}
 
-	pending := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStatePendingOwner, false)
-	owned := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, false)
+	pending := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStatePendingOwner, domain.Subdomain{}, false)
+	owned := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, domain.Subdomain{}, false)
 	live := domain.OwnershipClaim{TokenHash: hash, ExpiresAt: now.Add(time.Hour)}
 	subject := withSubject(context.Background(), "user-1")
 
 	tests := []struct {
-		name   string
-		ctx    context.Context
-		tenant domain.Tenant
-		claim  domain.OwnershipClaim
-		token  string
-		lookup bool
-		want   error
+		name      string
+		ctx       context.Context
+		tenant    domain.Tenant
+		claim     domain.OwnershipClaim
+		token     string
+		subdomain string
+		lookup    bool
+		want      error
 	}{
-		{name: "wrong token", ctx: subject, tenant: pending, claim: live, token: token + "x", lookup: true, want: application.ErrOwnershipClaimRejected},
-		{name: "expired claim", ctx: subject, tenant: pending, claim: domain.OwnershipClaim{TokenHash: hash, ExpiresAt: now}, token: token, lookup: true, want: application.ErrOwnershipClaimRejected},
-		{name: "already owned", ctx: subject, tenant: owned, claim: domain.OwnershipClaim{}, token: token, lookup: true, want: application.ErrOwnershipClaimRejected},
-		{name: "no subject", ctx: context.Background(), tenant: pending, claim: live, token: token, lookup: false, want: tenantctx.ErrSubjectMissing},
-		{name: "no token", ctx: subject, tenant: pending, claim: live, token: "", lookup: false, want: application.ErrOwnershipClaimTokenRequired},
+		{name: "wrong token", ctx: subject, tenant: pending, claim: live, token: token + "x", subdomain: "acme", lookup: true, want: application.ErrOwnershipClaimRejected},
+		{name: "expired claim", ctx: subject, tenant: pending, claim: domain.OwnershipClaim{TokenHash: hash, ExpiresAt: now}, token: token, subdomain: "acme", lookup: true, want: application.ErrOwnershipClaimRejected},
+		{name: "already owned", ctx: subject, tenant: owned, claim: domain.OwnershipClaim{}, token: token, subdomain: "acme", lookup: true, want: application.ErrOwnershipClaimRejected},
+		{name: "no subject", ctx: context.Background(), tenant: pending, claim: live, token: token, subdomain: "acme", lookup: false, want: tenantctx.ErrSubjectMissing},
+		{name: "no token", ctx: subject, tenant: pending, claim: live, token: "", subdomain: "acme", lookup: false, want: application.ErrOwnershipClaimTokenRequired},
+		{name: "no subdomain", ctx: subject, tenant: pending, claim: live, token: token, subdomain: "", lookup: false, want: domain.ErrInvalidSubdomain},
+		{name: "invalid subdomain", ctx: subject, tenant: pending, claim: live, token: token, subdomain: "www", lookup: false, want: domain.ErrInvalidSubdomain},
 	}
 
 	for _, tt := range tests {
@@ -533,7 +540,7 @@ func TestClaimTenantOwnershipRejections(t *testing.T) {
 
 			service := application.NewTenantService(repo, passthroughTransactor{}, memberships, &permissionStub{allowed: true}, application.WithClock(func() time.Time { return now }))
 
-			_, err := service.ClaimTenantOwnership(tt.ctx, application.ClaimTenantOwnershipInput{TenantPublicID: pending.PublicID(), ClaimToken: tt.token})
+			_, err := service.ClaimTenantOwnership(tt.ctx, application.ClaimTenantOwnershipInput{TenantPublicID: pending.PublicID(), ClaimToken: tt.token, Subdomain: tt.subdomain})
 			if !errors.Is(err, tt.want) {
 				t.Fatalf("ClaimTenantOwnership() error = %v, want %v", err, tt.want)
 			}
@@ -555,7 +562,7 @@ func TestClaimTenantOwnershipDoesNotMarkOwnedWhenMembershipFails(t *testing.T) {
 		t.Fatalf("NewOwnershipClaimToken() error = %v", err)
 	}
 
-	pending := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStatePendingOwner, false)
+	pending := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStatePendingOwner, domain.Subdomain{}, false)
 	ctrl := gomock.NewController(t)
 	repo := NewMockTenantRepository(ctrl)
 	repo.EXPECT().FindTenantByPublicIDForUpdate(gomock.Any(), pending.PublicID()).Return(pending, domain.OwnershipClaim{TokenHash: hash, ExpiresAt: now.Add(time.Hour)}, nil)
@@ -563,7 +570,7 @@ func TestClaimTenantOwnershipDoesNotMarkOwnedWhenMembershipFails(t *testing.T) {
 	errStore := errors.New("membership store down")
 	service := application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{err: errStore}, &permissionStub{allowed: true}, application.WithClock(func() time.Time { return now }))
 
-	_, err = service.ClaimTenantOwnership(withSubject(context.Background(), "user-1"), application.ClaimTenantOwnershipInput{TenantPublicID: pending.PublicID(), ClaimToken: token})
+	_, err = service.ClaimTenantOwnership(withSubject(context.Background(), "user-1"), application.ClaimTenantOwnershipInput{TenantPublicID: pending.PublicID(), ClaimToken: token, Subdomain: "acme"})
 	if !errors.Is(err, errStore) {
 		t.Fatalf("ClaimTenantOwnership() error = %v, want %v", err, errStore)
 	}
@@ -572,7 +579,7 @@ func TestClaimTenantOwnershipDoesNotMarkOwnedWhenMembershipFails(t *testing.T) {
 func TestChangeTenantContract(t *testing.T) {
 	t.Parallel()
 
-	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, false)
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, domain.Subdomain{}, false)
 	ctrl := gomock.NewController(t)
 	repo := NewMockTenantRepository(ctrl)
 	permissions := &permissionStub{allowed: true}
@@ -633,7 +640,7 @@ func TestChangeTenantContractRequiresContractPlan(t *testing.T) {
 func TestArchiveTenant(t *testing.T) {
 	t.Parallel()
 
-	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, false)
+	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, domain.Subdomain{}, false)
 	ctrl := gomock.NewController(t)
 	repo := NewMockTenantRepository(ctrl)
 	permissions := &permissionStub{allowed: true}
@@ -666,7 +673,7 @@ func TestArchiveTenant(t *testing.T) {
 	}
 
 	// The soft delete keeps the identifier, the name and the plan.
-	if got, want := archived, domain.NewTenant(tenant.ID(), tenant.PublicID(), tenant.Name(), tenant.ContractPlan(), tenant.OwnershipState(), true); got != want {
+	if got, want := archived, domain.NewTenant(tenant.ID(), tenant.PublicID(), tenant.Name(), tenant.ContractPlan(), tenant.OwnershipState(), tenant.Subdomain(), true); got != want {
 		t.Errorf("archived tenant = %#v, want %#v", got, want)
 	}
 
@@ -682,9 +689,9 @@ func TestArchiveTenant(t *testing.T) {
 func TestAdministrativeTenantWriteRejections(t *testing.T) {
 	t.Parallel()
 
-	owned := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, false)
-	pending := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStatePendingOwner, false)
-	archived := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, true)
+	owned := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, domain.Subdomain{}, false)
+	pending := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStatePendingOwner, domain.Subdomain{}, false)
+	archived := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, domain.Subdomain{}, true)
 	errPermissions := errors.New("membership store down")
 
 	rpcs := []struct {

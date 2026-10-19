@@ -140,6 +140,7 @@ type Tenant struct {
 	ContractPlan   string                 `protobuf:"bytes,3,opt,name=contract_plan,json=contractPlan,proto3" json:"contract_plan,omitempty"` // identifier only; billing details are out of scope
 	Archived       bool                   `protobuf:"varint,4,opt,name=archived,proto3" json:"archived,omitempty"`
 	OwnershipState TenantOwnershipState   `protobuf:"varint,5,opt,name=ownership_state,json=ownershipState,proto3,enum=tolo.tenant.v1.TenantOwnershipState" json:"ownership_state,omitempty"`
+	Subdomain      string                 `protobuf:"bytes,6,opt,name=subdomain,proto3" json:"subdomain,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -207,6 +208,13 @@ func (x *Tenant) GetOwnershipState() TenantOwnershipState {
 		return x.OwnershipState
 	}
 	return TenantOwnershipState_TENANT_OWNERSHIP_STATE_UNSPECIFIED
+}
+
+func (x *Tenant) GetSubdomain() string {
+	if x != nil {
+		return x.Subdomain
+	}
+	return ""
 }
 
 // Event is an installation or occasion owned by exactly one tenant.
@@ -394,6 +402,7 @@ type ClaimTenantOwnershipRequest struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	TenantId            string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 	OwnershipClaimToken string                 `protobuf:"bytes,2,opt,name=ownership_claim_token,json=ownershipClaimToken,proto3" json:"ownership_claim_token,omitempty"`
+	Subdomain           string                 `protobuf:"bytes,3,opt,name=subdomain,proto3" json:"subdomain,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -438,6 +447,13 @@ func (x *ClaimTenantOwnershipRequest) GetTenantId() string {
 func (x *ClaimTenantOwnershipRequest) GetOwnershipClaimToken() string {
 	if x != nil {
 		return x.OwnershipClaimToken
+	}
+	return ""
+}
+
+func (x *ClaimTenantOwnershipRequest) GetSubdomain() string {
+	if x != nil {
+		return x.Subdomain
 	}
 	return ""
 }
@@ -1050,13 +1066,14 @@ var File_tolo_tenant_v1_tenant_proto protoreflect.FileDescriptor
 
 const file_tolo_tenant_v1_tenant_proto_rawDesc = "" +
 	"\n" +
-	"\x1btolo/tenant/v1/tenant.proto\x12\x0etolo.tenant.v1\x1a\x16authz/v1/options.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc9\x01\n" +
+	"\x1btolo/tenant/v1/tenant.proto\x12\x0etolo.tenant.v1\x1a\x16authz/v1/options.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe7\x01\n" +
 	"\x06Tenant\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12#\n" +
 	"\rcontract_plan\x18\x03 \x01(\tR\fcontractPlan\x12\x1a\n" +
 	"\barchived\x18\x04 \x01(\bR\barchived\x12M\n" +
-	"\x0fownership_state\x18\x05 \x01(\x0e2$.tolo.tenant.v1.TenantOwnershipStateR\x0eownershipState\"\x94\x01\n" +
+	"\x0fownership_state\x18\x05 \x01(\x0e2$.tolo.tenant.v1.TenantOwnershipStateR\x0eownershipState\x12\x1c\n" +
+	"\tsubdomain\x18\x06 \x01(\tR\tsubdomain\"\x94\x01\n" +
 	"\x05Event\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x1b\n" +
 	"\ttenant_id\x18\x02 \x01(\tR\btenantId\x12\x12\n" +
@@ -1069,10 +1086,11 @@ const file_tolo_tenant_v1_tenant_proto_rawDesc = "" +
 	"\x06tenant\x18\x01 \x01(\v2\x16.tolo.tenant.v1.TenantR\x06tenant\x122\n" +
 	"\x15ownership_claim_token\x18\x02 \x01(\tR\x13ownershipClaimToken\x129\n" +
 	"\n" +
-	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"n\n" +
+	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\x8c\x01\n" +
 	"\x1bClaimTenantOwnershipRequest\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x122\n" +
-	"\x15ownership_claim_token\x18\x02 \x01(\tR\x13ownershipClaimToken\"N\n" +
+	"\x15ownership_claim_token\x18\x02 \x01(\tR\x13ownershipClaimToken\x12\x1c\n" +
+	"\tsubdomain\x18\x03 \x01(\tR\tsubdomain\"N\n" +
 	"\x1cClaimTenantOwnershipResponse\x12.\n" +
 	"\x06tenant\x18\x01 \x01(\v2\x16.tolo.tenant.v1.TenantR\x06tenant\"_\n" +
 	"\x1bChangeTenantContractRequest\x12\x1b\n" +
