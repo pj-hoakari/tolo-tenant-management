@@ -15,7 +15,8 @@ package: `tolo.tenant.v1`（テナント）、`tolo.relation.v1`（関係参照�
 | RPC | 説明（ユビキタス言語） | 呼び出し元 | 認可 | 関連ドメインイベント |
 |---|---|---|---|---|
 | StartTenantRegistration | テナント（顧客組織）を未認証で仮作成し、所有権取得トークンを一度だけ返す | 管理 UI | 未認証（Service Gatewayの公開経路） | （仮登録。外部イベントなし） |
-| ClaimTenantOwnership | 仮テナントの所有権を取得し、認証済みユーザーをオーナーとして登録する | 管理 UI | `tenant.claim`（所有権取得専用の最小トークン。テナント文脈なし。Auth（IdP）） | TenantRegistered |
+| ClaimTenantOwnership | 仮テナントの所有権を取得し、認証済みユーザーをオーナーとして登録する。テナントのサブドメイン名を確定する | 管理 UI | `tenant.claim`（所有権取得専用の最小トークン。テナント文脈なし。Auth（IdP）） | TenantRegistered |
+| ResolveTenantSubdomain | サブドメイン名からテナントの公開 ID を引く。Web がホスト名からテナントを決めるために使う | 管理 UI、ゲスト（いずれも BFF のホスト名の解決） | 未認証（Service Gatewayの公開経路） | （参照のみ） |
 | ChangeTenantContract | テナントの契約プランを変更する | 管理 UI | `tenant_access` + tenant.write | TenantContractChanged |
 | ArchiveTenant | テナントを論理削除（アーカイブ）する。識別子と配下データは保持 | 管理 UI | `tenant_access` + tenant.write | TenantArchived |
 | CreateEvent | テナント配下にイベント（催事／設置）を新設する | 管理 UI | `tenant_access` + events.manage | EventCreated |
@@ -45,6 +46,7 @@ import "google/protobuf/timestamp.proto";
 service TenantService {
   rpc StartTenantRegistration(StartTenantRegistrationRequest) returns (StartTenantRegistrationResponse);
   rpc ClaimTenantOwnership(ClaimTenantOwnershipRequest) returns (Tenant);
+  rpc ResolveTenantSubdomain(ResolveTenantSubdomainRequest) returns (ResolveTenantSubdomainResponse);
   rpc ChangeTenantContract(ChangeTenantContractRequest) returns (Tenant);
   rpc ArchiveTenant(ArchiveTenantRequest) returns (Tenant);
   rpc CreateEvent(CreateEventRequest) returns (Event);
@@ -56,10 +58,11 @@ service TenantService {
 // テナント: 契約・課金・オンボーディングの単位＝顧客組織。改善データの保護境界
 message Tenant {
   string tenant_id = 1;      // 公開 ID（ランダムな 16 文字 hex）。内部主キーは外へ出さない
-  string name = 2;           // 一意
+  string name = 2;           // 表示用。重複を許す
   string contract_plan = 3;  // 課金詳細はスコープ外のため識別子のみ
   bool archived = 4;
   TenantOwnershipState ownership_state = 5;
+  string subdomain = 6;      // サブドメイン名。所有権取得で確定し、変更しない。PENDING_OWNER の間は空
 }
 
 enum TenantOwnershipState {
@@ -100,6 +103,13 @@ message StartTenantRegistrationResponse {
 message ClaimTenantOwnershipRequest {
   string tenant_id = 1;
   string ownership_claim_token = 2;
+  string subdomain = 3;  // 必須。規則は補足「サブドメイン名」
+}
+message ResolveTenantSubdomainRequest {
+  string subdomain = 1;
+}
+message ResolveTenantSubdomainResponse {
+  string tenant_id = 1;
 }
 message ChangeTenantContractRequest {
   string tenant_id = 1;
@@ -217,10 +227,7 @@ message ListMembershipsResponse {
 
 ### テナント
 
-- テナント名は `pending_owner` を含めて一意とし、同名のテナントを仮作成しようとした場合は `already_exists` を返す
-  一意性は保存された文字列そのままで判定する。大文字小文字は区別し、前後・連続する空白の除去も Unicode 正規化も行わない
-  期限切れの `pending_owner` を物理削除した時点で、その名前を解放する
-  アーカイブは名前を解放しない。アーカイブ済みテナントの名前を新規テナントが使うことはできない
+- テナント名は表示用であり、重複を許す
 - `pending_owner` は、ClaimTenantOwnership と期限切れ削除以外の操作を受け付けない
 - `owned` への遷移後は、所有状態を `pending_owner` へ戻さない
 - アーカイブは論理削除であり `GetEvent` は archived でも返す（宙づり参照を生まない）
@@ -229,6 +236,22 @@ message ListMembershipsResponse {
 - テナントのアーカイブは配下イベントの状態を変えない
   配下イベントは状態を据え置いたまま書き込みのみ遮断され、`GetEvent`／`ListEvents` は引き続き返す
   復元はテナントのアーカイブ状態を戻すだけでよく、配下イベントの状態を復元する処理を要さない
+
+### サブドメイン名
+
+- サブドメイン名は、Web がホスト名からテナントを決めるための識別子であり、テナント名とは別に持つ（ADR-0104）
+- 英小文字・数字・ハイフンからなり、63 文字以内で、先頭と末尾はハイフン以外とする
+- 次の名前は拒否する
+  - 16 文字の hex（`^[0-9a-f]{16}$`）
+  - 3 文字目と 4 文字目がともにハイフンの名前（`xn--` を含む）
+  - 予約語の `www`、`api`、`admin`
+  - `s` の後に数字だけが続く名前（`^s[0-9]+$`）
+- 規則に合わない名前は `invalid_argument` を返す
+- ClaimTenantOwnership で確定する。`pending_owner` のテナントはサブドメイン名を持たない
+- 一意性はアーカイブ済みのテナントを含めて判定し、既に使われている名前は `already_exists` を返す
+- 変更できない。`owned` のテナントは物理削除しないので、一度使った名前はほかのテナントに使わせない
+- ResolveTenantSubdomain は、`owned` のテナントのサブドメイン名に対して公開 ID を返す。アーカイブ済みのテナントも返す。見つからない名前は `not_found` を返す
+  応答は公開 ID だけとし、テナント名、所有状態、アーカイブの有無を返さない
 
 ### イベント
 
@@ -262,10 +285,11 @@ message ListMembershipsResponse {
 - ClaimTenantOwnership は、IdPが認証済みユーザーへ発行した`registration`トークンと、StartTenantRegistrationが返した所有権取得トークンの両方を要求する
   外部トークンのscopeは`tenant.claim`とし、Service Gatewayが主体を維持した内部JWTへ変換する
   Tenant Managementは対象が期限内の`pending_owner`であることと、所有権取得トークンのハッシュが一致することを検証する
-  認証済みユーザーのオーナー所属作成、`owned`への遷移、所有権取得トークンの消費を同一DBのローカルトランザクションで確定する
+  認証済みユーザーのオーナー所属作成、`owned`への遷移、サブドメイン名の確定、所有権取得トークンの消費を同一DBのローカルトランザクションで確定する
+  サブドメイン名が使われていて `already_exists` を返す場合は、所有権取得トークンを消費しない。呼び出し側は別の名前で再試行できる
   TenantRegisteredはこのトランザクションの成功時に成立する
   1ユーザーは複数テナントに所属しうるため、取得者が既に他テナントへ所属していても所有権を取得できる
-- オンボーディング全体は「匿名の仮テナント作成 → Authの`POST /api/signup`でアカウント作成 → テナント未指定の認可で所有権取得専用トークンを取得 → 所有権取得とオーナー所属の確定 → tenantId指定の再認可で`tenant_access`取得」の流れとする（Auth（IdP）補足）
+- オンボーディング全体は「匿名の仮テナント作成 → Authの`POST /api/signup`でアカウント作成 → テナント未指定の認可で所有権取得専用トークンを取得 → 所有権取得、オーナー所属、サブドメイン名の確定 → tenantId指定の再認可で`tenant_access`取得」の流れとする（Auth（IdP）補足）
   課金・プロビジョニング導入時に再設計の余地を残す
 
 ### 関係参照
@@ -293,19 +317,20 @@ message ListMembershipsResponse {
 
 | 事象 | Connect エラーコード |
 |---|---|
-| テナント名の重複、公開 ID の衝突 | `already_exists` |
+| サブドメイン名の重複、公開 ID の衝突 | `already_exists` |
 | 所有権取得トークンが不正、期限切れ、使用済み | `unauthenticated` |
 | relation model 制約違反（同一テナントへの重複所属、event∈tenant・event-role⇒tenant-role の違反）、`ROLE_ADMIN` 以外の予約違反はそれぞれ上記「関係参照」のとおり | `failed_precondition`（`ROLE_ADMIN` の付与は `invalid_argument`） |
 | 存在しないテナント／イベント | `not_found` |
 | `pending_owner`またはアーカイブ済みテナント／イベントへの許可外の書き込み、許容外の状態遷移 | `failed_precondition` |
 | 匿名の仮作成がレート制限を超過 | `resource_exhausted` |
-| 必須項目の欠落 | `invalid_argument` |
+| 必須項目の欠落、サブドメイン名が規則に合わない | `invalid_argument` |
 | 内部 JWT が無効、`token_use` 不一致 | `unauthenticated` |
 | 内部 JWT の検証鍵を解決できない（JWKS の取得失敗、その再試行を控えている間） | `unavailable` |
 | scope 不足、認証テナント以外のイベントの指定 | `permission_denied` |
 
 - エラーメッセージに内部主キー・テナント名・ユーザー ID を含めない（service_gateway.md のエラー方針）
-- 存在しない識別子と権限のない識別子は区別して返す。公開 ID は 64 ビットのランダムで列挙できず、推測可能な値で引ける RPC もないため、存在の推定は許容する
+- 存在しない識別子と権限のない識別子は区別して返す。公開 ID は 64 ビットのランダムで列挙できないため、存在の推定は許容する
+  サブドメイン名は推測できるため、ResolveTenantSubdomain によってテナントの有無は誰でも確かめられる。名前で開ける仕組みである以上これを受け入れ、応答を公開 ID だけに限る（ADR-0104）
 
 ### 参照系 RPC とテナント境界
 
