@@ -115,8 +115,8 @@ github.com/pascaldekloe/name v1.0.0 h1:n7LKFgHixETzxpRv2R77YgPUFo85QHGZKrdaYm7eY
 github.com/pascaldekloe/name v1.0.0/go.mod h1:Z//MfYJnH4jVpQ9wkclwu2I2MkHmXTlT9wR5UZScttM=
 github.com/pj-hoakari/internal-jwt-handling v0.4.0 h1:npS5wZ/6VmiH0CEO9utwPP+TuLPxlbSIS+r8k11Agwk=
 github.com/pj-hoakari/internal-jwt-handling v0.4.0/go.mod h1:5ZJeQf0tgNYIuxRUd11r1N3x2x83Hw6X1Z1vhmDwjt4=
-github.com/pj-hoakari/protoc-gen-authz-go v0.3.0 h1:oLKiB3M/JaFROsHR7NHU0+kN6IZzNUOrecWAtw7Byu8=
-github.com/pj-hoakari/protoc-gen-authz-go v0.3.0/go.mod h1:wrZQc2mY9d2WXSt/7P3+4Fp5yesNuQPCrEWqt6UGPqI=
+github.com/pj-hoakari/protoc-gen-authz-go v0.4.1 h1:qhcYmZHtyhgkShNCuSB36XZOkH3T6jqcr6Af8OrCXmI=
+github.com/pj-hoakari/protoc-gen-authz-go v0.4.1/go.mod h1:qmfbUJQHMYtEu7QHjEkEvUmA+3GutuLYGB1SCmxo8ss=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 h1:o4JXh1EVt9k/+g42oCprj/FisM4qX9L3sZB3upGN2ZU=
 github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55/go.mod h1:OmDBASR4679mdNQnz2pUhc2G8CO2JrUAVFDRBDP/hJE=
