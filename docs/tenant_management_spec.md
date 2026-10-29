@@ -287,7 +287,7 @@ message ListMembershipsResponse {
 - 次の名前は拒否する
   - 16 文字の hex（`^[0-9a-f]{16}$`）
   - 3 文字目と 4 文字目がともにハイフンの名前（`xn--` を含む）
-  - 予約語の `www`、`api`、`admin`
+  - 予約語の `www`、`api`、`admin`、`auth`（`auth` は IdP のホスト。ADR-0119）
   - `s` の後に数字だけが続く名前（`^s[0-9]+$`）
 - 規則に合わない名前は `invalid_argument` を返す
 - ClaimTenantOwnership で確定する。`pending_owner` のテナントはサブドメイン名を持たない
