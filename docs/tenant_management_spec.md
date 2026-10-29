@@ -30,14 +30,14 @@ package: `tolo.tenant.v1`（テナント）、`tolo.relation.v1`（関係参照�
 
 | RPC | 説明（ユビキタス言語） | 呼び出し元 | 認可 | 関連ドメインイベント |
 |---|---|---|---|---|
-| CreateTenantInvitation | テナント、テナントロール、表示名を固定した招待を作り、一回限りの招待トークンを一度だけ返す | 管理 UI | `tenant_access` + tenant.write | TenantInvitationCreated |
+| CreateTenantInvitation | テナント、テナントロール（スタッフに限る）、表示名を固定した招待を作り、一回限りの招待トークンを一度だけ返す | 管理 UI | `tenant_access` + tenant.write | TenantInvitationCreated |
 | ListTenantInvitations | 受諾も取り消しもされておらず期限内の招待を一覧する。招待トークンは返さない | 管理 UI | `tenant_access` + tenant.write | （参照のみ） |
 | RevokeTenantInvitation | 招待を取り消す | 管理 UI | `tenant_access` + tenant.write | TenantInvitationRevoked |
 | AcceptTenantInvitation | 招待を受諾し、認証済みユーザーを招待で固定したテナントロールと表示名で所属させる | 管理 UI | `registration` + tenant.join（テナント文脈を持たない最小トークン。Auth（IdP）） | UserJoinedTenant |
 | AddTenantMember | ユーザーをテナントに所属させる（1ユーザーは複数テナントに所属しうる。同一テナントへの重複所属は不可）。管理 UI から人を加える経路は招待とし、本 RPC はサービス間に限る。ClaimTenantOwnership と AcceptTenantInvitation による所属は本サービス内部のローカルトランザクションで行い、本 RPC を経ない | サービス間 | サービス間（token_use=service） | UserJoinedTenant |
-| ChangeTenantRole | テナントロールを付与・変更する | 管理 UI | `tenant_access` + tenant.write | TenantRoleChanged |
+| ChangeTenantRole | テナントロールを付与・変更する。オーナーへの昇格は本 RPC だけで行う。最後のオーナーの変更は拒否する | 管理 UI | `tenant_access` + tenant.write | TenantRoleChanged |
 | GrantEventRole | イベントロールを割り当てる（event∈tenant、event-role⇒tenant-role を検証） | 管理 UI | `tenant_access` + tenant.write | EventRoleGranted |
-| RevokeRole | メンバー削除またはロール解除 | 管理 UI | `tenant_access` + tenant.write | RoleRevoked |
+| RevokeRole | メンバー削除またはロール解除。最後のオーナーのテナント所属の削除は拒否する | 管理 UI | `tenant_access` + tenant.write | RoleRevoked |
 | ListMemberships | 所属の一覧参照（管理画面用） | 管理 UI | `tenant_access` + tenant.read | （参照のみ） |
 
 ## 参考 proto 定義
@@ -150,6 +150,7 @@ message ListEventsResponse {
 ```proto
 syntax = "proto3";
 package tolo.relation.v1;
+import "google/protobuf/timestamp.proto";
 
 // tenant_id／event_id はテナントが発番する公開 ID（16 文字 hex）
 
@@ -172,13 +173,14 @@ message Membership {
   Role tenant_role = 3;
   repeated EventRole event_roles = 4;
   string display_name = 5;  // テナントの中だけで使う表示名。規則は補足「表示名」
+  google.protobuf.Timestamp joined_at = 6;  // 所属が確定した時刻（招待の受諾、または所有権取得）
 }
 
 // 招待: テナント、テナントロール、表示名を固定し、一回限りの招待トークンで受諾させる
 message TenantInvitation {
   string invitation_id = 1;
   string tenant_id = 2;
-  Role tenant_role = 3;     // ROLE_OWNER または ROLE_STAFF
+  Role tenant_role = 3;     // ROLE_STAFF だけ
   string display_name = 4;
   google.protobuf.Timestamp expires_at = 5;
 }
@@ -339,7 +341,8 @@ message ListMembershipsResponse {
 
 - 管理 UI から人をテナントに加える経路は招待とする（ADR-0118）。AddTenantMember はサービス間に限る
 - CreateTenantInvitation は、`owned` かつアーカイブされていないテナントに、テナントロールと表示名を固定した招待を作る
-  テナントロールは `ROLE_OWNER` と `ROLE_STAFF` に限り、`ROLE_ADMIN` は `invalid_argument` を返す
+  テナントロールは `ROLE_STAFF` だけとし、`ROLE_OWNER` と `ROLE_ADMIN` は `invalid_argument` を返す（ADR-0120）
+  オーナーは、スタッフとして所属した後に ChangeTenantRole で昇格させる
   招待トークンは暗号論的に推測困難な一回限りの値とし、平文を応答で一度だけ返す
   永続化層にはトークンのハッシュだけを保存し、ログ、監査ログ、エラー本文へ平文を出さない
   招待トークンの有効期限は実装フェーズで確定する
@@ -350,9 +353,10 @@ message ListMembershipsResponse {
   Tenant Management は、招待トークンのハッシュが一致し、招待が期限内で、受諾も取り消しもされていないことを検証する。対象のテナントは `owned` かつアーカイブされていないことを要する
   認証済みユーザーの所属作成（招待で固定したテナントロールと表示名を持たせる）と招待トークンの消費を同一DBのローカルトランザクションで確定する
   UserJoinedTenant はこのトランザクションの成功時に成立する
-  受諾した時点で所属を確定し、オーナーの承認の段階は設けない
+  受諾した時点で所属を確定し、オーナーの承認の段階は設けない。所属には受諾の時刻を持たせる
   認証済みユーザーがすでにそのテナントに所属している場合は `failed_precondition` を返し、招待トークンを消費しない
 - 招待の受諾は「招待 URL を開く → サインアップまたはログイン → テナント未指定の認可で`registration`トークンを取得 → 招待の受諾と所属の確定 → tenantId指定の再認可で`tenant_access`取得」の流れとする（Auth（IdP）補足）
+- 使用済みの招待トークンで受諾しようとした人には、Web がオーナーへ連絡するよう案内する
 - 招待 URL はテナントの公開 ID と招待トークンから管理 UI が作る。Web は招待 URL で受け取った招待トークンをすぐにサーバ側のセッションへ移し、招待トークンを含まない URL へリダイレクトする。招待トークンを含むページには `Referrer-Policy: no-referrer` を付け、URL をログに残さない
 
 ### 表示名
@@ -361,10 +365,14 @@ message ListMembershipsResponse {
 - 招待による所属は招待で固定した表示名を、所有権取得によるオーナーの所属は ClaimTenantOwnership の要求の表示名を持つ
 - 表示名は空を許さず、一意である必要はない
 - 長さの上限と、表示名を変える手段は実装フェーズで確定する
+- 表示名だけでは受諾した人が本人かを確かめられないので、オーナーは昇格の前に本人へ別の経路で確かめる。受諾の時刻（`joined_at`）を手がかりにする
 
 ### 関係参照
 
 - `ROLE_ADMIN` は enum の予約値であり、付与しようとした場合は `invalid_argument` を返す。実ロールにするかは将来判断する
+- `owned` のテナントには常に1人以上のオーナーがいる（ADR-0120）
+  ChangeTenantRole で最後のオーナーのテナントロールを変える要求と、RevokeRole で最後のオーナーのテナント所属を削除する要求は `failed_precondition` を返す
+  残るオーナーの数は現在権限の確認と同じローカルトランザクションで確かめ、並行する変更が重なってもオーナーが0人にならないようにする
 - relation model 制約の検証点: 同一テナントへの重複所属を作らない（AddTenantMember、AcceptTenantInvitation）、event∈tenant と event-role⇒tenant-role（GrantEventRole）
   違反は `failed_precondition` を返す
   1ユーザーが所属できるテナント数に上限は置かない
@@ -389,7 +397,7 @@ message ListMembershipsResponse {
 |---|---|
 | サブドメイン名の重複、公開 ID の衝突 | `already_exists` |
 | 所有権取得トークンまたは招待トークンが不正、期限切れ、使用済み、取り消し済み | `unauthenticated` |
-| relation model 制約違反（同一テナントへの重複所属、event∈tenant・event-role⇒tenant-role の違反）、`ROLE_ADMIN` 以外の予約違反はそれぞれ上記「関係参照」のとおり | `failed_precondition`（`ROLE_ADMIN` の付与は `invalid_argument`） |
+| relation model 制約違反（同一テナントへの重複所属、event∈tenant・event-role⇒tenant-role の違反）、最後のオーナーの降格・削除、`ROLE_ADMIN` 以外の予約違反はそれぞれ上記「関係参照」のとおり | `failed_precondition`（`ROLE_ADMIN` の付与は `invalid_argument`） |
 | 存在しないテナント／イベント | `not_found` |
 | `pending_owner`またはアーカイブ済みテナント／イベントへの許可外の書き込み、許容外の状態遷移 | `failed_precondition` |
 | 匿名の仮作成がレート制限を超過 | `resource_exhausted` |
