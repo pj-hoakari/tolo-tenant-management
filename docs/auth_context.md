@@ -9,14 +9,16 @@
 | ドメインイベント | 対応 |
 |---|---|
 | UserRegistered | Auth 独自 API: `POST /api/signup`（アカウント作成。テナント紐づけ前） |
-| UserLoggedIn／LoginFailed | Auth: Discovery の `authorization_endpoint` |
+| UserLoggedIn／LoginFailed | Auth 独自 API: `POST /api/login`（Web のログイン画面から呼ぶ）。`POST /api/signup` の成功時も UserLoggedIn が成立する |
 | UserLoggedOut | Auth: Discovery の `end_session_endpoint` |
 | TenantAccessTokenIssued | Auth: Discovery の `token_endpoint`（authorization_code） |
-| RegistrationTokenIssued | Auth: Discovery の `token_endpoint`（authorization_code、テナント未指定。所有権取得専用の最小トークン） |
+| RegistrationTokenIssued | Auth: Discovery の `token_endpoint`（authorization_code、テナント未指定。仮テナントの所有権取得と招待の受諾に使う最小トークン） |
 | EventAccessTokenIssued／TokenExchangeDenied | Auth: Discovery の `token_endpoint`（token-exchange） |
 | TokenRevoked | Auth: Authorization Server Metadata の `revocation_endpoint` |
 | AuditLogRecorded | Auth 内部（全操作について成否を記録） |
-| UserJoinedTenant | Tenant Management: RelationAdminService.AddTenantMember |
+| TenantInvitationCreated | Tenant Management: RelationAdminService.CreateTenantInvitation |
+| TenantInvitationRevoked | Tenant Management: RelationAdminService.RevokeTenantInvitation |
+| UserJoinedTenant | Tenant Management: RelationAdminService.AcceptTenantInvitation（サービス間の RelationAdminService.AddTenantMember でも成立） |
 | TenantRoleChanged | Tenant Management: RelationAdminService.ChangeTenantRole |
 | EventRoleGranted | Tenant Management: RelationAdminService.GrantEventRole |
 | RoleRevoked | Tenant Management: RelationAdminService.RevokeRole |

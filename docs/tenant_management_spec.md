@@ -15,7 +15,7 @@ package: `tolo.tenant.v1`（テナント）、`tolo.relation.v1`（関係参照�
 | RPC | 説明（ユビキタス言語） | 呼び出し元 | 認可 | 関連ドメインイベント |
 |---|---|---|---|---|
 | StartTenantRegistration | テナント（顧客組織）を未認証で仮作成し、所有権取得トークンを一度だけ返す | 管理 UI | 未認証（Service Gatewayの公開経路） | （仮登録。外部イベントなし） |
-| ClaimTenantOwnership | 仮テナントの所有権を取得し、認証済みユーザーをオーナーとして登録する。テナントのサブドメイン名を確定する | 管理 UI | `tenant.claim`（所有権取得専用の最小トークン。テナント文脈なし。Auth（IdP）） | TenantRegistered |
+| ClaimTenantOwnership | 仮テナントの所有権を取得し、認証済みユーザーをオーナーとして登録する。テナントのサブドメイン名とオーナーの表示名を確定する | 管理 UI | `registration` + tenant.join（テナント文脈を持たない最小トークン。Auth（IdP）） | TenantRegistered |
 | ResolveTenantSubdomain | サブドメイン名からテナントの公開 ID を引く。Web がホスト名からテナントを決めるために使う | 管理 UI、ゲスト（いずれも BFF のホスト名の解決） | 未認証（Service Gatewayの公開経路） | （参照のみ） |
 | ChangeTenantContract | テナントの契約プランを変更する | 管理 UI | `tenant_access` + tenant.write | TenantContractChanged |
 | ArchiveTenant | テナントを論理削除（アーカイブ）する。識別子と配下データは保持 | 管理 UI | `tenant_access` + tenant.write | TenantArchived |
@@ -30,7 +30,11 @@ package: `tolo.tenant.v1`（テナント）、`tolo.relation.v1`（関係参照�
 
 | RPC | 説明（ユビキタス言語） | 呼び出し元 | 認可 | 関連ドメインイベント |
 |---|---|---|---|---|
-| AddTenantMember | ユーザーをテナントに所属させる（1ユーザーは複数テナントに所属しうる。同一テナントへの重複所属は不可）。ClaimTenantOwnership によるオーナー所属は本サービス内部のローカルトランザクションで行い、本 RPC を経ない | 管理 UI | `tenant_access` + tenant.write | UserJoinedTenant |
+| CreateTenantInvitation | テナント、テナントロール、表示名を固定した招待を作り、一回限りの招待トークンを一度だけ返す | 管理 UI | `tenant_access` + tenant.write | TenantInvitationCreated |
+| ListTenantInvitations | 受諾も取り消しもされておらず期限内の招待を一覧する。招待トークンは返さない | 管理 UI | `tenant_access` + tenant.write | （参照のみ） |
+| RevokeTenantInvitation | 招待を取り消す | 管理 UI | `tenant_access` + tenant.write | TenantInvitationRevoked |
+| AcceptTenantInvitation | 招待を受諾し、認証済みユーザーを招待で固定したテナントロールと表示名で所属させる | 管理 UI | `registration` + tenant.join（テナント文脈を持たない最小トークン。Auth（IdP）） | UserJoinedTenant |
+| AddTenantMember | ユーザーをテナントに所属させる（1ユーザーは複数テナントに所属しうる。同一テナントへの重複所属は不可）。管理 UI から人を加える経路は招待とし、本 RPC はサービス間に限る。ClaimTenantOwnership と AcceptTenantInvitation による所属は本サービス内部のローカルトランザクションで行い、本 RPC を経ない | サービス間 | サービス間（token_use=service） | UserJoinedTenant |
 | ChangeTenantRole | テナントロールを付与・変更する | 管理 UI | `tenant_access` + tenant.write | TenantRoleChanged |
 | GrantEventRole | イベントロールを割り当てる（event∈tenant、event-role⇒tenant-role を検証） | 管理 UI | `tenant_access` + tenant.write | EventRoleGranted |
 | RevokeRole | メンバー削除またはロール解除 | 管理 UI | `tenant_access` + tenant.write | RoleRevoked |
@@ -103,7 +107,8 @@ message StartTenantRegistrationResponse {
 message ClaimTenantOwnershipRequest {
   string tenant_id = 1;
   string ownership_claim_token = 2;
-  string subdomain = 3;  // 必須。規則は補足「サブドメイン名」
+  string subdomain = 3;      // 必須。規則は補足「サブドメイン名」
+  string display_name = 4;   // 必須。オーナーの所属の表示名。規則は補足「表示名」
 }
 message ResolveTenantSubdomainRequest {
   string subdomain = 1;
@@ -149,6 +154,10 @@ package tolo.relation.v1;
 // tenant_id／event_id はテナントが発番する公開 ID（16 文字 hex）
 
 service RelationAdminService {
+  rpc CreateTenantInvitation(CreateTenantInvitationRequest) returns (CreateTenantInvitationResponse);
+  rpc ListTenantInvitations(ListTenantInvitationsRequest) returns (ListTenantInvitationsResponse);
+  rpc RevokeTenantInvitation(RevokeTenantInvitationRequest) returns (TenantInvitation);
+  rpc AcceptTenantInvitation(AcceptTenantInvitationRequest) returns (Membership);
   rpc AddTenantMember(AddTenantMemberRequest) returns (Membership);
   rpc ChangeTenantRole(ChangeTenantRoleRequest) returns (Membership);
   rpc GrantEventRole(GrantEventRoleRequest) returns (Membership);
@@ -162,6 +171,16 @@ message Membership {
   string tenant_id = 2;
   Role tenant_role = 3;
   repeated EventRole event_roles = 4;
+  string display_name = 5;  // テナントの中だけで使う表示名。規則は補足「表示名」
+}
+
+// 招待: テナント、テナントロール、表示名を固定し、一回限りの招待トークンで受諾させる
+message TenantInvitation {
+  string invitation_id = 1;
+  string tenant_id = 2;
+  Role tenant_role = 3;     // ROLE_OWNER または ROLE_STAFF
+  string display_name = 4;
+  google.protobuf.Timestamp expires_at = 5;
 }
 
 message EventRole {
@@ -174,6 +193,30 @@ enum Role {
   ROLE_OWNER = 1;
   ROLE_STAFF = 2;
   ROLE_ADMIN = 3;  // 予約。付与できない
+}
+
+message CreateTenantInvitationRequest {
+  string tenant_id = 1;
+  Role tenant_role = 2;
+  string display_name = 3;
+}
+message CreateTenantInvitationResponse {
+  TenantInvitation invitation = 1;
+  string invitation_token = 2;  // 一回限り。この応答以外では返さない
+}
+message ListTenantInvitationsRequest {
+  string tenant_id = 1;
+}
+message ListTenantInvitationsResponse {
+  repeated TenantInvitation invitations = 1;
+}
+message RevokeTenantInvitationRequest {
+  string tenant_id = 1;
+  string invitation_id = 2;
+}
+message AcceptTenantInvitationRequest {
+  string tenant_id = 1;
+  string invitation_token = 2;
 }
 
 message AddTenantMemberRequest {
@@ -283,19 +326,46 @@ message ListMembershipsResponse {
   永続化層にはトークンのハッシュだけを保存し、ログ、監査ログ、エラー本文へ平文を出さない
   Service Gateway は匿名作成にレート制限とボット対策を適用する。具体値、取得トークンのTTL、期限切れ削除の実行方式は実装フェーズで確定する
 - ClaimTenantOwnership は、IdPが認証済みユーザーへ発行した`registration`トークンと、StartTenantRegistrationが返した所有権取得トークンの両方を要求する
-  外部トークンのscopeは`tenant.claim`とし、Service Gatewayが主体を維持した内部JWTへ変換する
+  外部トークンのscopeは`tenant.join`とし、Service Gatewayが主体を維持した内部JWTへ変換する
   Tenant Managementは対象が期限内の`pending_owner`であることと、所有権取得トークンのハッシュが一致することを検証する
-  認証済みユーザーのオーナー所属作成、`owned`への遷移、サブドメイン名の確定、所有権取得トークンの消費を同一DBのローカルトランザクションで確定する
+  認証済みユーザーのオーナー所属作成（要求の表示名を持たせる）、`owned`への遷移、サブドメイン名の確定、所有権取得トークンの消費を同一DBのローカルトランザクションで確定する
   サブドメイン名が使われていて `already_exists` を返す場合は、所有権取得トークンを消費しない。呼び出し側は別の名前で再試行できる
   TenantRegisteredはこのトランザクションの成功時に成立する
   1ユーザーは複数テナントに所属しうるため、取得者が既に他テナントへ所属していても所有権を取得できる
-- オンボーディング全体は「匿名の仮テナント作成 → Authの`POST /api/signup`でアカウント作成 → テナント未指定の認可で所有権取得専用トークンを取得 → 所有権取得、オーナー所属、サブドメイン名の確定 → tenantId指定の再認可で`tenant_access`取得」の流れとする（Auth（IdP）補足）
+- オンボーディング全体は「匿名の仮テナント作成 → Authの`POST /api/signup`でアカウント作成 → テナント未指定の認可で`registration`トークンを取得 → 所有権取得、オーナー所属、サブドメイン名とオーナーの表示名の確定 → tenantId指定の再認可で`tenant_access`取得」の流れとする（Auth（IdP）補足）
   課金・プロビジョニング導入時に再設計の余地を残す
+
+### 招待
+
+- 管理 UI から人をテナントに加える経路は招待とする（ADR-0118）。AddTenantMember はサービス間に限る
+- CreateTenantInvitation は、`owned` かつアーカイブされていないテナントに、テナントロールと表示名を固定した招待を作る
+  テナントロールは `ROLE_OWNER` と `ROLE_STAFF` に限り、`ROLE_ADMIN` は `invalid_argument` を返す
+  招待トークンは暗号論的に推測困難な一回限りの値とし、平文を応答で一度だけ返す
+  永続化層にはトークンのハッシュだけを保存し、ログ、監査ログ、エラー本文へ平文を出さない
+  招待トークンの有効期限は実装フェーズで確定する
+- ListTenantInvitations は、受諾も取り消しもされておらず期限内の招待を返し、招待トークンは返さない
+- RevokeTenantInvitation で取り消した招待は受諾できない。受諾済み、取り消し済み、期限切れの招待の取り消しは `failed_precondition` を返す
+- AcceptTenantInvitation は、IdP が認証済みユーザーへ発行した `registration` トークンと、CreateTenantInvitation が返した招待トークンの両方を要求する
+  外部トークンのscopeは`tenant.join`とし、Service Gatewayが主体を維持した内部JWTへ変換する
+  Tenant Management は、招待トークンのハッシュが一致し、招待が期限内で、受諾も取り消しもされていないことを検証する。対象のテナントは `owned` かつアーカイブされていないことを要する
+  認証済みユーザーの所属作成（招待で固定したテナントロールと表示名を持たせる）と招待トークンの消費を同一DBのローカルトランザクションで確定する
+  UserJoinedTenant はこのトランザクションの成功時に成立する
+  受諾した時点で所属を確定し、オーナーの承認の段階は設けない
+  認証済みユーザーがすでにそのテナントに所属している場合は `failed_precondition` を返し、招待トークンを消費しない
+- 招待の受諾は「招待 URL を開く → サインアップまたはログイン → テナント未指定の認可で`registration`トークンを取得 → 招待の受諾と所属の確定 → tenantId指定の再認可で`tenant_access`取得」の流れとする（Auth（IdP）補足）
+- 招待 URL はテナントの公開 ID と招待トークンから管理 UI が作る。Web は招待 URL で受け取った招待トークンをすぐにサーバ側のセッションへ移し、招待トークンを含まない URL へリダイレクトする。招待トークンを含むページには `Referrer-Policy: no-referrer` を付け、URL をログに残さない
+
+### 表示名
+
+- 所属は表示名を持つ。表示名はテナントの中だけで使う名前であり、IdP の UserInfo の profile は使わない（ADR-0118）
+- 招待による所属は招待で固定した表示名を、所有権取得によるオーナーの所属は ClaimTenantOwnership の要求の表示名を持つ
+- 表示名は空を許さず、一意である必要はない
+- 長さの上限と、表示名を変える手段は実装フェーズで確定する
 
 ### 関係参照
 
 - `ROLE_ADMIN` は enum の予約値であり、付与しようとした場合は `invalid_argument` を返す。実ロールにするかは将来判断する
-- relation model 制約の検証点: 同一テナントへの重複所属を作らない（AddTenantMember）、event∈tenant と event-role⇒tenant-role（GrantEventRole）
+- relation model 制約の検証点: 同一テナントへの重複所属を作らない（AddTenantMember、AcceptTenantInvitation）、event∈tenant と event-role⇒tenant-role（GrantEventRole）
   違反は `failed_precondition` を返す
   1ユーザーが所属できるテナント数に上限は置かない
 - イベントの存在確認は同一サービス内のイベントレコード参照で行い、存在しない ID へ所属を作らない（RPC を経ない）
@@ -306,7 +376,7 @@ message ListMembershipsResponse {
 ### 管理系書き込みの現在権限確認
 
 - scope はトークン発行時点の権限スナップショットであり、通常 RPC は外部トークンの TTL までその値を許容する
-- `ArchiveTenant`、`ChangeTenantContract`、`AddTenantMember`、`ChangeTenantRole`、`GrantEventRole`、`RevokeRole` は例外とし、内部 JWT の scope 検証に加えて、呼び出しユーザーの現在の membership と permission を同一 DB から再確認する
+- `ArchiveTenant`、`ChangeTenantContract`、`CreateTenantInvitation`、`ChangeTenantRole`、`GrantEventRole`、`RevokeRole` は例外とし、内部 JWT の scope 検証に加えて、呼び出しユーザーの現在の membership と permission を同一 DB から再確認する
 - 現在権限の確認と対象の書き込みは同じローカルトランザクションで行い、確認後の権限変更との競合で許可判定が古くならないようにする
 - 現在の membership が存在しない場合、または現在のロールから要求 scope を発行できない場合は `permission_denied` を返す
 - Service Gateway の introspection はトークンの active／revoked だけを確認する。現在権限の確認を introspection の結果で代替しない
@@ -318,7 +388,7 @@ message ListMembershipsResponse {
 | 事象 | Connect エラーコード |
 |---|---|
 | サブドメイン名の重複、公開 ID の衝突 | `already_exists` |
-| 所有権取得トークンが不正、期限切れ、使用済み | `unauthenticated` |
+| 所有権取得トークンまたは招待トークンが不正、期限切れ、使用済み、取り消し済み | `unauthenticated` |
 | relation model 制約違反（同一テナントへの重複所属、event∈tenant・event-role⇒tenant-role の違反）、`ROLE_ADMIN` 以外の予約違反はそれぞれ上記「関係参照」のとおり | `failed_precondition`（`ROLE_ADMIN` の付与は `invalid_argument`） |
 | 存在しないテナント／イベント | `not_found` |
 | `pending_owner`またはアーカイブ済みテナント／イベントへの許可外の書き込み、許容外の状態遷移 | `failed_precondition` |
