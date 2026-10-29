@@ -21,7 +21,7 @@
 | client scope 上限 / client scope cap | client ごとに許可する scope の上限。ロールから導いた scope との積を発行する |
 | resource / audience | 対象イベント（URI）／バックエンド API 全体の論理 audience（例 backend-api。登録は1つ）<br>検証は Service Gateway と Edge Bridge Service が行う |
 | テナント参加用の最小トークン / registration token | テナント文脈なしで、まだ所属していないテナントに入るためのトークン<br>scope は `tenant.join` のみで、仮テナントの所有権取得（ClaimTenantOwnership）と招待の受諾（AcceptTenantInvitation）に限定 |
-| 招待 / tenant invitation | テナント、テナントロール、表示名を固定し、一回限りの招待トークンで受諾させる参加の申し出<br>オーナーが作成、一覧、取り消しを行い、受諾した時点で所属が確定する |
+| 招待 / tenant invitation | テナント、テナントロール（スタッフに限る）、表示名を固定し、一回限りの招待トークンで受諾させる参加の申し出<br>オーナーが作成、一覧、取り消しを行い、受諾した時点で所属が確定する |
 | 表示名 / display name | 所属ごとに持つ、テナントの中だけで使う名前<br>招待またはオーナーの所有権取得で決まり、IdP の profile は使わない |
 | 関係参照サービス / relation service | 所属とロールを所有し参照を返す |
 | login challenge | IdP がログイン状態のない認可要求ごとに発行する一回限りの値<br>Web のログイン画面でのログインをその認可要求に結び付け、`prompt=login` はその challenge の認証でだけ満たす |
