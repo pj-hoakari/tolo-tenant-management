@@ -71,6 +71,21 @@ func (mr *MockMembershipRepositoryMockRecorder) ChangeTenantRole(ctx, tenantID, 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ChangeTenantRole", reflect.TypeOf((*MockMembershipRepository)(nil).ChangeTenantRole), ctx, tenantID, userID, role)
 }
 
+// CountTenantOwners mocks base method.
+func (m *MockMembershipRepository) CountTenantOwners(ctx context.Context, tenantID string) (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CountTenantOwners", ctx, tenantID)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CountTenantOwners indicates an expected call of CountTenantOwners.
+func (mr *MockMembershipRepositoryMockRecorder) CountTenantOwners(ctx, tenantID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountTenantOwners", reflect.TypeOf((*MockMembershipRepository)(nil).CountTenantOwners), ctx, tenantID)
+}
+
 // FindMembership mocks base method.
 func (m *MockMembershipRepository) FindMembership(ctx context.Context, tenantID, userID string) (domain.Membership, error) {
 	m.ctrl.T.Helper()

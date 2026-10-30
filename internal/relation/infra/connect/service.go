@@ -143,6 +143,7 @@ var clientErrors = infraconnect.ClientErrors{
 	{Target: tenantrepository.ErrTenantArchived, Code: connectrpc.CodeFailedPrecondition, Message: "tenant is archived"},
 	{Target: tenantrepository.ErrEventArchived, Code: connectrpc.CodeFailedPrecondition, Message: "event is archived"},
 	{Target: application.ErrTenantPendingOwner, Code: connectrpc.CodeFailedPrecondition, Message: "tenant is pending an owner"},
+	{Target: application.ErrLastOwner, Code: connectrpc.CodeFailedPrecondition, Message: "the tenant must keep at least one owner"},
 	{Target: repository.ErrMembershipAlreadyExists, Code: connectrpc.CodeFailedPrecondition, Message: "membership already exists"},
 	{Target: repository.ErrTenantMembershipRequired, Code: connectrpc.CodeFailedPrecondition, Message: "event role requires membership of the event's tenant"},
 	{Target: tenantctx.ErrMismatch, Code: connectrpc.CodePermissionDenied, Message: "tenant does not match the token"},

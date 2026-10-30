@@ -57,6 +57,7 @@ type MembershipRepository interface {
 	// It returns ErrMembershipNotFound when the user does not belong to the
 	// tenant.
 	FindTenantRoleForShare(ctx context.Context, tenantID, userID string) (domain.Role, error)
+	CountTenantOwners(ctx context.Context, tenantID string) (int, error)
 	// ListMembershipsByTenant lists every membership of the tenant.
 	ListMembershipsByTenant(ctx context.Context, tenantID string) ([]domain.Membership, error)
 }

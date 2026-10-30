@@ -27,6 +27,7 @@ var (
 	ErrFilterRequired     = errors.New("list filter is required")
 	ErrFilterAmbiguous    = errors.New("list filter must name either a tenant or a user")
 	ErrTenantPendingOwner = errors.New("tenant is pending an owner")
+	ErrLastOwner          = errors.New("the tenant must keep at least one owner")
 )
 
 // AddTenantMemberInput identifies the membership to create.
@@ -132,6 +133,12 @@ func (s *RelationService) ChangeTenantRole(ctx context.Context, input ChangeTena
 	}
 
 	return s.writeMembership(ctx, tenant.ID(), func(ctx context.Context) (domain.Membership, error) {
+		if input.Role != domain.RoleOwner {
+			if err := s.keepAnotherOwner(ctx, tenant.ID(), input.UserID); err != nil {
+				return domain.Membership{}, err
+			}
+		}
+
 		return s.memberships.ChangeTenantRole(ctx, tenant.ID(), input.UserID, input.Role)
 	})
 }
@@ -171,6 +178,10 @@ func (s *RelationService) RevokeRole(ctx context.Context, input RevokeRoleInput)
 		}
 
 		return s.withCurrentPermission(ctx, tenant.ID(), func(ctx context.Context) error {
+			if err := s.keepAnotherOwner(ctx, tenant.ID(), input.UserID); err != nil {
+				return err
+			}
+
 			return s.memberships.RevokeTenantMembership(ctx, tenant.ID(), input.UserID)
 		})
 	case input.EventPublicID != "":
@@ -251,6 +262,32 @@ func (s *RelationService) withCurrentPermission(ctx context.Context, tenantID st
 
 		return write(ctx)
 	})
+}
+
+func (s *RelationService) keepAnotherOwner(ctx context.Context, tenantID, userID string) error {
+	role, err := s.memberships.FindTenantRoleForShare(ctx, tenantID, userID)
+	if errors.Is(err, repository.ErrMembershipNotFound) {
+		return nil
+	}
+
+	if err != nil {
+		return err
+	}
+
+	if role != domain.RoleOwner {
+		return nil
+	}
+
+	owners, err := s.memberships.CountTenantOwners(ctx, tenantID)
+	if err != nil {
+		return err
+	}
+
+	if owners <= 1 {
+		return ErrLastOwner
+	}
+
+	return nil
 }
 
 // writeMembership is withCurrentPermission for a write that answers with the

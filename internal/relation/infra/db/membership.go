@@ -203,6 +203,20 @@ func (r *PostgresMembershipRepository) FindTenantRoleForShare(ctx context.Contex
 	return parsed, nil
 }
 
+func (r *PostgresMembershipRepository) CountTenantOwners(ctx context.Context, tenantID string) (int, error) {
+	var count int
+
+	err := r.executor(ctx).QueryRowxContext(ctx, `
+		SELECT COUNT(*) FROM tenant_memberships
+		WHERE tenant_id = $1 AND tenant_role = $2`,
+		tenantID, domain.RoleOwner.String()).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count tenant owners: %w", err)
+	}
+
+	return count, nil
+}
+
 func (r *PostgresMembershipRepository) ListMembershipsByTenant(ctx context.Context, tenantID string) ([]domain.Membership, error) {
 	return r.listMemberships(ctx, `WHERE m.tenant_id = $1`, tenantID)
 }

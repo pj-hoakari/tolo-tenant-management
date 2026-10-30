@@ -229,6 +229,7 @@ func TestRevokeRole(t *testing.T) {
 		gomock.InOrder(
 			m.expectLock(ownedTenant.ID()),
 			m.expectOwner(ownedTenant.ID()),
+			m.memberships.EXPECT().FindTenantRoleForShare(gomock.Any(), ownedTenant.ID(), "user-1").Return(domain.RoleStaff, nil),
 			m.memberships.EXPECT().RevokeTenantMembership(gomock.Any(), ownedTenant.ID(), "user-1").Return(nil),
 		)
 
@@ -267,6 +268,62 @@ func TestRevokeRole(t *testing.T) {
 			t.Errorf("RevokeRole(both scopes) error = %v, want %v", err, application.ErrScopeAmbiguous)
 		}
 	})
+}
+
+func TestLastOwnerRule(t *testing.T) {
+	t.Parallel()
+
+	demote := func(ctx context.Context, s *application.RelationService) error {
+		_, err := s.ChangeTenantRole(ctx, application.ChangeTenantRoleInput{TenantPublicID: ownedTenant.PublicID(), UserID: "user-1", Role: domain.RoleStaff})
+
+		return err
+	}
+	revoke := func(ctx context.Context, s *application.RelationService) error {
+		return s.RevokeRole(ctx, application.RevokeRoleInput{UserID: "user-1", TenantPublicID: ownedTenant.PublicID()})
+	}
+	demoted := domain.NewMembership("user-1", ownedTenant.ID(), ownedTenant.PublicID(), domain.RoleStaff, hanako, time.Time{}, nil)
+
+	tests := []struct {
+		name   string
+		call   func(context.Context, *application.RelationService) error
+		owners int
+		write  func(m mocks) *gomock.Call
+		want   error
+	}{
+		{name: "demoting the only owner", call: demote, owners: 1, want: application.ErrLastOwner},
+		{name: "revoking the only owner", call: revoke, owners: 1, want: application.ErrLastOwner},
+		{name: "demoting one of two owners", call: demote, owners: 2, write: func(m mocks) *gomock.Call {
+			return m.memberships.EXPECT().ChangeTenantRole(gomock.Any(), ownedTenant.ID(), "user-1", domain.RoleStaff).Return(demoted, nil)
+		}},
+		{name: "revoking one of two owners", call: revoke, owners: 2, write: func(m mocks) *gomock.Call {
+			return m.memberships.EXPECT().RevokeTenantMembership(gomock.Any(), ownedTenant.ID(), "user-1").Return(nil)
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			m := newMocks(t)
+			m.tenants.EXPECT().FindTenantByPublicID(gomock.Any(), ownedTenant.PublicID()).Return(ownedTenant, nil)
+
+			calls := []any{
+				m.expectLock(ownedTenant.ID()),
+				m.expectOwner(ownedTenant.ID()),
+				m.memberships.EXPECT().FindTenantRoleForShare(gomock.Any(), ownedTenant.ID(), "user-1").Return(domain.RoleOwner, nil),
+				m.memberships.EXPECT().CountTenantOwners(gomock.Any(), ownedTenant.ID()).Return(tt.owners, nil),
+			}
+			if tt.write != nil {
+				calls = append(calls, tt.write(m))
+			}
+
+			gomock.InOrder(calls...)
+
+			if err := tt.call(ownCtx(), m.service); !errors.Is(err, tt.want) {
+				t.Fatalf("error = %v, want %v", err, tt.want)
+			}
+		})
+	}
 }
 
 // TestCurrentPermissionGates covers the re-check of the caller's own

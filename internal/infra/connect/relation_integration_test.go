@@ -2,9 +2,13 @@ package connect_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	connectrpc "connectrpc.com/connect/v2"
+
+	internaljwt "github.com/pj-hoakari/internal-jwt-handling"
+	"github.com/pj-hoakari/internal-jwt-handling/jwtgen"
 
 	relationv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/relation/v1"
 	relationdomain "github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
@@ -298,5 +302,86 @@ func TestCurrentPermissionOverTransport(t *testing.T) {
 	strangerRead := f.listMemberships(t, f.mintToken(t, strangerTenant.PublicID(), "tenant.read"), strangerTenant.PublicID())
 	if len(strangerRead) != 0 {
 		t.Errorf("ListMemberships(non-member) = %v, want empty list", strangerRead)
+	}
+}
+
+func TestLastOwnerOverTransport(t *testing.T) {
+	leaves := []struct {
+		name  string
+		leave func(f relationFixture, token, userID string) error
+	}{
+		{name: "owners demoting themselves", leave: func(f relationFixture, token, userID string) error {
+			_, err := f.relationClient.ChangeTenantRole(authorized(context.Background(), token), &relationv1.ChangeTenantRoleRequest{TenantId: f.tenantA.PublicID(), UserId: userID, TenantRole: relationv1.Role_ROLE_STAFF})
+
+			return err
+		}},
+		{name: "owners revoking themselves", leave: func(f relationFixture, token, userID string) error {
+			_, err := f.relationClient.RevokeRole(authorized(context.Background(), token), &relationv1.RevokeRoleRequest{UserId: userID, Scope: &relationv1.RevokeRoleRequest_TenantId{TenantId: f.tenantA.PublicID()}})
+
+			return err
+		}},
+	}
+
+	for _, tt := range leaves {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newRelationFixture(t)
+			f.addTenantMember(t, f.tenantA.ID(), "owner-2", relationdomain.RoleOwner)
+
+			owners := []string{callerSubject, "owner-2"}
+			tokens := make([]string, len(owners))
+
+			for i, owner := range owners {
+				tokens[i] = f.mint(t, jwtgen.Config{
+					TokenUse:       internaljwt.TokenUseTenantAccess,
+					TenantPublicID: f.tenantA.PublicID(),
+					Subject:        owner,
+					Scope:          allTenantScopes,
+					KeyID:          f.jwks.nextKeyID("owner-key"),
+				})
+			}
+
+			errs := make([]error, len(owners))
+			start := make(chan struct{})
+
+			var wg sync.WaitGroup
+
+			for i := range owners {
+				wg.Go(func() {
+					<-start
+
+					errs[i] = tt.leave(f, tokens[i], owners[i])
+				})
+			}
+
+			close(start)
+			wg.Wait()
+
+			succeeded, refused := 0, 0
+
+			for _, err := range errs {
+				switch {
+				case err == nil:
+					succeeded++
+				case connectrpc.CodeOf(err) == connectrpc.CodeFailedPrecondition:
+					refused++
+				}
+			}
+
+			if succeeded != 1 || refused != 1 {
+				t.Fatalf("errors = %v, want one success and one failed_precondition", errs)
+			}
+
+			remaining := 0
+
+			for _, membership := range f.listMemberships(t, f.mintToken(t, f.tenantA.PublicID(), "tenant.read"), f.tenantA.PublicID()) {
+				if membership.GetTenantRole() == relationv1.Role_ROLE_OWNER {
+					remaining++
+				}
+			}
+
+			if remaining != 1 {
+				t.Errorf("owners after both left = %d, want 1", remaining)
+			}
+		})
 	}
 }
