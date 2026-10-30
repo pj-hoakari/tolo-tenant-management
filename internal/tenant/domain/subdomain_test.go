@@ -60,6 +60,7 @@ func TestParseSubdomain(t *testing.T) {
 		{name: "reserved www", subdomain: "www"},
 		{name: "reserved api", subdomain: "api"},
 		{name: "reserved admin", subdomain: "admin"},
+		{name: "reserved auth", subdomain: "auth"},
 		{name: "a preview slot", subdomain: "s1"},
 		{name: "a preview slot with many digits", subdomain: "s0123"},
 	}
