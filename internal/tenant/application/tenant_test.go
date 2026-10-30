@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	internaljwt "github.com/pj-hoakari/internal-jwt-handling"
+	relationdomain "github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/repository"
@@ -43,15 +45,16 @@ func (passthroughTransactor) WithinTransaction(ctx context.Context, fn func(cont
 
 // membershipRecorder records owner memberships and can be made to fail.
 type membershipRecorder struct {
-	err      error
-	tenantID string
-	userID   string
-	calls    int
+	err         error
+	tenantID    string
+	userID      string
+	displayName relationdomain.DisplayName
+	calls       int
 }
 
-func (r *membershipRecorder) AddOwner(_ context.Context, tenantID, userID string) error {
+func (r *membershipRecorder) AddOwner(_ context.Context, tenantID, userID string, displayName relationdomain.DisplayName) error {
 	r.calls++
-	r.tenantID, r.userID = tenantID, userID
+	r.tenantID, r.userID, r.displayName = tenantID, userID, displayName
 
 	return r.err
 }
@@ -470,7 +473,7 @@ func TestClaimTenantOwnership(t *testing.T) {
 
 	ctx := withSubject(context.Background(), "user-1")
 
-	owned, err := service.ClaimTenantOwnership(ctx, application.ClaimTenantOwnershipInput{TenantPublicID: pending.PublicID(), ClaimToken: token, Subdomain: "acme"})
+	owned, err := service.ClaimTenantOwnership(ctx, application.ClaimTenantOwnershipInput{TenantPublicID: pending.PublicID(), ClaimToken: token, Subdomain: "acme", DisplayName: " Hanako "})
 	if err != nil {
 		t.Fatalf("ClaimTenantOwnership() error = %v", err)
 	}
@@ -490,6 +493,10 @@ func TestClaimTenantOwnership(t *testing.T) {
 	if memberships.tenantID != pending.ID() || memberships.userID != "user-1" {
 		t.Errorf("owner membership = (%q, %q), want (%q, %q)", memberships.tenantID, memberships.userID, pending.ID(), "user-1")
 	}
+
+	if got, want := memberships.displayName.String(), "Hanako"; got != want {
+		t.Errorf("owner display name = %q, want %q", got, want)
+	}
 }
 
 func TestClaimTenantOwnershipRejections(t *testing.T) {
@@ -508,22 +515,25 @@ func TestClaimTenantOwnershipRejections(t *testing.T) {
 	subject := withSubject(context.Background(), "user-1")
 
 	tests := []struct {
-		name      string
-		ctx       context.Context
-		tenant    domain.Tenant
-		claim     domain.OwnershipClaim
-		token     string
-		subdomain string
-		lookup    bool
-		want      error
+		name        string
+		ctx         context.Context
+		tenant      domain.Tenant
+		claim       domain.OwnershipClaim
+		token       string
+		subdomain   string
+		displayName string
+		lookup      bool
+		want        error
 	}{
-		{name: "wrong token", ctx: subject, tenant: pending, claim: live, token: token + "x", subdomain: "acme", lookup: true, want: application.ErrOwnershipClaimRejected},
-		{name: "expired claim", ctx: subject, tenant: pending, claim: domain.OwnershipClaim{TokenHash: hash, ExpiresAt: now}, token: token, subdomain: "acme", lookup: true, want: application.ErrOwnershipClaimRejected},
-		{name: "already owned", ctx: subject, tenant: owned, claim: domain.OwnershipClaim{}, token: token, subdomain: "acme", lookup: true, want: application.ErrOwnershipClaimRejected},
-		{name: "no subject", ctx: context.Background(), tenant: pending, claim: live, token: token, subdomain: "acme", lookup: false, want: tenantctx.ErrSubjectMissing},
-		{name: "no token", ctx: subject, tenant: pending, claim: live, token: "", subdomain: "acme", lookup: false, want: application.ErrOwnershipClaimTokenRequired},
-		{name: "no subdomain", ctx: subject, tenant: pending, claim: live, token: token, subdomain: "", lookup: false, want: domain.ErrInvalidSubdomain},
-		{name: "invalid subdomain", ctx: subject, tenant: pending, claim: live, token: token, subdomain: "www", lookup: false, want: domain.ErrInvalidSubdomain},
+		{name: "wrong token", ctx: subject, tenant: pending, claim: live, token: token + "x", subdomain: "acme", displayName: "Hanako", lookup: true, want: application.ErrOwnershipClaimRejected},
+		{name: "expired claim", ctx: subject, tenant: pending, claim: domain.OwnershipClaim{TokenHash: hash, ExpiresAt: now}, token: token, subdomain: "acme", displayName: "Hanako", lookup: true, want: application.ErrOwnershipClaimRejected},
+		{name: "already owned", ctx: subject, tenant: owned, claim: domain.OwnershipClaim{}, token: token, subdomain: "acme", displayName: "Hanako", lookup: true, want: application.ErrOwnershipClaimRejected},
+		{name: "no subject", ctx: context.Background(), tenant: pending, claim: live, token: token, subdomain: "acme", displayName: "Hanako", lookup: false, want: tenantctx.ErrSubjectMissing},
+		{name: "no token", ctx: subject, tenant: pending, claim: live, token: "", subdomain: "acme", displayName: "Hanako", lookup: false, want: application.ErrOwnershipClaimTokenRequired},
+		{name: "no subdomain", ctx: subject, tenant: pending, claim: live, token: token, subdomain: "", displayName: "Hanako", lookup: false, want: domain.ErrInvalidSubdomain},
+		{name: "invalid subdomain", ctx: subject, tenant: pending, claim: live, token: token, subdomain: "www", displayName: "Hanako", lookup: false, want: domain.ErrInvalidSubdomain},
+		{name: "no display name", ctx: subject, tenant: pending, claim: live, token: token, subdomain: "acme", displayName: " ", lookup: false, want: relationdomain.ErrDisplayNameRequired},
+		{name: "display name too long", ctx: subject, tenant: pending, claim: live, token: token, subdomain: "acme", displayName: strings.Repeat("a", 65), lookup: false, want: relationdomain.ErrDisplayNameTooLong},
 	}
 
 	for _, tt := range tests {
@@ -540,7 +550,7 @@ func TestClaimTenantOwnershipRejections(t *testing.T) {
 
 			service := application.NewTenantService(repo, passthroughTransactor{}, memberships, &permissionStub{allowed: true}, application.WithClock(func() time.Time { return now }))
 
-			_, err := service.ClaimTenantOwnership(tt.ctx, application.ClaimTenantOwnershipInput{TenantPublicID: pending.PublicID(), ClaimToken: tt.token, Subdomain: tt.subdomain})
+			_, err := service.ClaimTenantOwnership(tt.ctx, application.ClaimTenantOwnershipInput{TenantPublicID: pending.PublicID(), ClaimToken: tt.token, Subdomain: tt.subdomain, DisplayName: tt.displayName})
 			if !errors.Is(err, tt.want) {
 				t.Fatalf("ClaimTenantOwnership() error = %v, want %v", err, tt.want)
 			}
@@ -570,7 +580,7 @@ func TestClaimTenantOwnershipDoesNotMarkOwnedWhenMembershipFails(t *testing.T) {
 	errStore := errors.New("membership store down")
 	service := application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{err: errStore}, &permissionStub{allowed: true}, application.WithClock(func() time.Time { return now }))
 
-	_, err = service.ClaimTenantOwnership(withSubject(context.Background(), "user-1"), application.ClaimTenantOwnershipInput{TenantPublicID: pending.PublicID(), ClaimToken: token, Subdomain: "acme"})
+	_, err = service.ClaimTenantOwnership(withSubject(context.Background(), "user-1"), application.ClaimTenantOwnershipInput{TenantPublicID: pending.PublicID(), ClaimToken: token, Subdomain: "acme", DisplayName: "Hanako"})
 	if !errors.Is(err, errStore) {
 		t.Fatalf("ClaimTenantOwnership() error = %v, want %v", err, errStore)
 	}

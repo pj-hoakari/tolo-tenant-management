@@ -390,7 +390,12 @@ func (p *process) createTenant(t *testing.T, publicID, name string) tenantdomain
 func (p *process) addTenantMember(t *testing.T, tenantID, userID string, role relationdomain.Role) {
 	t.Helper()
 
-	if _, err := p.memberships.AddTenantMember(context.Background(), tenantID, userID, role); err != nil {
+	displayName, err := relationdomain.ParseDisplayName(userID)
+	if err != nil {
+		t.Fatalf("ParseDisplayName(%q) error = %v", userID, err)
+	}
+
+	if _, err := p.memberships.AddTenantMember(context.Background(), tenantID, userID, role, displayName); err != nil {
 		t.Fatalf("AddTenantMember(%q, %v) error = %v", userID, role, err)
 	}
 }
@@ -416,10 +421,10 @@ func (p *process) startRegistration(t *testing.T, name string) *tenantv1.StartTe
 }
 
 // claim calls ClaimTenantOwnership with token as the bearer credential.
-func (p *process) claim(t *testing.T, token, tenantID, claimToken, subdomain string) (*tenantv1.Tenant, error) {
+func (p *process) claim(t *testing.T, token, tenantID, claimToken, subdomain, displayName string) (*tenantv1.Tenant, error) {
 	t.Helper()
 
-	res, err := p.tenantClient.ClaimTenantOwnership(authorized(context.Background(), token), &tenantv1.ClaimTenantOwnershipRequest{TenantId: tenantID, OwnershipClaimToken: claimToken, Subdomain: subdomain})
+	res, err := p.tenantClient.ClaimTenantOwnership(authorized(context.Background(), token), &tenantv1.ClaimTenantOwnershipRequest{TenantId: tenantID, OwnershipClaimToken: claimToken, Subdomain: subdomain, DisplayName: displayName})
 	if err != nil {
 		return nil, err
 	}

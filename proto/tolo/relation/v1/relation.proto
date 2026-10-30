@@ -3,6 +3,7 @@ syntax = "proto3";
 package tolo.relation.v1;
 
 import "authz/v1/options.proto";
+import "google/protobuf/timestamp.proto";
 
 // RelationAdminService is the source of truth for memberships and roles. It is
 // implemented by Tenant Management next to tolo.tenant.v1 but kept in its own
@@ -62,6 +63,8 @@ message Membership {
   string tenant_id = 2;  // public ID
   Role tenant_role = 3;
   repeated EventRole event_roles = 4;
+  string display_name = 5;
+  google.protobuf.Timestamp joined_at = 6;
 }
 
 message EventRole {
@@ -80,6 +83,7 @@ message AddTenantMemberRequest {
   string tenant_id = 1;
   string user_id = 2;
   Role tenant_role = 3;
+  string display_name = 4;
 }
 message AddTenantMemberResponse { Membership membership = 1; }
 

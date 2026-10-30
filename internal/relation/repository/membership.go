@@ -33,7 +33,7 @@ var (
 // The repository participates in the transaction carried by the context.
 type MembershipRepository interface {
 	// AddTenantMember creates the membership of userID in the tenant.
-	AddTenantMember(ctx context.Context, tenantID, userID string, role domain.Role) (domain.Membership, error)
+	AddTenantMember(ctx context.Context, tenantID, userID string, role domain.Role, displayName domain.DisplayName) (domain.Membership, error)
 	// ChangeTenantRole replaces the tenant role of an existing membership.
 	ChangeTenantRole(ctx context.Context, tenantID, userID string, role domain.Role) (domain.Membership, error)
 	// GrantEventRole assigns (or replaces) the user's role on the event.

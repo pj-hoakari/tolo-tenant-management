@@ -57,7 +57,7 @@ func (f relationFixture) mintToken(t *testing.T, tenantPublicID, scope string) s
 func (f relationFixture) addMember(t *testing.T, token, tenantID, userID string, role relationv1.Role) (*relationv1.Membership, error) {
 	t.Helper()
 
-	res, err := f.relationClient.AddTenantMember(authorized(context.Background(), token), &relationv1.AddTenantMemberRequest{TenantId: tenantID, UserId: userID, TenantRole: role})
+	res, err := f.relationClient.AddTenantMember(authorized(context.Background(), token), &relationv1.AddTenantMemberRequest{TenantId: tenantID, UserId: userID, TenantRole: role, DisplayName: "Member " + userID})
 	if err != nil {
 		return nil, err
 	}
@@ -98,6 +98,10 @@ func TestAddTenantMemberOverTransport(t *testing.T) {
 
 	if membership.GetUserId() != "user-1" || membership.GetTenantId() != f.tenantA.PublicID() || membership.GetTenantRole() != relationv1.Role_ROLE_STAFF || len(membership.GetEventRoles()) != 0 {
 		t.Errorf("Membership = %v, want staff of %q without event roles", membership, f.tenantA.PublicID())
+	}
+
+	if membership.GetDisplayName() != "Member user-1" || membership.GetJoinedAt().AsTime().IsZero() {
+		t.Errorf("Membership display name, joined at = %q, %v, want %q and the time it was added", membership.GetDisplayName(), membership.GetJoinedAt(), "Member user-1")
 	}
 
 	tests := []struct {

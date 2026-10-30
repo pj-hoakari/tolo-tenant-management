@@ -10,6 +10,7 @@ import (
 	_ "github.com/pj-hoakari/protoc-gen-authz-go/authz/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -81,6 +82,8 @@ type Membership struct {
 	TenantId      string                 `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"` // public ID
 	TenantRole    Role                   `protobuf:"varint,3,opt,name=tenant_role,json=tenantRole,proto3,enum=tolo.relation.v1.Role" json:"tenant_role,omitempty"`
 	EventRoles    []*EventRole           `protobuf:"bytes,4,rep,name=event_roles,json=eventRoles,proto3" json:"event_roles,omitempty"`
+	DisplayName   string                 `protobuf:"bytes,5,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	JoinedAt      *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=joined_at,json=joinedAt,proto3" json:"joined_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -143,6 +146,20 @@ func (x *Membership) GetEventRoles() []*EventRole {
 	return nil
 }
 
+func (x *Membership) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *Membership) GetJoinedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.JoinedAt
+	}
+	return nil
+}
+
 type EventRole struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	EventId       string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"` // public ID; the event belongs to the membership's tenant
@@ -200,6 +217,7 @@ type AddTenantMemberRequest struct {
 	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	TenantRole    Role                   `protobuf:"varint,3,opt,name=tenant_role,json=tenantRole,proto3,enum=tolo.relation.v1.Role" json:"tenant_role,omitempty"`
+	DisplayName   string                 `protobuf:"bytes,4,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -253,6 +271,13 @@ func (x *AddTenantMemberRequest) GetTenantRole() Role {
 		return x.TenantRole
 	}
 	return Role_ROLE_UNSPECIFIED
+}
+
+func (x *AddTenantMemberRequest) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
 }
 
 type AddTenantMemberResponse struct {
@@ -763,7 +788,7 @@ var File_tolo_relation_v1_relation_proto protoreflect.FileDescriptor
 
 const file_tolo_relation_v1_relation_proto_rawDesc = "" +
 	"\n" +
-	"\x1ftolo/relation/v1/relation.proto\x12\x10tolo.relation.v1\x1a\x16authz/v1/options.proto\"\xb9\x01\n" +
+	"\x1ftolo/relation/v1/relation.proto\x12\x10tolo.relation.v1\x1a\x16authz/v1/options.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x95\x02\n" +
 	"\n" +
 	"Membership\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1b\n" +
@@ -771,15 +796,18 @@ const file_tolo_relation_v1_relation_proto_rawDesc = "" +
 	"\vtenant_role\x18\x03 \x01(\x0e2\x16.tolo.relation.v1.RoleR\n" +
 	"tenantRole\x12<\n" +
 	"\vevent_roles\x18\x04 \x03(\v2\x1b.tolo.relation.v1.EventRoleR\n" +
-	"eventRoles\"R\n" +
+	"eventRoles\x12!\n" +
+	"\fdisplay_name\x18\x05 \x01(\tR\vdisplayName\x127\n" +
+	"\tjoined_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\bjoinedAt\"R\n" +
 	"\tEventRole\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12*\n" +
-	"\x04role\x18\x02 \x01(\x0e2\x16.tolo.relation.v1.RoleR\x04role\"\x87\x01\n" +
+	"\x04role\x18\x02 \x01(\x0e2\x16.tolo.relation.v1.RoleR\x04role\"\xaa\x01\n" +
 	"\x16AddTenantMemberRequest\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x127\n" +
 	"\vtenant_role\x18\x03 \x01(\x0e2\x16.tolo.relation.v1.RoleR\n" +
-	"tenantRole\"W\n" +
+	"tenantRole\x12!\n" +
+	"\fdisplay_name\x18\x04 \x01(\tR\vdisplayName\"W\n" +
 	"\x17AddTenantMemberResponse\x12<\n" +
 	"\n" +
 	"membership\x18\x01 \x01(\v2\x1c.tolo.relation.v1.MembershipR\n" +
@@ -858,33 +886,35 @@ var file_tolo_relation_v1_relation_proto_goTypes = []any{
 	(*RevokeRoleResponse)(nil),       // 10: tolo.relation.v1.RevokeRoleResponse
 	(*ListMembershipsRequest)(nil),   // 11: tolo.relation.v1.ListMembershipsRequest
 	(*ListMembershipsResponse)(nil),  // 12: tolo.relation.v1.ListMembershipsResponse
+	(*timestamppb.Timestamp)(nil),    // 13: google.protobuf.Timestamp
 }
 var file_tolo_relation_v1_relation_proto_depIdxs = []int32{
 	0,  // 0: tolo.relation.v1.Membership.tenant_role:type_name -> tolo.relation.v1.Role
 	2,  // 1: tolo.relation.v1.Membership.event_roles:type_name -> tolo.relation.v1.EventRole
-	0,  // 2: tolo.relation.v1.EventRole.role:type_name -> tolo.relation.v1.Role
-	0,  // 3: tolo.relation.v1.AddTenantMemberRequest.tenant_role:type_name -> tolo.relation.v1.Role
-	1,  // 4: tolo.relation.v1.AddTenantMemberResponse.membership:type_name -> tolo.relation.v1.Membership
-	0,  // 5: tolo.relation.v1.ChangeTenantRoleRequest.tenant_role:type_name -> tolo.relation.v1.Role
-	1,  // 6: tolo.relation.v1.ChangeTenantRoleResponse.membership:type_name -> tolo.relation.v1.Membership
-	0,  // 7: tolo.relation.v1.GrantEventRoleRequest.role:type_name -> tolo.relation.v1.Role
-	1,  // 8: tolo.relation.v1.GrantEventRoleResponse.membership:type_name -> tolo.relation.v1.Membership
-	1,  // 9: tolo.relation.v1.ListMembershipsResponse.memberships:type_name -> tolo.relation.v1.Membership
-	3,  // 10: tolo.relation.v1.RelationAdminService.AddTenantMember:input_type -> tolo.relation.v1.AddTenantMemberRequest
-	5,  // 11: tolo.relation.v1.RelationAdminService.ChangeTenantRole:input_type -> tolo.relation.v1.ChangeTenantRoleRequest
-	7,  // 12: tolo.relation.v1.RelationAdminService.GrantEventRole:input_type -> tolo.relation.v1.GrantEventRoleRequest
-	9,  // 13: tolo.relation.v1.RelationAdminService.RevokeRole:input_type -> tolo.relation.v1.RevokeRoleRequest
-	11, // 14: tolo.relation.v1.RelationAdminService.ListMemberships:input_type -> tolo.relation.v1.ListMembershipsRequest
-	4,  // 15: tolo.relation.v1.RelationAdminService.AddTenantMember:output_type -> tolo.relation.v1.AddTenantMemberResponse
-	6,  // 16: tolo.relation.v1.RelationAdminService.ChangeTenantRole:output_type -> tolo.relation.v1.ChangeTenantRoleResponse
-	8,  // 17: tolo.relation.v1.RelationAdminService.GrantEventRole:output_type -> tolo.relation.v1.GrantEventRoleResponse
-	10, // 18: tolo.relation.v1.RelationAdminService.RevokeRole:output_type -> tolo.relation.v1.RevokeRoleResponse
-	12, // 19: tolo.relation.v1.RelationAdminService.ListMemberships:output_type -> tolo.relation.v1.ListMembershipsResponse
-	15, // [15:20] is the sub-list for method output_type
-	10, // [10:15] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	13, // 2: tolo.relation.v1.Membership.joined_at:type_name -> google.protobuf.Timestamp
+	0,  // 3: tolo.relation.v1.EventRole.role:type_name -> tolo.relation.v1.Role
+	0,  // 4: tolo.relation.v1.AddTenantMemberRequest.tenant_role:type_name -> tolo.relation.v1.Role
+	1,  // 5: tolo.relation.v1.AddTenantMemberResponse.membership:type_name -> tolo.relation.v1.Membership
+	0,  // 6: tolo.relation.v1.ChangeTenantRoleRequest.tenant_role:type_name -> tolo.relation.v1.Role
+	1,  // 7: tolo.relation.v1.ChangeTenantRoleResponse.membership:type_name -> tolo.relation.v1.Membership
+	0,  // 8: tolo.relation.v1.GrantEventRoleRequest.role:type_name -> tolo.relation.v1.Role
+	1,  // 9: tolo.relation.v1.GrantEventRoleResponse.membership:type_name -> tolo.relation.v1.Membership
+	1,  // 10: tolo.relation.v1.ListMembershipsResponse.memberships:type_name -> tolo.relation.v1.Membership
+	3,  // 11: tolo.relation.v1.RelationAdminService.AddTenantMember:input_type -> tolo.relation.v1.AddTenantMemberRequest
+	5,  // 12: tolo.relation.v1.RelationAdminService.ChangeTenantRole:input_type -> tolo.relation.v1.ChangeTenantRoleRequest
+	7,  // 13: tolo.relation.v1.RelationAdminService.GrantEventRole:input_type -> tolo.relation.v1.GrantEventRoleRequest
+	9,  // 14: tolo.relation.v1.RelationAdminService.RevokeRole:input_type -> tolo.relation.v1.RevokeRoleRequest
+	11, // 15: tolo.relation.v1.RelationAdminService.ListMemberships:input_type -> tolo.relation.v1.ListMembershipsRequest
+	4,  // 16: tolo.relation.v1.RelationAdminService.AddTenantMember:output_type -> tolo.relation.v1.AddTenantMemberResponse
+	6,  // 17: tolo.relation.v1.RelationAdminService.ChangeTenantRole:output_type -> tolo.relation.v1.ChangeTenantRoleResponse
+	8,  // 18: tolo.relation.v1.RelationAdminService.GrantEventRole:output_type -> tolo.relation.v1.GrantEventRoleResponse
+	10, // 19: tolo.relation.v1.RelationAdminService.RevokeRole:output_type -> tolo.relation.v1.RevokeRoleResponse
+	12, // 20: tolo.relation.v1.RelationAdminService.ListMemberships:output_type -> tolo.relation.v1.ListMembershipsResponse
+	16, // [16:21] is the sub-list for method output_type
+	11, // [11:16] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_tolo_relation_v1_relation_proto_init() }

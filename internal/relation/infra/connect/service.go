@@ -8,6 +8,7 @@ import (
 
 	connectrpc "connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	relationv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/relation/v1"
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/relation/v1/relationv1connect"
@@ -56,6 +57,7 @@ func (s *Service) AddTenantMember(ctx context.Context, req *relationv1.AddTenant
 		TenantPublicID: req.GetTenantId(),
 		UserID:         req.GetUserId(),
 		Role:           roleDomain(req.GetTenantRole()),
+		DisplayName:    req.GetDisplayName(),
 	})
 	if err != nil {
 		return nil, clientErrors.For(ctx, err)
@@ -130,6 +132,8 @@ var clientErrors = infraconnect.ClientErrors{
 	{Target: application.ErrFilterAmbiguous, Code: connectrpc.CodeInvalidArgument, Message: "filter must name either a tenant or a user"},
 	{Target: domain.ErrRoleRequired, Code: connectrpc.CodeInvalidArgument, Message: "role is required"},
 	{Target: domain.ErrRoleReserved, Code: connectrpc.CodeInvalidArgument, Message: "role is reserved and cannot be granted"},
+	{Target: domain.ErrDisplayNameRequired, Code: connectrpc.CodeInvalidArgument, Message: "display_name is required"},
+	{Target: domain.ErrDisplayNameTooLong, Code: connectrpc.CodeInvalidArgument, Message: "display_name is too long"},
 	{Target: tenantrepository.ErrTenantNotFound, Code: connectrpc.CodeNotFound, Message: "tenant not found"},
 	{Target: tenantrepository.ErrEventNotFound, Code: connectrpc.CodeNotFound, Message: "event not found"},
 	{Target: repository.ErrTenantNotFound, Code: connectrpc.CodeNotFound, Message: "tenant not found"},
@@ -157,10 +161,12 @@ func membershipProto(membership domain.Membership) *relationv1.Membership {
 	}
 
 	return &relationv1.Membership{
-		UserId:     membership.UserID(),
-		TenantId:   membership.TenantPublicID(),
-		TenantRole: roleProto(membership.TenantRole()),
-		EventRoles: roles,
+		UserId:      membership.UserID(),
+		TenantId:    membership.TenantPublicID(),
+		TenantRole:  roleProto(membership.TenantRole()),
+		EventRoles:  roles,
+		DisplayName: membership.DisplayName().String(),
+		JoinedAt:    timestamppb.New(membership.JoinedAt()),
 	}
 }
 

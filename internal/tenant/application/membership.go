@@ -1,6 +1,10 @@
 package application
 
-import "context"
+import (
+	"context"
+
+	relationdomain "github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
+)
 
 // MembershipWriter is the tenant side's port to the relation model, which owns
 // memberships and roles. ClaimTenantOwnership calls it inside its own
@@ -10,5 +14,5 @@ import "context"
 type MembershipWriter interface {
 	// AddOwner records userID as the owner of the tenant identified by its
 	// internal ID.
-	AddOwner(ctx context.Context, tenantID, userID string) error
+	AddOwner(ctx context.Context, tenantID, userID string, displayName relationdomain.DisplayName) error
 }

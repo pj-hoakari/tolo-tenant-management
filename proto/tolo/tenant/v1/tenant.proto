@@ -124,6 +124,7 @@ message ClaimTenantOwnershipRequest {
   string tenant_id = 1;
   string ownership_claim_token = 2;
   string subdomain = 3;
+  string display_name = 4;
 }
 message ClaimTenantOwnershipResponse { Tenant tenant = 1; }
 

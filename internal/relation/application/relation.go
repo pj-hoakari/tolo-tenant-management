@@ -34,6 +34,7 @@ type AddTenantMemberInput struct {
 	TenantPublicID string
 	UserID         string
 	Role           domain.Role
+	DisplayName    string
 }
 
 // ChangeTenantRoleInput identifies the membership whose tenant role changes.
@@ -101,13 +102,18 @@ func (s *RelationService) AddTenantMember(ctx context.Context, input AddTenantMe
 		return domain.Membership{}, err
 	}
 
+	displayName, err := domain.ParseDisplayName(input.DisplayName)
+	if err != nil {
+		return domain.Membership{}, err
+	}
+
 	tenant, err := s.writableTenant(ctx, input.TenantPublicID)
 	if err != nil {
 		return domain.Membership{}, err
 	}
 
 	return s.writeMembership(ctx, tenant.ID(), func(ctx context.Context) (domain.Membership, error) {
-		return s.memberships.AddTenantMember(ctx, tenant.ID(), input.UserID, input.Role)
+		return s.memberships.AddTenantMember(ctx, tenant.ID(), input.UserID, input.Role, displayName)
 	})
 }
 

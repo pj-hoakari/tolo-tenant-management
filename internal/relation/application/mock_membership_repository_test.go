@@ -42,18 +42,18 @@ func (m *MockMembershipRepository) EXPECT() *MockMembershipRepositoryMockRecorde
 }
 
 // AddTenantMember mocks base method.
-func (m *MockMembershipRepository) AddTenantMember(ctx context.Context, tenantID, userID string, role domain.Role) (domain.Membership, error) {
+func (m *MockMembershipRepository) AddTenantMember(ctx context.Context, tenantID, userID string, role domain.Role, displayName domain.DisplayName) (domain.Membership, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AddTenantMember", ctx, tenantID, userID, role)
+	ret := m.ctrl.Call(m, "AddTenantMember", ctx, tenantID, userID, role, displayName)
 	ret0, _ := ret[0].(domain.Membership)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // AddTenantMember indicates an expected call of AddTenantMember.
-func (mr *MockMembershipRepositoryMockRecorder) AddTenantMember(ctx, tenantID, userID, role any) *gomock.Call {
+func (mr *MockMembershipRepositoryMockRecorder) AddTenantMember(ctx, tenantID, userID, role, displayName any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddTenantMember", reflect.TypeOf((*MockMembershipRepository)(nil).AddTenantMember), ctx, tenantID, userID, role)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddTenantMember", reflect.TypeOf((*MockMembershipRepository)(nil).AddTenantMember), ctx, tenantID, userID, role, displayName)
 }
 
 // ChangeTenantRole mocks base method.

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	relationdomain "github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/repository"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
@@ -77,6 +78,7 @@ type ClaimTenantOwnershipInput struct {
 	TenantPublicID string
 	ClaimToken     string
 	Subdomain      string
+	DisplayName    string
 }
 
 // ClaimTenantOwnershipUseCase turns a pending_owner tenant into an owned one.
@@ -245,6 +247,11 @@ func (s *TenantService) ClaimTenantOwnership(ctx context.Context, input ClaimTen
 		return domain.Tenant{}, err
 	}
 
+	displayName, err := relationdomain.ParseDisplayName(input.DisplayName)
+	if err != nil {
+		return domain.Tenant{}, err
+	}
+
 	subject, ok := tenantctx.SubjectFromContext(ctx)
 	if !ok {
 		return domain.Tenant{}, tenantctx.ErrSubjectMissing
@@ -274,7 +281,7 @@ func (s *TenantService) ClaimTenantOwnership(ctx context.Context, input ClaimTen
 			return err
 		}
 
-		if err := s.memberships.AddOwner(ctx, tenant.ID(), subject); err != nil {
+		if err := s.memberships.AddOwner(ctx, tenant.ID(), subject, displayName); err != nil {
 			return fmt.Errorf("add owner membership: %w", err)
 		}
 

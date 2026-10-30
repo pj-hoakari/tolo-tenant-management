@@ -3,6 +3,7 @@ package domain
 import (
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestRoleGrantable(t *testing.T) {
@@ -48,7 +49,7 @@ func TestMembershipCopiesEventRoles(t *testing.T) {
 	t.Parallel()
 
 	roles := []EventRole{NewEventRole("event-id", "event-public-id", RoleStaff)}
-	membership := NewMembership("user-1", "tenant-id", "tenant-public-id", RoleOwner, roles)
+	membership := NewMembership("user-1", "tenant-id", "tenant-public-id", RoleOwner, DisplayName{}, time.Time{}, roles)
 
 	roles[0] = NewEventRole("other", "other", RoleOwner)
 
