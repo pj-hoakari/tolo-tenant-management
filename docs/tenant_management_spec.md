@@ -2,7 +2,7 @@
 
 package: `tolo.tenant.v1`（テナント）、`tolo.relation.v1`（関係参照）
 実現するコンテキスト: tenant_context.md（ドメイン定義 tenant_domain.md）と、auth_context.mdの関係参照（ドメイン定義 auth_domain.md）
-役割: テナントとイベントの識別子の所有、および所属（Membership）とロールの真実の源（関係参照）
+役割: テナントとイベントの識別子の所有、および所属（Membership）とロールの所有（関係参照）
 1つのデプロイ単位が2つの package を実装する。package はコンテキストの公開言語に対応するため統合しない。
 グラフ編集は `GetEvent` で参照整合を取る。
 
@@ -26,7 +26,7 @@ package: `tolo.tenant.v1`（テナント）、`tolo.relation.v1`（関係参照�
 
 ### 関係参照（RelationAdminService）
 
-所属（Membership）とロールの真実の源。認証・認可コンテキストの関係参照を本サービスが実装する（package は `tolo.relation.v1` のまま分ける）。
+所属（Membership）とロールを所有する。認証・認可コンテキストの関係参照を本サービスが実装する（package は `tolo.relation.v1` のまま分ける）。
 
 | RPC | 説明（ユビキタス言語） | 呼び出し元 | 認可 | 関連ドメインイベント |
 |---|---|---|---|---|
