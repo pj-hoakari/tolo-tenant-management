@@ -23,7 +23,7 @@ service TenantService {
   rpc ClaimTenantOwnership(ClaimTenantOwnershipRequest) returns (ClaimTenantOwnershipResponse) {
     option (authz.v1.auth_policy) = {
       level: AUTH_LEVEL_AUTHENTICATED
-      required_scopes: "tenant.claim"
+      required_scopes: "tenant.join"
       token_uses: "registration"
     };
   }
@@ -124,6 +124,7 @@ message ClaimTenantOwnershipRequest {
   string tenant_id = 1;
   string ownership_claim_token = 2;
   string subdomain = 3;
+  string display_name = 4;
 }
 message ClaimTenantOwnershipResponse { Tenant tenant = 1; }
 

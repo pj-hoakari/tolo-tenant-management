@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
@@ -118,7 +119,7 @@ func TestListMembershipsScopesTheReadToTheNamedTenant(t *testing.T) {
 func TestListMembershipsAnswersJSON(t *testing.T) {
 	t.Parallel()
 
-	membership := domain.NewMembership("user-1", "tenant-id", "tenant-public-id", domain.RoleOwner, []domain.EventRole{
+	membership := domain.NewMembership("user-1", "tenant-id", "tenant-public-id", domain.RoleOwner, domain.DisplayName{}, time.Time{}, []domain.EventRole{
 		domain.NewEventRole("event-id", "event-public-id", domain.RoleStaff),
 	})
 
@@ -180,7 +181,7 @@ func TestListMembershipsAnswersEmptyArrays(t *testing.T) {
 		{name: "not a member", memberships: nil, want: `{"memberships":[]}`},
 		{
 			name:        "no event roles",
-			memberships: []domain.Membership{domain.NewMembership("user-1", "tenant-id", "tenant-public-id", domain.RoleStaff, nil)},
+			memberships: []domain.Membership{domain.NewMembership("user-1", "tenant-id", "tenant-public-id", domain.RoleStaff, domain.DisplayName{}, time.Time{}, nil)},
 			want:        `{"memberships":[{"user_id":"user-1","tenant_id":"tenant-public-id","tenant_role":"staff","event_roles":[]}]}`,
 		},
 	}

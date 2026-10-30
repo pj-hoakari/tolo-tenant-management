@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"
@@ -51,21 +52,21 @@ func (r *PostgresMembershipRepository) WithinTransaction(ctx context.Context, fn
 
 // AddOwner implements the tenant side's MembershipWriter port: the claiming
 // user becomes the owner of the tenant inside the caller's transaction.
-func (r *PostgresMembershipRepository) AddOwner(ctx context.Context, tenantID, userID string) error {
-	_, err := r.AddTenantMember(ctx, tenantID, userID, domain.RoleOwner)
+func (r *PostgresMembershipRepository) AddOwner(ctx context.Context, tenantID, userID string, displayName domain.DisplayName) error {
+	_, err := r.AddTenantMember(ctx, tenantID, userID, domain.RoleOwner, displayName)
 
 	return err
 }
 
-func (r *PostgresMembershipRepository) AddTenantMember(ctx context.Context, tenantID, userID string, role domain.Role) (domain.Membership, error) {
+func (r *PostgresMembershipRepository) AddTenantMember(ctx context.Context, tenantID, userID string, role domain.Role, displayName domain.DisplayName) (domain.Membership, error) {
 	if err := role.Grantable(); err != nil {
 		return domain.Membership{}, err
 	}
 
 	_, err := r.executor(ctx).ExecContext(ctx, `
-		INSERT INTO tenant_memberships (tenant_id, user_id, tenant_role)
-		VALUES ($1, $2, $3)`,
-		tenantID, userID, role.String())
+		INSERT INTO tenant_memberships (tenant_id, user_id, tenant_role, display_name)
+		VALUES ($1, $2, $3, $4)`,
+		tenantID, userID, role.String(), displayName.String())
 	if err != nil {
 		return domain.Membership{}, mapMembershipConstraintError(err)
 	}
@@ -202,15 +203,31 @@ func (r *PostgresMembershipRepository) FindTenantRoleForShare(ctx context.Contex
 	return parsed, nil
 }
 
+func (r *PostgresMembershipRepository) CountTenantOwners(ctx context.Context, tenantID string) (int, error) {
+	var count int
+
+	err := r.executor(ctx).QueryRowxContext(ctx, `
+		SELECT COUNT(*) FROM tenant_memberships
+		WHERE tenant_id = $1 AND tenant_role = $2`,
+		tenantID, domain.RoleOwner.String()).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count tenant owners: %w", err)
+	}
+
+	return count, nil
+}
+
 func (r *PostgresMembershipRepository) ListMembershipsByTenant(ctx context.Context, tenantID string) ([]domain.Membership, error) {
 	return r.listMemberships(ctx, `WHERE m.tenant_id = $1`, tenantID)
 }
 
 type membershipRow struct {
-	TenantID       string `db:"tenant_id"`
-	TenantPublicID string `db:"tenant_public_id"`
-	UserID         string `db:"user_id"`
-	TenantRole     string `db:"tenant_role"`
+	TenantID       string    `db:"tenant_id"`
+	TenantPublicID string    `db:"tenant_public_id"`
+	UserID         string    `db:"user_id"`
+	TenantRole     string    `db:"tenant_role"`
+	DisplayName    string    `db:"display_name"`
+	JoinedAt       time.Time `db:"joined_at"`
 }
 
 type eventRoleRow struct {
@@ -231,11 +248,11 @@ type membershipKey struct {
 func (r *PostgresMembershipRepository) listMemberships(ctx context.Context, filter string, args ...any) ([]domain.Membership, error) {
 	var rows []membershipRow
 	if err := sqlx.SelectContext(ctx, r.executor(ctx), &rows, `
-		SELECT m.tenant_id, t.public_id AS tenant_public_id, m.user_id, m.tenant_role
+		SELECT m.tenant_id, t.public_id AS tenant_public_id, m.user_id, m.tenant_role, m.display_name, m.joined_at
 		FROM tenant_memberships AS m
 		JOIN tenants AS t ON t.id = m.tenant_id
 		`+filter+`
-		ORDER BY m.tenant_id, m.created_at, m.user_id`, args...); err != nil {
+		ORDER BY m.tenant_id, m.joined_at, m.user_id`, args...); err != nil {
 		return nil, fmt.Errorf("list memberships: %w", err)
 	}
 
@@ -280,8 +297,13 @@ func (r *PostgresMembershipRepository) listMemberships(ctx context.Context, filt
 			return nil, fmt.Errorf("parse tenant role: %w", err)
 		}
 
+		displayName, err := domain.ParseDisplayName(row.DisplayName)
+		if err != nil {
+			return nil, fmt.Errorf("parse display name: %w", err)
+		}
+
 		key := membershipKey{tenantID: row.TenantID, userID: row.UserID}
-		memberships = append(memberships, domain.NewMembership(row.UserID, row.TenantID, row.TenantPublicID, role, eventRoles[key]))
+		memberships = append(memberships, domain.NewMembership(row.UserID, row.TenantID, row.TenantPublicID, role, displayName, row.JoinedAt, eventRoles[key]))
 	}
 
 	return memberships, nil

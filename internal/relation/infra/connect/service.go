@@ -8,6 +8,7 @@ import (
 
 	connectrpc "connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	relationv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/relation/v1"
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/relation/v1/relationv1connect"
@@ -51,11 +52,66 @@ func NewService(relationService application.RelationUseCases) *Service {
 	}
 }
 
+func (s *Service) CreateTenantInvitation(ctx context.Context, req *relationv1.CreateTenantInvitationRequest) (*relationv1.CreateTenantInvitationResponse, error) {
+	creation, err := s.relationService.CreateTenantInvitation(ctx, application.CreateTenantInvitationInput{
+		TenantPublicID: req.GetTenantId(),
+		Role:           roleDomain(req.GetTenantRole()),
+		DisplayName:    req.GetDisplayName(),
+	})
+	if err != nil {
+		return nil, clientErrors.For(ctx, err)
+	}
+
+	return &relationv1.CreateTenantInvitationResponse{
+		Invitation:      invitationProto(creation.Invitation),
+		InvitationToken: creation.Token,
+	}, nil
+}
+
+func (s *Service) ListTenantInvitations(ctx context.Context, req *relationv1.ListTenantInvitationsRequest) (*relationv1.ListTenantInvitationsResponse, error) {
+	invitations, err := s.relationService.ListTenantInvitations(ctx, req.GetTenantId())
+	if err != nil {
+		return nil, clientErrors.For(ctx, err)
+	}
+
+	response := make([]*relationv1.TenantInvitation, 0, len(invitations))
+	for _, invitation := range invitations {
+		response = append(response, invitationProto(invitation))
+	}
+
+	return &relationv1.ListTenantInvitationsResponse{Invitations: response}, nil
+}
+
+func (s *Service) RevokeTenantInvitation(ctx context.Context, req *relationv1.RevokeTenantInvitationRequest) (*relationv1.RevokeTenantInvitationResponse, error) {
+	invitation, err := s.relationService.RevokeTenantInvitation(ctx, application.RevokeTenantInvitationInput{
+		TenantPublicID: req.GetTenantId(),
+		InvitationID:   req.GetInvitationId(),
+	})
+	if err != nil {
+		return nil, clientErrors.For(ctx, err)
+	}
+
+	return &relationv1.RevokeTenantInvitationResponse{Invitation: invitationProto(invitation)}, nil
+}
+
+func (s *Service) AcceptTenantInvitation(ctx context.Context, req *relationv1.AcceptTenantInvitationRequest) (*relationv1.AcceptTenantInvitationResponse, error) {
+	membership, err := s.relationService.AcceptTenantInvitation(ctx, application.AcceptTenantInvitationInput{
+		TenantPublicID: req.GetTenantId(),
+		Token:          req.GetInvitationToken(),
+	})
+	if err != nil {
+		return nil, clientErrors.For(ctx, err)
+	}
+
+	return &relationv1.AcceptTenantInvitationResponse{Membership: membershipProto(membership)}, nil
+}
+
 func (s *Service) AddTenantMember(ctx context.Context, req *relationv1.AddTenantMemberRequest) (*relationv1.AddTenantMemberResponse, error) {
 	membership, err := s.relationService.AddTenantMember(ctx, application.AddTenantMemberInput{
 		TenantPublicID: req.GetTenantId(),
 		UserID:         req.GetUserId(),
 		Role:           roleDomain(req.GetTenantRole()),
+		DisplayName:    req.GetDisplayName(),
 	})
 	if err != nil {
 		return nil, clientErrors.For(ctx, err)
@@ -130,15 +186,25 @@ var clientErrors = infraconnect.ClientErrors{
 	{Target: application.ErrFilterAmbiguous, Code: connectrpc.CodeInvalidArgument, Message: "filter must name either a tenant or a user"},
 	{Target: domain.ErrRoleRequired, Code: connectrpc.CodeInvalidArgument, Message: "role is required"},
 	{Target: domain.ErrRoleReserved, Code: connectrpc.CodeInvalidArgument, Message: "role is reserved and cannot be granted"},
+	{Target: application.ErrInvitationIDRequired, Code: connectrpc.CodeInvalidArgument, Message: "invitation_id is required"},
+	{Target: application.ErrInvitationTokenRequired, Code: connectrpc.CodeInvalidArgument, Message: "invitation_token is required"},
+	{Target: domain.ErrRoleNotInvitable, Code: connectrpc.CodeInvalidArgument, Message: "invitations grant the staff role only"},
+	{Target: domain.ErrDisplayNameRequired, Code: connectrpc.CodeInvalidArgument, Message: "display_name is required"},
+	{Target: domain.ErrDisplayNameTooLong, Code: connectrpc.CodeInvalidArgument, Message: "display_name is too long"},
 	{Target: tenantrepository.ErrTenantNotFound, Code: connectrpc.CodeNotFound, Message: "tenant not found"},
 	{Target: tenantrepository.ErrEventNotFound, Code: connectrpc.CodeNotFound, Message: "event not found"},
 	{Target: repository.ErrTenantNotFound, Code: connectrpc.CodeNotFound, Message: "tenant not found"},
 	{Target: repository.ErrEventNotFound, Code: connectrpc.CodeNotFound, Message: "event not found"},
 	{Target: repository.ErrMembershipNotFound, Code: connectrpc.CodeNotFound, Message: "membership not found"},
+	{Target: repository.ErrInvitationNotFound, Code: connectrpc.CodeNotFound, Message: "invitation not found"},
+	{Target: repository.ErrInvitationPublicIDExists, Code: connectrpc.CodeAlreadyExists, Message: "generated invitation ID already exists; retry the request"},
+	{Target: domain.ErrInvitationNotPending, Code: connectrpc.CodeFailedPrecondition, Message: "invitation is accepted, revoked, or expired"},
+	{Target: application.ErrInvitationRejected, Code: connectrpc.CodeUnauthenticated, Message: "invitation token is invalid"},
 	{Target: repository.ErrEventRoleNotFound, Code: connectrpc.CodeNotFound, Message: "event role not found"},
 	{Target: tenantrepository.ErrTenantArchived, Code: connectrpc.CodeFailedPrecondition, Message: "tenant is archived"},
 	{Target: tenantrepository.ErrEventArchived, Code: connectrpc.CodeFailedPrecondition, Message: "event is archived"},
 	{Target: application.ErrTenantPendingOwner, Code: connectrpc.CodeFailedPrecondition, Message: "tenant is pending an owner"},
+	{Target: application.ErrLastOwner, Code: connectrpc.CodeFailedPrecondition, Message: "the tenant must keep at least one owner"},
 	{Target: repository.ErrMembershipAlreadyExists, Code: connectrpc.CodeFailedPrecondition, Message: "membership already exists"},
 	{Target: repository.ErrTenantMembershipRequired, Code: connectrpc.CodeFailedPrecondition, Message: "event role requires membership of the event's tenant"},
 	{Target: tenantctx.ErrMismatch, Code: connectrpc.CodePermissionDenied, Message: "tenant does not match the token"},
@@ -157,10 +223,22 @@ func membershipProto(membership domain.Membership) *relationv1.Membership {
 	}
 
 	return &relationv1.Membership{
-		UserId:     membership.UserID(),
-		TenantId:   membership.TenantPublicID(),
-		TenantRole: roleProto(membership.TenantRole()),
-		EventRoles: roles,
+		UserId:      membership.UserID(),
+		TenantId:    membership.TenantPublicID(),
+		TenantRole:  roleProto(membership.TenantRole()),
+		EventRoles:  roles,
+		DisplayName: membership.DisplayName().String(),
+		JoinedAt:    timestamppb.New(membership.JoinedAt()),
+	}
+}
+
+func invitationProto(invitation domain.Invitation) *relationv1.TenantInvitation {
+	return &relationv1.TenantInvitation{
+		InvitationId: invitation.PublicID(),
+		TenantId:     invitation.TenantPublicID(),
+		TenantRole:   roleProto(invitation.Role()),
+		DisplayName:  invitation.DisplayName().String(),
+		ExpiresAt:    timestamppb.New(invitation.ExpiresAt()),
 	}
 }
 

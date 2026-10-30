@@ -13,7 +13,7 @@ var (
 	rejectedSubdomainPatterns = []*regexp.Regexp{
 		regexp.MustCompile(`^[0-9a-f]{16}$`),
 		regexp.MustCompile(`^..--`),
-		regexp.MustCompile(`^(www|api|admin)$`),
+		regexp.MustCompile(`^(www|api|admin|auth)$`),
 		regexp.MustCompile(`^s[0-9]+$`),
 	}
 )

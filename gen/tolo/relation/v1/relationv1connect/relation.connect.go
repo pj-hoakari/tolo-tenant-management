@@ -24,6 +24,18 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// RelationAdminServiceCreateTenantInvitationProcedure is the procedure name of the
+	// RelationAdminService's CreateTenantInvitation RPC.
+	RelationAdminServiceCreateTenantInvitationProcedure = "/tolo.relation.v1.RelationAdminService/CreateTenantInvitation"
+	// RelationAdminServiceListTenantInvitationsProcedure is the procedure name of the
+	// RelationAdminService's ListTenantInvitations RPC.
+	RelationAdminServiceListTenantInvitationsProcedure = "/tolo.relation.v1.RelationAdminService/ListTenantInvitations"
+	// RelationAdminServiceRevokeTenantInvitationProcedure is the procedure name of the
+	// RelationAdminService's RevokeTenantInvitation RPC.
+	RelationAdminServiceRevokeTenantInvitationProcedure = "/tolo.relation.v1.RelationAdminService/RevokeTenantInvitation"
+	// RelationAdminServiceAcceptTenantInvitationProcedure is the procedure name of the
+	// RelationAdminService's AcceptTenantInvitation RPC.
+	RelationAdminServiceAcceptTenantInvitationProcedure = "/tolo.relation.v1.RelationAdminService/AcceptTenantInvitation"
 	// RelationAdminServiceAddTenantMemberProcedure is the procedure name of the RelationAdminService's
 	// AddTenantMember RPC.
 	RelationAdminServiceAddTenantMemberProcedure = "/tolo.relation.v1.RelationAdminService/AddTenantMember"
@@ -42,6 +54,34 @@ const (
 )
 
 var (
+	relationAdminServiceCreateTenantInvitationSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_tolo_relation_v1_relation_proto.Services().ByName("RelationAdminService").Methods().ByName("CreateTenantInvitation"),
+			Procedure:  RelationAdminServiceCreateTenantInvitationProcedure,
+		}
+	})
+	relationAdminServiceListTenantInvitationsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_tolo_relation_v1_relation_proto.Services().ByName("RelationAdminService").Methods().ByName("ListTenantInvitations"),
+			Procedure:  RelationAdminServiceListTenantInvitationsProcedure,
+		}
+	})
+	relationAdminServiceRevokeTenantInvitationSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_tolo_relation_v1_relation_proto.Services().ByName("RelationAdminService").Methods().ByName("RevokeTenantInvitation"),
+			Procedure:  RelationAdminServiceRevokeTenantInvitationProcedure,
+		}
+	})
+	relationAdminServiceAcceptTenantInvitationSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_tolo_relation_v1_relation_proto.Services().ByName("RelationAdminService").Methods().ByName("AcceptTenantInvitation"),
+			Procedure:  RelationAdminServiceAcceptTenantInvitationProcedure,
+		}
+	})
 	relationAdminServiceAddTenantMemberSpec = sync.OnceValue(func() connect.Spec {
 		return connect.Spec{
 			StreamType: connect.StreamTypeUnary,
@@ -81,9 +121,14 @@ var (
 
 // RelationAdminServiceClient is a client for the tolo.relation.v1.RelationAdminService service.
 type RelationAdminServiceClient interface {
+	CreateTenantInvitation(context.Context, *v1.CreateTenantInvitationRequest) (*v1.CreateTenantInvitationResponse, error)
+	ListTenantInvitations(context.Context, *v1.ListTenantInvitationsRequest) (*v1.ListTenantInvitationsResponse, error)
+	RevokeTenantInvitation(context.Context, *v1.RevokeTenantInvitationRequest) (*v1.RevokeTenantInvitationResponse, error)
+	AcceptTenantInvitation(context.Context, *v1.AcceptTenantInvitationRequest) (*v1.AcceptTenantInvitationResponse, error)
 	// AddTenantMember makes a user a member of a tenant. A user may belong to
 	// several tenants but only once to the same tenant. The owner membership
-	// created by ClaimTenantOwnership does not go through this RPC.
+	// created by ClaimTenantOwnership does not go through this RPC. It
+	// requires token_use=service with tenant context.
 	AddTenantMember(context.Context, *v1.AddTenantMemberRequest) (*v1.AddTenantMemberResponse, error)
 	ChangeTenantRole(context.Context, *v1.ChangeTenantRoleRequest) (*v1.ChangeTenantRoleResponse, error)
 	// GrantEventRole assigns an event role. The event must belong to the
@@ -104,9 +149,14 @@ func NewRelationAdminServiceClient(client *connect.Client) RelationAdminServiceC
 // RelationAdminServiceHandler is an implementation of the tolo.relation.v1.RelationAdminService
 // service.
 type RelationAdminServiceHandler interface {
+	CreateTenantInvitation(context.Context, *v1.CreateTenantInvitationRequest) (*v1.CreateTenantInvitationResponse, error)
+	ListTenantInvitations(context.Context, *v1.ListTenantInvitationsRequest) (*v1.ListTenantInvitationsResponse, error)
+	RevokeTenantInvitation(context.Context, *v1.RevokeTenantInvitationRequest) (*v1.RevokeTenantInvitationResponse, error)
+	AcceptTenantInvitation(context.Context, *v1.AcceptTenantInvitationRequest) (*v1.AcceptTenantInvitationResponse, error)
 	// AddTenantMember makes a user a member of a tenant. A user may belong to
 	// several tenants but only once to the same tenant. The owner membership
-	// created by ClaimTenantOwnership does not go through this RPC.
+	// created by ClaimTenantOwnership does not go through this RPC. It
+	// requires token_use=service with tenant context.
 	AddTenantMember(context.Context, *v1.AddTenantMemberRequest) (*v1.AddTenantMemberResponse, error)
 	ChangeTenantRole(context.Context, *v1.ChangeTenantRoleRequest) (*v1.ChangeTenantRoleResponse, error)
 	// GrantEventRole assigns an event role. The event must belong to the
@@ -123,6 +173,10 @@ type RelationAdminServiceHandler interface {
 func RegisterRelationAdminServiceHandler(server *connect.Server, svc RelationAdminServiceHandler) {
 	adapter := relationAdminServiceHandler{svc: svc}
 	server.Register(
+		connect.Method{Spec: relationAdminServiceCreateTenantInvitationSpec(), Handler: adapter.createTenantInvitation},
+		connect.Method{Spec: relationAdminServiceListTenantInvitationsSpec(), Handler: adapter.listTenantInvitations},
+		connect.Method{Spec: relationAdminServiceRevokeTenantInvitationSpec(), Handler: adapter.revokeTenantInvitation},
+		connect.Method{Spec: relationAdminServiceAcceptTenantInvitationSpec(), Handler: adapter.acceptTenantInvitation},
 		connect.Method{Spec: relationAdminServiceAddTenantMemberSpec(), Handler: adapter.addTenantMember},
 		connect.Method{Spec: relationAdminServiceChangeTenantRoleSpec(), Handler: adapter.changeTenantRole},
 		connect.Method{Spec: relationAdminServiceGrantEventRoleSpec(), Handler: adapter.grantEventRole},
@@ -133,6 +187,22 @@ func RegisterRelationAdminServiceHandler(server *connect.Server, svc RelationAdm
 
 // UnimplementedRelationAdminServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedRelationAdminServiceHandler struct{}
+
+func (UnimplementedRelationAdminServiceHandler) CreateTenantInvitation(context.Context, *v1.CreateTenantInvitationRequest) (*v1.CreateTenantInvitationResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "tolo.relation.v1.RelationAdminService.CreateTenantInvitation is not implemented")
+}
+
+func (UnimplementedRelationAdminServiceHandler) ListTenantInvitations(context.Context, *v1.ListTenantInvitationsRequest) (*v1.ListTenantInvitationsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "tolo.relation.v1.RelationAdminService.ListTenantInvitations is not implemented")
+}
+
+func (UnimplementedRelationAdminServiceHandler) RevokeTenantInvitation(context.Context, *v1.RevokeTenantInvitationRequest) (*v1.RevokeTenantInvitationResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "tolo.relation.v1.RelationAdminService.RevokeTenantInvitation is not implemented")
+}
+
+func (UnimplementedRelationAdminServiceHandler) AcceptTenantInvitation(context.Context, *v1.AcceptTenantInvitationRequest) (*v1.AcceptTenantInvitationResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "tolo.relation.v1.RelationAdminService.AcceptTenantInvitation is not implemented")
+}
 
 func (UnimplementedRelationAdminServiceHandler) AddTenantMember(context.Context, *v1.AddTenantMemberRequest) (*v1.AddTenantMemberResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "tolo.relation.v1.RelationAdminService.AddTenantMember is not implemented")
@@ -156,6 +226,38 @@ func (UnimplementedRelationAdminServiceHandler) ListMemberships(context.Context,
 
 type relationAdminServiceClient struct {
 	client *connect.Client
+}
+
+func (c *relationAdminServiceClient) CreateTenantInvitation(ctx context.Context, req *v1.CreateTenantInvitationRequest) (*v1.CreateTenantInvitationResponse, error) {
+	var res v1.CreateTenantInvitationResponse
+	if err := c.client.CallUnary(ctx, relationAdminServiceCreateTenantInvitationSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *relationAdminServiceClient) ListTenantInvitations(ctx context.Context, req *v1.ListTenantInvitationsRequest) (*v1.ListTenantInvitationsResponse, error) {
+	var res v1.ListTenantInvitationsResponse
+	if err := c.client.CallUnary(ctx, relationAdminServiceListTenantInvitationsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *relationAdminServiceClient) RevokeTenantInvitation(ctx context.Context, req *v1.RevokeTenantInvitationRequest) (*v1.RevokeTenantInvitationResponse, error) {
+	var res v1.RevokeTenantInvitationResponse
+	if err := c.client.CallUnary(ctx, relationAdminServiceRevokeTenantInvitationSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *relationAdminServiceClient) AcceptTenantInvitation(ctx context.Context, req *v1.AcceptTenantInvitationRequest) (*v1.AcceptTenantInvitationResponse, error) {
+	var res v1.AcceptTenantInvitationResponse
+	if err := c.client.CallUnary(ctx, relationAdminServiceAcceptTenantInvitationSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
 }
 
 func (c *relationAdminServiceClient) AddTenantMember(ctx context.Context, req *v1.AddTenantMemberRequest) (*v1.AddTenantMemberResponse, error) {
@@ -199,6 +301,54 @@ func (c *relationAdminServiceClient) ListMemberships(ctx context.Context, req *v
 }
 
 type relationAdminServiceHandler struct{ svc RelationAdminServiceHandler }
+
+func (h relationAdminServiceHandler) createTenantInvitation(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.CreateTenantInvitationRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.CreateTenantInvitation(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h relationAdminServiceHandler) listTenantInvitations(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListTenantInvitationsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListTenantInvitations(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h relationAdminServiceHandler) revokeTenantInvitation(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RevokeTenantInvitationRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RevokeTenantInvitation(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h relationAdminServiceHandler) acceptTenantInvitation(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.AcceptTenantInvitationRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.AcceptTenantInvitation(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
 
 func (h relationAdminServiceHandler) addTenantMember(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
 	var req v1.AddTenantMemberRequest

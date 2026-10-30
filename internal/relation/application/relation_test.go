@@ -1,4 +1,5 @@
 //go:generate go tool mockgen -source=../repository/membership.go -destination=mock_membership_repository_test.go -package=application_test
+//go:generate go tool mockgen -source=../repository/invitation.go -destination=mock_invitation_repository_test.go -package=application_test
 //go:generate go tool mockgen -source=../../tenant/repository/tenant.go -destination=mock_tenant_repository_test.go -package=application_test
 
 package application_test
@@ -7,11 +8,13 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/mock/gomock"
 
 	internaljwt "github.com/pj-hoakari/internal-jwt-handling"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/onetimetoken"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/repository"
@@ -27,6 +30,20 @@ var (
 	draftEvent     = tenantdomain.NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", tenantdomain.EventStatusDraft)
 	archivedEvent  = tenantdomain.NewEvent("event-id", "event-public-id", "tenant-id", "tenant-public-id", "Festival", tenantdomain.EventStatusArchived)
 )
+
+var (
+	hanako  = mustDisplayName("Hanako")
+	testNow = time.Date(2026, 10, 30, 9, 0, 0, 0, time.UTC)
+)
+
+func mustDisplayName(s string) domain.DisplayName {
+	name, err := domain.ParseDisplayName(s)
+	if err != nil {
+		panic(err)
+	}
+
+	return name
+}
 
 // callerID is the authenticated subject of the tests, an owner of the tenant
 // unless a test says otherwise.
@@ -62,6 +79,7 @@ func (passthroughTransactor) WithinTransaction(ctx context.Context, fn func(cont
 type mocks struct {
 	tenants     *MockTenantRepository
 	memberships *MockMembershipRepository
+	invitations *MockInvitationRepository
 	service     *application.RelationService
 }
 
@@ -71,8 +89,10 @@ func newMocks(t *testing.T) mocks {
 	ctrl := gomock.NewController(t)
 	tenants := NewMockTenantRepository(ctrl)
 	memberships := NewMockMembershipRepository(ctrl)
+	invitations := NewMockInvitationRepository(ctrl)
+	service := application.NewRelationService(tenants, memberships, invitations, passthroughTransactor{}, application.WithClock(func() time.Time { return testNow }))
 
-	return mocks{tenants: tenants, memberships: memberships, service: application.NewRelationService(tenants, memberships, passthroughTransactor{})}
+	return mocks{tenants: tenants, memberships: memberships, invitations: invitations, service: service}
 }
 
 // expectLock expects the tenant's advisory lock, which the write RPCs take
@@ -91,17 +111,11 @@ func TestAddTenantMember(t *testing.T) {
 	t.Parallel()
 
 	m := newMocks(t)
-	want := domain.NewMembership("user-1", ownedTenant.ID(), ownedTenant.PublicID(), domain.RoleStaff, nil)
+	want := domain.NewMembership("user-1", ownedTenant.ID(), ownedTenant.PublicID(), domain.RoleStaff, hanako, time.Time{}, nil)
 	m.tenants.EXPECT().FindTenantByPublicID(gomock.Any(), ownedTenant.PublicID()).Return(ownedTenant, nil)
-	// The tenant is locked and the caller's current permission re-checked
-	// before the write.
-	gomock.InOrder(
-		m.expectLock(ownedTenant.ID()),
-		m.expectOwner(ownedTenant.ID()),
-		m.memberships.EXPECT().AddTenantMember(gomock.Any(), ownedTenant.ID(), "user-1", domain.RoleStaff).Return(want, nil),
-	)
+	m.memberships.EXPECT().AddTenantMember(gomock.Any(), ownedTenant.ID(), "user-1", domain.RoleStaff, hanako).Return(want, nil)
 
-	got, err := m.service.AddTenantMember(ownCtx(), application.AddTenantMemberInput{TenantPublicID: ownedTenant.PublicID(), UserID: "user-1", Role: domain.RoleStaff})
+	got, err := m.service.AddTenantMember(ownCtx(), application.AddTenantMemberInput{TenantPublicID: ownedTenant.PublicID(), UserID: "user-1", Role: domain.RoleStaff, DisplayName: "Hanako"})
 	if err != nil {
 		t.Fatalf("AddTenantMember() error = %v", err)
 	}
@@ -122,14 +136,15 @@ func TestTenantWriteGates(t *testing.T) {
 		input  application.AddTenantMemberInput
 		want   error
 	}{
-		{name: "pending tenant", ctx: ownCtx(), tenant: pendingTenant, lookup: true, input: application.AddTenantMemberInput{TenantPublicID: "tenant-public-id", UserID: "user-1", Role: domain.RoleStaff}, want: application.ErrTenantPendingOwner},
-		{name: "archived tenant", ctx: ownCtx(), tenant: archivedTenant, lookup: true, input: application.AddTenantMemberInput{TenantPublicID: "tenant-public-id", UserID: "user-1", Role: domain.RoleStaff}, want: tenantrepository.ErrTenantArchived},
-		{name: "other tenant", ctx: ownCtx(), lookup: false, input: application.AddTenantMemberInput{TenantPublicID: "other-tenant", UserID: "user-1", Role: domain.RoleStaff}, want: tenantctx.ErrMismatch},
-		{name: "no tenant context", ctx: context.Background(), lookup: false, input: application.AddTenantMemberInput{TenantPublicID: "tenant-public-id", UserID: "user-1", Role: domain.RoleStaff}, want: tenantctx.ErrMissing},
-		{name: "reserved role", ctx: ownCtx(), lookup: false, input: application.AddTenantMemberInput{TenantPublicID: "tenant-public-id", UserID: "user-1", Role: domain.RoleAdmin}, want: domain.ErrRoleReserved},
-		{name: "unspecified role", ctx: ownCtx(), lookup: false, input: application.AddTenantMemberInput{TenantPublicID: "tenant-public-id", UserID: "user-1", Role: domain.RoleUnspecified}, want: domain.ErrRoleRequired},
-		{name: "missing user", ctx: ownCtx(), lookup: false, input: application.AddTenantMemberInput{TenantPublicID: "tenant-public-id", Role: domain.RoleStaff}, want: application.ErrUserIDRequired},
-		{name: "missing tenant", ctx: ownCtx(), lookup: false, input: application.AddTenantMemberInput{UserID: "user-1", Role: domain.RoleStaff}, want: application.ErrTenantIDRequired},
+		{name: "pending tenant", ctx: ownCtx(), tenant: pendingTenant, lookup: true, input: application.AddTenantMemberInput{TenantPublicID: "tenant-public-id", UserID: "user-1", Role: domain.RoleStaff, DisplayName: "Hanako"}, want: application.ErrTenantPendingOwner},
+		{name: "archived tenant", ctx: ownCtx(), tenant: archivedTenant, lookup: true, input: application.AddTenantMemberInput{TenantPublicID: "tenant-public-id", UserID: "user-1", Role: domain.RoleStaff, DisplayName: "Hanako"}, want: tenantrepository.ErrTenantArchived},
+		{name: "other tenant", ctx: ownCtx(), lookup: false, input: application.AddTenantMemberInput{TenantPublicID: "other-tenant", UserID: "user-1", Role: domain.RoleStaff, DisplayName: "Hanako"}, want: tenantctx.ErrMismatch},
+		{name: "no tenant context", ctx: context.Background(), lookup: false, input: application.AddTenantMemberInput{TenantPublicID: "tenant-public-id", UserID: "user-1", Role: domain.RoleStaff, DisplayName: "Hanako"}, want: tenantctx.ErrMissing},
+		{name: "reserved role", ctx: ownCtx(), lookup: false, input: application.AddTenantMemberInput{TenantPublicID: "tenant-public-id", UserID: "user-1", Role: domain.RoleAdmin, DisplayName: "Hanako"}, want: domain.ErrRoleReserved},
+		{name: "unspecified role", ctx: ownCtx(), lookup: false, input: application.AddTenantMemberInput{TenantPublicID: "tenant-public-id", UserID: "user-1", Role: domain.RoleUnspecified, DisplayName: "Hanako"}, want: domain.ErrRoleRequired},
+		{name: "missing user", ctx: ownCtx(), lookup: false, input: application.AddTenantMemberInput{TenantPublicID: "tenant-public-id", Role: domain.RoleStaff, DisplayName: "Hanako"}, want: application.ErrUserIDRequired},
+		{name: "missing tenant", ctx: ownCtx(), lookup: false, input: application.AddTenantMemberInput{UserID: "user-1", Role: domain.RoleStaff, DisplayName: "Hanako"}, want: application.ErrTenantIDRequired},
+		{name: "missing display name", ctx: ownCtx(), lookup: false, input: application.AddTenantMemberInput{TenantPublicID: "tenant-public-id", UserID: "user-1", Role: domain.RoleStaff, DisplayName: " "}, want: domain.ErrDisplayNameRequired},
 	}
 
 	for _, tt := range tests {
@@ -153,7 +168,7 @@ func TestGrantEventRole(t *testing.T) {
 	t.Parallel()
 
 	m := newMocks(t)
-	want := domain.NewMembership("user-1", ownedTenant.ID(), ownedTenant.PublicID(), domain.RoleStaff, []domain.EventRole{domain.NewEventRole(draftEvent.ID(), draftEvent.PublicID(), domain.RoleStaff)})
+	want := domain.NewMembership("user-1", ownedTenant.ID(), ownedTenant.PublicID(), domain.RoleStaff, hanako, time.Time{}, []domain.EventRole{domain.NewEventRole(draftEvent.ID(), draftEvent.PublicID(), domain.RoleStaff)})
 	m.tenants.EXPECT().FindEventByPublicID(gomock.Any(), draftEvent.PublicID()).Return(draftEvent, nil)
 	m.tenants.EXPECT().FindTenantByPublicID(gomock.Any(), ownedTenant.PublicID()).Return(ownedTenant, nil)
 	gomock.InOrder(
@@ -216,6 +231,7 @@ func TestRevokeRole(t *testing.T) {
 		gomock.InOrder(
 			m.expectLock(ownedTenant.ID()),
 			m.expectOwner(ownedTenant.ID()),
+			m.memberships.EXPECT().FindTenantRoleForShare(gomock.Any(), ownedTenant.ID(), "user-1").Return(domain.RoleStaff, nil),
 			m.memberships.EXPECT().RevokeTenantMembership(gomock.Any(), ownedTenant.ID(), "user-1").Return(nil),
 		)
 
@@ -256,6 +272,62 @@ func TestRevokeRole(t *testing.T) {
 	})
 }
 
+func TestLastOwnerRule(t *testing.T) {
+	t.Parallel()
+
+	demote := func(ctx context.Context, s *application.RelationService) error {
+		_, err := s.ChangeTenantRole(ctx, application.ChangeTenantRoleInput{TenantPublicID: ownedTenant.PublicID(), UserID: "user-1", Role: domain.RoleStaff})
+
+		return err
+	}
+	revoke := func(ctx context.Context, s *application.RelationService) error {
+		return s.RevokeRole(ctx, application.RevokeRoleInput{UserID: "user-1", TenantPublicID: ownedTenant.PublicID()})
+	}
+	demoted := domain.NewMembership("user-1", ownedTenant.ID(), ownedTenant.PublicID(), domain.RoleStaff, hanako, time.Time{}, nil)
+
+	tests := []struct {
+		name   string
+		call   func(context.Context, *application.RelationService) error
+		owners int
+		write  func(m mocks) *gomock.Call
+		want   error
+	}{
+		{name: "demoting the only owner", call: demote, owners: 1, want: application.ErrLastOwner},
+		{name: "revoking the only owner", call: revoke, owners: 1, want: application.ErrLastOwner},
+		{name: "demoting one of two owners", call: demote, owners: 2, write: func(m mocks) *gomock.Call {
+			return m.memberships.EXPECT().ChangeTenantRole(gomock.Any(), ownedTenant.ID(), "user-1", domain.RoleStaff).Return(demoted, nil)
+		}},
+		{name: "revoking one of two owners", call: revoke, owners: 2, write: func(m mocks) *gomock.Call {
+			return m.memberships.EXPECT().RevokeTenantMembership(gomock.Any(), ownedTenant.ID(), "user-1").Return(nil)
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			m := newMocks(t)
+			m.tenants.EXPECT().FindTenantByPublicID(gomock.Any(), ownedTenant.PublicID()).Return(ownedTenant, nil)
+
+			calls := []any{
+				m.expectLock(ownedTenant.ID()),
+				m.expectOwner(ownedTenant.ID()),
+				m.memberships.EXPECT().FindTenantRoleForShare(gomock.Any(), ownedTenant.ID(), "user-1").Return(domain.RoleOwner, nil),
+				m.memberships.EXPECT().CountTenantOwners(gomock.Any(), ownedTenant.ID()).Return(tt.owners, nil),
+			}
+			if tt.write != nil {
+				calls = append(calls, tt.write(m))
+			}
+
+			gomock.InOrder(calls...)
+
+			if err := tt.call(ownCtx(), m.service); !errors.Is(err, tt.want) {
+				t.Fatalf("error = %v, want %v", err, tt.want)
+			}
+		})
+	}
+}
+
 // TestCurrentPermissionGates covers the re-check of the caller's own
 // membership: the JWT scope alone is not enough for an administrative write.
 func TestCurrentPermissionGates(t *testing.T) {
@@ -291,9 +363,9 @@ func TestCurrentPermissionGates(t *testing.T) {
 
 			// The write is never reached: it has no expectation, so a call
 			// would fail the test.
-			input := application.AddTenantMemberInput{TenantPublicID: ownedTenant.PublicID(), UserID: "user-1", Role: domain.RoleStaff}
-			if _, err := m.service.AddTenantMember(tt.ctx, input); !errors.Is(err, tt.want) {
-				t.Fatalf("AddTenantMember() error = %v, want %v", err, tt.want)
+			input := application.ChangeTenantRoleInput{TenantPublicID: ownedTenant.PublicID(), UserID: "user-1", Role: domain.RoleOwner}
+			if _, err := m.service.ChangeTenantRole(tt.ctx, input); !errors.Is(err, tt.want) {
+				t.Fatalf("ChangeTenantRole() error = %v, want %v", err, tt.want)
 			}
 		})
 	}
@@ -309,11 +381,6 @@ func TestCurrentPermissionGatesEveryWrite(t *testing.T) {
 		event bool
 		call  func(context.Context, *application.RelationService) error
 	}{
-		{name: "AddTenantMember", call: func(ctx context.Context, s *application.RelationService) error {
-			_, err := s.AddTenantMember(ctx, application.AddTenantMemberInput{TenantPublicID: ownedTenant.PublicID(), UserID: "user-1", Role: domain.RoleStaff})
-
-			return err
-		}},
 		{name: "ChangeTenantRole", call: func(ctx context.Context, s *application.RelationService) error {
 			_, err := s.ChangeTenantRole(ctx, application.ChangeTenantRoleInput{TenantPublicID: ownedTenant.PublicID(), UserID: "user-1", Role: domain.RoleOwner})
 
@@ -363,7 +430,7 @@ func TestListMemberships(t *testing.T) {
 		t.Parallel()
 
 		m := newMocks(t)
-		want := []domain.Membership{domain.NewMembership("user-1", ownedTenant.ID(), ownedTenant.PublicID(), domain.RoleOwner, nil)}
+		want := []domain.Membership{domain.NewMembership("user-1", ownedTenant.ID(), ownedTenant.PublicID(), domain.RoleOwner, hanako, time.Time{}, nil)}
 		m.tenants.EXPECT().FindTenantByPublicID(gomock.Any(), ownedTenant.PublicID()).Return(archivedTenant, nil)
 		m.memberships.EXPECT().ListMembershipsByTenant(gomock.Any(), ownedTenant.ID()).Return(want, nil)
 
@@ -397,6 +464,237 @@ func TestListMemberships(t *testing.T) {
 
 		if _, err := m.service.ListMemberships(ownCtx(), application.ListMembershipsInput{TenantPublicID: "t", UserID: "u"}); !errors.Is(err, application.ErrFilterAmbiguous) {
 			t.Errorf("ListMemberships(both filters) error = %v, want %v", err, application.ErrFilterAmbiguous)
+		}
+	})
+}
+
+func registrationCtx(subject string) context.Context {
+	return internaljwt.ContextWithClaims(context.Background(), internaljwt.Claims{RegisteredClaims: jwt.RegisteredClaims{Subject: subject}})
+}
+
+func pendingInvitation(expiresAt time.Time) domain.Invitation {
+	return domain.NewInvitation("invitation-id", "invitation-public-id", ownedTenant.ID(), ownedTenant.PublicID(), domain.RoleStaff, hanako, expiresAt, domain.InvitationPending)
+}
+
+func TestCreateTenantInvitation(t *testing.T) {
+	t.Parallel()
+
+	m := newMocks(t)
+	m.tenants.EXPECT().FindTenantByPublicID(gomock.Any(), ownedTenant.PublicID()).Return(ownedTenant, nil)
+
+	var (
+		stored     domain.Invitation
+		storedHash onetimetoken.Hash
+	)
+
+	gomock.InOrder(
+		m.expectLock(ownedTenant.ID()),
+		m.expectOwner(ownedTenant.ID()),
+		m.invitations.EXPECT().CreateInvitation(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, invitation domain.Invitation, hash onetimetoken.Hash) error {
+			stored, storedHash = invitation, hash
+
+			return nil
+		}),
+	)
+
+	got, err := m.service.CreateTenantInvitation(ownCtx(), application.CreateTenantInvitationInput{TenantPublicID: ownedTenant.PublicID(), Role: domain.RoleStaff, DisplayName: " Hanako "})
+	if err != nil {
+		t.Fatalf("CreateTenantInvitation() error = %v", err)
+	}
+
+	if got.Invitation != stored {
+		t.Errorf("Invitation = %#v, want the stored %#v", got.Invitation, stored)
+	}
+
+	if !storedHash.Matches(got.Token) {
+		t.Error("stored hash does not match the returned token")
+	}
+
+	invitation := got.Invitation
+	if invitation.Role() != domain.RoleStaff || invitation.DisplayName() != hanako || invitation.TenantID() != ownedTenant.ID() || invitation.State() != domain.InvitationPending {
+		t.Errorf("Invitation = %#v, want a pending staff invitation for Hanako in the tenant", invitation)
+	}
+
+	if want := testNow.Add(application.DefaultInvitationTTL); !invitation.ExpiresAt().Equal(want) {
+		t.Errorf("ExpiresAt() = %v, want %v", invitation.ExpiresAt(), want)
+	}
+}
+
+func TestCreateTenantInvitationRejections(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		role        domain.Role
+		displayName string
+		tenant      *tenantdomain.Tenant
+		callerRole  domain.Role
+		want        error
+	}{
+		{name: "owner role", role: domain.RoleOwner, displayName: "Hanako", want: domain.ErrRoleNotInvitable},
+		{name: "admin role", role: domain.RoleAdmin, displayName: "Hanako", want: domain.ErrRoleNotInvitable},
+		{name: "unspecified role", role: domain.RoleUnspecified, displayName: "Hanako", want: domain.ErrRoleNotInvitable},
+		{name: "blank display name", role: domain.RoleStaff, displayName: " ", want: domain.ErrDisplayNameRequired},
+		{name: "pending tenant", role: domain.RoleStaff, displayName: "Hanako", tenant: &pendingTenant, want: application.ErrTenantPendingOwner},
+		{name: "archived tenant", role: domain.RoleStaff, displayName: "Hanako", tenant: &archivedTenant, want: tenantrepository.ErrTenantArchived},
+		{name: "staff caller", role: domain.RoleStaff, displayName: "Hanako", tenant: &ownedTenant, callerRole: domain.RoleStaff, want: application.ErrPermissionDenied},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			m := newMocks(t)
+			if tt.tenant != nil {
+				m.tenants.EXPECT().FindTenantByPublicID(gomock.Any(), ownedTenant.PublicID()).Return(*tt.tenant, nil)
+			}
+
+			if tt.callerRole != domain.RoleUnspecified {
+				m.expectLock(ownedTenant.ID())
+				m.memberships.EXPECT().FindTenantRoleForShare(gomock.Any(), ownedTenant.ID(), callerID).Return(tt.callerRole, nil)
+			}
+
+			input := application.CreateTenantInvitationInput{TenantPublicID: ownedTenant.PublicID(), Role: tt.role, DisplayName: tt.displayName}
+			if _, err := m.service.CreateTenantInvitation(ownCtx(), input); !errors.Is(err, tt.want) {
+				t.Fatalf("CreateTenantInvitation() error = %v, want %v", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestListTenantInvitations(t *testing.T) {
+	t.Parallel()
+
+	m := newMocks(t)
+	want := []domain.Invitation{pendingInvitation(testNow.Add(time.Hour))}
+
+	m.tenants.EXPECT().FindTenantByPublicID(gomock.Any(), archivedTenant.PublicID()).Return(archivedTenant, nil)
+	m.invitations.EXPECT().ListOpenInvitations(gomock.Any(), archivedTenant.ID(), testNow).Return(want, nil)
+
+	got, err := m.service.ListTenantInvitations(ownCtx(), archivedTenant.PublicID())
+	if err != nil {
+		t.Fatalf("ListTenantInvitations() error = %v", err)
+	}
+
+	if len(got) != 1 || got[0] != want[0] {
+		t.Errorf("ListTenantInvitations() = %#v, want %#v", got, want)
+	}
+}
+
+func TestRevokeTenantInvitation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		invitation domain.Invitation
+		findErr    error
+		want       error
+	}{
+		{name: "open invitation", invitation: pendingInvitation(testNow.Add(time.Hour))},
+		{name: "expired invitation", invitation: pendingInvitation(testNow), want: domain.ErrInvitationNotPending},
+		{name: "unknown invitation", findErr: repository.ErrInvitationNotFound, want: repository.ErrInvitationNotFound},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			m := newMocks(t)
+			m.tenants.EXPECT().FindTenantByPublicID(gomock.Any(), ownedTenant.PublicID()).Return(ownedTenant, nil)
+			m.invitations.EXPECT().FindInvitationForUpdate(gomock.Any(), ownedTenant.ID(), "invitation-public-id").Return(tt.invitation, tt.findErr)
+
+			if tt.want == nil {
+				m.invitations.EXPECT().MarkInvitationRevoked(gomock.Any(), "invitation-id", testNow).Return(nil)
+			}
+
+			got, err := m.service.RevokeTenantInvitation(ownCtx(), application.RevokeTenantInvitationInput{TenantPublicID: ownedTenant.PublicID(), InvitationID: "invitation-public-id"})
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("RevokeTenantInvitation() error = %v, want %v", err, tt.want)
+			}
+
+			if tt.want == nil && got.State() != domain.InvitationRevoked {
+				t.Errorf("State() = %v, want %v", got.State(), domain.InvitationRevoked)
+			}
+		})
+	}
+}
+
+func TestAcceptTenantInvitation(t *testing.T) {
+	t.Parallel()
+
+	const token = "invitation-token"
+
+	joined := domain.NewMembership("user-9", ownedTenant.ID(), ownedTenant.PublicID(), domain.RoleStaff, hanako, testNow, nil)
+
+	m := newMocks(t)
+	m.tenants.EXPECT().FindTenantByPublicID(gomock.Any(), ownedTenant.PublicID()).Return(ownedTenant, nil)
+	gomock.InOrder(
+		m.expectLock(ownedTenant.ID()),
+		m.invitations.EXPECT().FindInvitationByTokenForUpdate(gomock.Any(), ownedTenant.ID(), onetimetoken.HashOf(token)).Return(pendingInvitation(testNow.Add(time.Hour)), nil),
+		m.memberships.EXPECT().AddTenantMember(gomock.Any(), ownedTenant.ID(), "user-9", domain.RoleStaff, hanako).Return(joined, nil),
+		m.invitations.EXPECT().MarkInvitationAccepted(gomock.Any(), "invitation-id", "user-9", testNow).Return(nil),
+	)
+
+	got, err := m.service.AcceptTenantInvitation(registrationCtx("user-9"), application.AcceptTenantInvitationInput{TenantPublicID: ownedTenant.PublicID(), Token: token})
+	if err != nil {
+		t.Fatalf("AcceptTenantInvitation() error = %v", err)
+	}
+
+	if got.UserID() != "user-9" || got.TenantRole() != domain.RoleStaff || got.DisplayName() != hanako {
+		t.Errorf("AcceptTenantInvitation() = %#v, want Hanako as staff", got)
+	}
+}
+
+func TestAcceptTenantInvitationRejections(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		tenant     tenantdomain.Tenant
+		invitation domain.Invitation
+		findErr    error
+		addErr     error
+		want       error
+	}{
+		{name: "unknown token", tenant: ownedTenant, findErr: repository.ErrInvitationNotFound, want: application.ErrInvitationRejected},
+		{name: "expired invitation", tenant: ownedTenant, invitation: pendingInvitation(testNow), want: application.ErrInvitationRejected},
+		{name: "accepted invitation", tenant: ownedTenant, invitation: domain.NewInvitation("invitation-id", "invitation-public-id", ownedTenant.ID(), ownedTenant.PublicID(), domain.RoleStaff, hanako, testNow.Add(time.Hour), domain.InvitationAccepted), want: application.ErrInvitationRejected},
+		{name: "revoked invitation", tenant: ownedTenant, invitation: domain.NewInvitation("invitation-id", "invitation-public-id", ownedTenant.ID(), ownedTenant.PublicID(), domain.RoleStaff, hanako, testNow.Add(time.Hour), domain.InvitationRevoked), want: application.ErrInvitationRejected},
+		{name: "archived tenant", tenant: archivedTenant, invitation: pendingInvitation(testNow.Add(time.Hour)), want: tenantrepository.ErrTenantArchived},
+		{name: "already a member", tenant: ownedTenant, invitation: pendingInvitation(testNow.Add(time.Hour)), addErr: repository.ErrMembershipAlreadyExists, want: repository.ErrMembershipAlreadyExists},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			m := newMocks(t)
+			m.tenants.EXPECT().FindTenantByPublicID(gomock.Any(), ownedTenant.PublicID()).Return(tt.tenant, nil)
+			m.expectLock(ownedTenant.ID())
+			m.invitations.EXPECT().FindInvitationByTokenForUpdate(gomock.Any(), ownedTenant.ID(), gomock.Any()).Return(tt.invitation, tt.findErr)
+
+			if tt.addErr != nil {
+				m.memberships.EXPECT().AddTenantMember(gomock.Any(), ownedTenant.ID(), "user-9", domain.RoleStaff, hanako).Return(domain.Membership{}, tt.addErr)
+			}
+
+			_, err := m.service.AcceptTenantInvitation(registrationCtx("user-9"), application.AcceptTenantInvitationInput{TenantPublicID: ownedTenant.PublicID(), Token: "invitation-token"})
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("AcceptTenantInvitation() error = %v, want %v", err, tt.want)
+			}
+		})
+	}
+
+	t.Run("input validation", func(t *testing.T) {
+		t.Parallel()
+
+		m := newMocks(t)
+
+		if _, err := m.service.AcceptTenantInvitation(registrationCtx("user-9"), application.AcceptTenantInvitationInput{TenantPublicID: ownedTenant.PublicID()}); !errors.Is(err, application.ErrInvitationTokenRequired) {
+			t.Errorf("AcceptTenantInvitation(no token) error = %v, want %v", err, application.ErrInvitationTokenRequired)
+		}
+
+		if _, err := m.service.AcceptTenantInvitation(context.Background(), application.AcceptTenantInvitationInput{TenantPublicID: ownedTenant.PublicID(), Token: "invitation-token"}); !errors.Is(err, tenantctx.ErrSubjectMissing) {
+			t.Errorf("AcceptTenantInvitation(no subject) error = %v, want %v", err, tenantctx.ErrSubjectMissing)
 		}
 	})
 }

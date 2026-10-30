@@ -154,7 +154,7 @@ func internalJWTs(t *testing.T) testInternalJWTs {
 	testTokensOnce.Do(func() {
 		configs := []jwtgen.Config{
 			{Issuer: internalJWTIssuer, Audience: internalJWTAudience, TokenUse: internaljwt.TokenUseTenantAccess, TenantPublicID: "0123456789abcdef", Scope: allTenantScopes, KeyID: "tenant-key", TTL: time.Hour},
-			{Issuer: internalJWTIssuer, Audience: internalJWTAudience, TokenUse: internaljwt.TokenUseRegistration, Scope: "tenant.claim", KeyID: "registration-key", TTL: time.Hour},
+			{Issuer: internalJWTIssuer, Audience: internalJWTAudience, TokenUse: internaljwt.TokenUseRegistration, Scope: "tenant.join", KeyID: "registration-key", TTL: time.Hour},
 			{Issuer: internalJWTIssuer, Audience: internalJWTAudience, TokenUse: internaljwt.TokenUseService, KeyID: "service-key", TTL: time.Hour},
 		}
 
@@ -219,6 +219,7 @@ func (r *jwksRegistry) nextKeyID(prefix string) string {
 type process struct {
 	tenants        *tenantdb.PostgresTenantRepository
 	memberships    *relationdb.PostgresMembershipRepository
+	invitations    *relationdb.PostgresInvitationRepository
 	jwks           *jwksRegistry
 	tenantClient   tenantv1connect.TenantServiceClient
 	relationClient relationv1connect.RelationAdminServiceClient
@@ -242,8 +243,9 @@ func newProcess(t *testing.T, options ...application.Option) *process {
 
 	tenants := tenantdb.NewPostgresTenantRepository(testDB)
 	memberships := relationdb.NewPostgresMembershipRepository(testDB)
+	invitations := relationdb.NewPostgresInvitationRepository(testDB)
 	tenantService := application.NewTenantService(tenants, tenants, memberships, relationapplication.NewAuthorizer(memberships), options...)
-	relationService := relationapplication.NewRelationService(tenants, memberships, memberships)
+	relationService := relationapplication.NewRelationService(tenants, memberships, invitations, memberships)
 
 	registry := &jwksRegistry{}
 	registry.add(internalJWTs(t).jwks.Keys...)
@@ -282,6 +284,7 @@ func newProcess(t *testing.T, options ...application.Option) *process {
 	return &process{
 		tenants:        tenants,
 		memberships:    memberships,
+		invitations:    invitations,
 		jwks:           registry,
 		tenantClient:   tenantv1connect.NewTenantServiceClient(connectrpc.NewClient(connecthttp.NewTransport(httpServer.Client(), httpServer.URL))),
 		relationClient: relationv1connect.NewRelationAdminServiceClient(connectrpc.NewClient(connecthttp.NewTransport(httpServer.Client(), httpServer.URL))),
@@ -390,7 +393,12 @@ func (p *process) createTenant(t *testing.T, publicID, name string) tenantdomain
 func (p *process) addTenantMember(t *testing.T, tenantID, userID string, role relationdomain.Role) {
 	t.Helper()
 
-	if _, err := p.memberships.AddTenantMember(context.Background(), tenantID, userID, role); err != nil {
+	displayName, err := relationdomain.ParseDisplayName(userID)
+	if err != nil {
+		t.Fatalf("ParseDisplayName(%q) error = %v", userID, err)
+	}
+
+	if _, err := p.memberships.AddTenantMember(context.Background(), tenantID, userID, role, displayName); err != nil {
 		t.Fatalf("AddTenantMember(%q, %v) error = %v", userID, role, err)
 	}
 }
@@ -416,10 +424,10 @@ func (p *process) startRegistration(t *testing.T, name string) *tenantv1.StartTe
 }
 
 // claim calls ClaimTenantOwnership with token as the bearer credential.
-func (p *process) claim(t *testing.T, token, tenantID, claimToken, subdomain string) (*tenantv1.Tenant, error) {
+func (p *process) claim(t *testing.T, token, tenantID, claimToken, subdomain, displayName string) (*tenantv1.Tenant, error) {
 	t.Helper()
 
-	res, err := p.tenantClient.ClaimTenantOwnership(authorized(context.Background(), token), &tenantv1.ClaimTenantOwnershipRequest{TenantId: tenantID, OwnershipClaimToken: claimToken, Subdomain: subdomain})
+	res, err := p.tenantClient.ClaimTenantOwnership(authorized(context.Background(), token), &tenantv1.ClaimTenantOwnershipRequest{TenantId: tenantID, OwnershipClaimToken: claimToken, Subdomain: subdomain, DisplayName: displayName})
 	if err != nil {
 		return nil, err
 	}

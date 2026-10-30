@@ -403,6 +403,7 @@ type ClaimTenantOwnershipRequest struct {
 	TenantId            string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 	OwnershipClaimToken string                 `protobuf:"bytes,2,opt,name=ownership_claim_token,json=ownershipClaimToken,proto3" json:"ownership_claim_token,omitempty"`
 	Subdomain           string                 `protobuf:"bytes,3,opt,name=subdomain,proto3" json:"subdomain,omitempty"`
+	DisplayName         string                 `protobuf:"bytes,4,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -454,6 +455,13 @@ func (x *ClaimTenantOwnershipRequest) GetOwnershipClaimToken() string {
 func (x *ClaimTenantOwnershipRequest) GetSubdomain() string {
 	if x != nil {
 		return x.Subdomain
+	}
+	return ""
+}
+
+func (x *ClaimTenantOwnershipRequest) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
 	}
 	return ""
 }
@@ -1174,11 +1182,12 @@ const file_tolo_tenant_v1_tenant_proto_rawDesc = "" +
 	"\x06tenant\x18\x01 \x01(\v2\x16.tolo.tenant.v1.TenantR\x06tenant\x122\n" +
 	"\x15ownership_claim_token\x18\x02 \x01(\tR\x13ownershipClaimToken\x129\n" +
 	"\n" +
-	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\x8c\x01\n" +
+	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xaf\x01\n" +
 	"\x1bClaimTenantOwnershipRequest\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x122\n" +
 	"\x15ownership_claim_token\x18\x02 \x01(\tR\x13ownershipClaimToken\x12\x1c\n" +
-	"\tsubdomain\x18\x03 \x01(\tR\tsubdomain\"N\n" +
+	"\tsubdomain\x18\x03 \x01(\tR\tsubdomain\x12!\n" +
+	"\fdisplay_name\x18\x04 \x01(\tR\vdisplayName\"N\n" +
 	"\x1cClaimTenantOwnershipResponse\x12.\n" +
 	"\x06tenant\x18\x01 \x01(\v2\x16.tolo.tenant.v1.TenantR\x06tenant\"=\n" +
 	"\x1dResolveTenantSubdomainRequest\x12\x1c\n" +
@@ -1223,10 +1232,10 @@ const file_tolo_tenant_v1_tenant_proto_rawDesc = "" +
 	"\x11EVENT_STATUS_OPEN\x10\x02\x12\x17\n" +
 	"\x13EVENT_STATUS_LOCKED\x10\x03\x12\x17\n" +
 	"\x13EVENT_STATUS_CLOSED\x10\x04\x12\x19\n" +
-	"\x15EVENT_STATUS_ARCHIVED\x10\x052\xb5\t\n" +
+	"\x15EVENT_STATUS_ARCHIVED\x10\x052\xb4\t\n" +
 	"\rTenantService\x12\x82\x01\n" +
-	"\x17StartTenantRegistration\x12..tolo.tenant.v1.StartTenantRegistrationRequest\x1a/.tolo.tenant.v1.StartTenantRegistrationResponse\"\x06\x8a\xb5\x18\x02\b\x01\x12\x95\x01\n" +
-	"\x14ClaimTenantOwnership\x12+.tolo.tenant.v1.ClaimTenantOwnershipRequest\x1a,.tolo.tenant.v1.ClaimTenantOwnershipResponse\"\"\x8a\xb5\x18\x1e\b\x02\x12\ftenant.claim\x1a\fregistration\x12\x7f\n" +
+	"\x17StartTenantRegistration\x12..tolo.tenant.v1.StartTenantRegistrationRequest\x1a/.tolo.tenant.v1.StartTenantRegistrationResponse\"\x06\x8a\xb5\x18\x02\b\x01\x12\x94\x01\n" +
+	"\x14ClaimTenantOwnership\x12+.tolo.tenant.v1.ClaimTenantOwnershipRequest\x1a,.tolo.tenant.v1.ClaimTenantOwnershipResponse\"!\x8a\xb5\x18\x1d\b\x02\x12\vtenant.join\x1a\fregistration\x12\x7f\n" +
 	"\x16ResolveTenantSubdomain\x12-.tolo.tenant.v1.ResolveTenantSubdomainRequest\x1a..tolo.tenant.v1.ResolveTenantSubdomainResponse\"\x06\x8a\xb5\x18\x02\b\x01\x12\x96\x01\n" +
 	"\x14ChangeTenantContract\x12+.tolo.tenant.v1.ChangeTenantContractRequest\x1a,.tolo.tenant.v1.ChangeTenantContractResponse\"#\x8a\xb5\x18\x1f\b\x02\x12\ftenant.write\x1a\rtenant_access\x12\x81\x01\n" +
 	"\rArchiveTenant\x12$.tolo.tenant.v1.ArchiveTenantRequest\x1a%.tolo.tenant.v1.ArchiveTenantResponse\"#\x8a\xb5\x18\x1f\b\x02\x12\ftenant.write\x1a\rtenant_access\x12|\n" +

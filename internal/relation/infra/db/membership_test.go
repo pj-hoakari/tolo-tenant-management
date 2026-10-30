@@ -114,34 +114,38 @@ func TestTenantMemberships(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 
-	membership, err := f.memberships.AddTenantMember(ctx, f.tenantA.ID(), "user-1", domain.RoleStaff)
+	membership, err := f.memberships.AddTenantMember(ctx, f.tenantA.ID(), "user-1", domain.RoleStaff, hanako)
 	if err != nil {
 		t.Fatalf("AddTenantMember() error = %v", err)
 	}
 
-	want := domain.NewMembership("user-1", f.tenantA.ID(), f.tenantA.PublicID(), domain.RoleStaff, nil)
+	want := domain.NewMembership("user-1", f.tenantA.ID(), f.tenantA.PublicID(), domain.RoleStaff, hanako, time.Time{}, nil)
 	if got := membership; got.UserID() != want.UserID() || got.TenantID() != want.TenantID() || got.TenantPublicID() != want.TenantPublicID() || got.TenantRole() != want.TenantRole() || len(got.EventRoles()) != 0 {
 		t.Errorf("AddTenantMember() = %#v, want %#v", got, want)
 	}
 
-	if _, err := f.memberships.AddTenantMember(ctx, f.tenantA.ID(), "user-1", domain.RoleOwner); !errors.Is(err, repository.ErrMembershipAlreadyExists) {
+	if got := membership; got.DisplayName() != hanako || got.JoinedAt().IsZero() {
+		t.Errorf("AddTenantMember() display name, joined at = %q, %v, want %q and the time of the insert", got.DisplayName(), got.JoinedAt(), hanako)
+	}
+
+	if _, err := f.memberships.AddTenantMember(ctx, f.tenantA.ID(), "user-1", domain.RoleOwner, hanako); !errors.Is(err, repository.ErrMembershipAlreadyExists) {
 		t.Errorf("duplicate AddTenantMember() error = %v, want %v", err, repository.ErrMembershipAlreadyExists)
 	}
 
 	// The same user may belong to another tenant.
-	if _, err := f.memberships.AddTenantMember(ctx, f.tenantB.ID(), "user-1", domain.RoleOwner); err != nil {
+	if _, err := f.memberships.AddTenantMember(ctx, f.tenantB.ID(), "user-1", domain.RoleOwner, hanako); err != nil {
 		t.Errorf("AddTenantMember(other tenant) error = %v, want nil", err)
 	}
 
-	if _, err := f.memberships.AddTenantMember(ctx, "00000000-0000-0000-0000-000000000099", "user-1", domain.RoleStaff); !errors.Is(err, repository.ErrTenantNotFound) {
+	if _, err := f.memberships.AddTenantMember(ctx, "00000000-0000-0000-0000-000000000099", "user-1", domain.RoleStaff, hanako); !errors.Is(err, repository.ErrTenantNotFound) {
 		t.Errorf("AddTenantMember(unknown tenant) error = %v, want %v", err, repository.ErrTenantNotFound)
 	}
 
-	if _, err := f.memberships.AddTenantMember(ctx, f.tenantA.ID(), "user-2", domain.RoleAdmin); !errors.Is(err, domain.ErrRoleReserved) {
+	if _, err := f.memberships.AddTenantMember(ctx, f.tenantA.ID(), "user-2", domain.RoleAdmin, hanako); !errors.Is(err, domain.ErrRoleReserved) {
 		t.Errorf("AddTenantMember(admin) error = %v, want %v", err, domain.ErrRoleReserved)
 	}
 
-	if _, err := f.memberships.AddTenantMember(ctx, f.tenantA.ID(), "user-2", domain.RoleUnspecified); !errors.Is(err, domain.ErrRoleRequired) {
+	if _, err := f.memberships.AddTenantMember(ctx, f.tenantA.ID(), "user-2", domain.RoleUnspecified, hanako); !errors.Is(err, domain.ErrRoleRequired) {
 		t.Errorf("AddTenantMember(unspecified) error = %v, want %v", err, domain.ErrRoleRequired)
 	}
 
@@ -175,7 +179,7 @@ func TestEventRoles(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 
-	if _, err := f.memberships.AddTenantMember(ctx, f.tenantA.ID(), "user-1", domain.RoleStaff); err != nil {
+	if _, err := f.memberships.AddTenantMember(ctx, f.tenantA.ID(), "user-1", domain.RoleStaff, hanako); err != nil {
 		t.Fatalf("AddTenantMember() error = %v", err)
 	}
 
@@ -248,7 +252,7 @@ func TestListMemberships(t *testing.T) {
 		{f.tenantB.ID(), "user-1", domain.RoleStaff},
 	}
 	for _, s := range seed {
-		if _, err := f.memberships.AddTenantMember(ctx, s.tenantID, s.userID, s.role); err != nil {
+		if _, err := f.memberships.AddTenantMember(ctx, s.tenantID, s.userID, s.role, hanako); err != nil {
 			t.Fatalf("AddTenantMember(%s) error = %v", s.userID, err)
 		}
 	}
@@ -298,7 +302,7 @@ func TestAddOwnerJoinsTheCallerTransaction(t *testing.T) {
 	errAbort := errors.New("abort")
 
 	err := f.tenants.WithinTransaction(ctx, func(ctx context.Context) error {
-		if err := f.memberships.AddOwner(ctx, f.tenantA.ID(), "user-1"); err != nil {
+		if err := f.memberships.AddOwner(ctx, f.tenantA.ID(), "user-1", hanako); err != nil {
 			return err
 		}
 
@@ -317,7 +321,7 @@ func TestAddOwnerJoinsTheCallerTransaction(t *testing.T) {
 		t.Errorf("FindMembership() after rollback error = %v, want %v", err, repository.ErrMembershipNotFound)
 	}
 
-	if err := f.memberships.AddOwner(ctx, f.tenantA.ID(), "user-1"); err != nil {
+	if err := f.memberships.AddOwner(ctx, f.tenantA.ID(), "user-1", hanako); err != nil {
 		t.Fatalf("AddOwner() error = %v", err)
 	}
 
@@ -335,7 +339,7 @@ func TestFindTenantRoleForShare(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 
-	if _, err := f.memberships.AddTenantMember(ctx, f.tenantA.ID(), "user-1", domain.RoleOwner); err != nil {
+	if _, err := f.memberships.AddTenantMember(ctx, f.tenantA.ID(), "user-1", domain.RoleOwner, hanako); err != nil {
 		t.Fatalf("AddTenantMember() error = %v", err)
 	}
 
@@ -359,7 +363,7 @@ func TestFindTenantRoleForShareJoinsTheCallerTransaction(t *testing.T) {
 	ctx := context.Background()
 	errAbort := errors.New("abort")
 
-	if _, err := f.memberships.AddTenantMember(ctx, f.tenantA.ID(), "user-1", domain.RoleOwner); err != nil {
+	if _, err := f.memberships.AddTenantMember(ctx, f.tenantA.ID(), "user-1", domain.RoleOwner, hanako); err != nil {
 		t.Fatalf("AddTenantMember() error = %v", err)
 	}
 
@@ -501,3 +505,12 @@ func mustParseSubdomain(t *testing.T, s string) tenantdomain.Subdomain {
 
 	return subdomain
 }
+
+var hanako = func() domain.DisplayName {
+	name, err := domain.ParseDisplayName("Hanako")
+	if err != nil {
+		panic(err)
+	}
+
+	return name
+}()

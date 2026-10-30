@@ -17,6 +17,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	internaljwt "github.com/pj-hoakari/internal-jwt-handling"
 	infradb "github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/onetimetoken"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/domain"
 	repositorypkg "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/repository"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
@@ -445,9 +446,9 @@ func TestPostgresTenantRepositoryPendingTenants(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
 
-	_, hash, err := domain.NewOwnershipClaimToken()
+	_, hash, err := onetimetoken.New()
 	if err != nil {
-		t.Fatalf("NewOwnershipClaimToken() error = %v", err)
+		t.Fatalf("onetimetoken.New() error = %v", err)
 	}
 
 	expired := domain.NewTenant("00000000-0000-0000-0000-000000000001", "tenant-001", "Expired", "standard", domain.TenantOwnershipStatePendingOwner, domain.Subdomain{}, false)
@@ -504,9 +505,9 @@ func TestPostgresTenantRepositoryOwnershipClaim(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
 
-	token, hash, err := domain.NewOwnershipClaimToken()
+	token, hash, err := onetimetoken.New()
 	if err != nil {
-		t.Fatalf("NewOwnershipClaimToken() error = %v", err)
+		t.Fatalf("onetimetoken.New() error = %v", err)
 	}
 
 	pending := domain.NewTenant("00000000-0000-0000-0000-000000000001", "tenant-001", "Acme", "standard", domain.TenantOwnershipStatePendingOwner, domain.Subdomain{}, false)
@@ -645,9 +646,9 @@ func TestPostgresTenantRepositoryOwnedTenantHasSubdomain(t *testing.T) {
 func newPendingTenant(t *testing.T, repository *PostgresTenantRepository, id, publicID string) domain.Tenant {
 	t.Helper()
 
-	_, hash, err := domain.NewOwnershipClaimToken()
+	_, hash, err := onetimetoken.New()
 	if err != nil {
-		t.Fatalf("NewOwnershipClaimToken() error = %v", err)
+		t.Fatalf("onetimetoken.New() error = %v", err)
 	}
 
 	tenant := domain.NewTenant(id, publicID, "Acme", "standard", domain.TenantOwnershipStatePendingOwner, domain.Subdomain{}, false)
@@ -705,9 +706,9 @@ func TestPostgresTenantRepositoryUpdateTenant(t *testing.T) {
 	// pending_owner tenant keeps its state and its unconsumed claim.
 	expiresAt := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
 
-	token, hash, err := domain.NewOwnershipClaimToken()
+	token, hash, err := onetimetoken.New()
 	if err != nil {
-		t.Fatalf("NewOwnershipClaimToken() error = %v", err)
+		t.Fatalf("onetimetoken.New() error = %v", err)
 	}
 
 	pending := domain.NewTenant("00000000-0000-0000-0000-000000000002", "tenant-002", "Pending", "standard", domain.TenantOwnershipStatePendingOwner, domain.Subdomain{}, false)

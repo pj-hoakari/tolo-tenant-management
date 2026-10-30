@@ -14,6 +14,7 @@ import (
 	"github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1/tenantv1connect"
 	infraconnect "github.com/pj-hoakari/tolo-tenant-management/internal/infra/connect"
 	infradb "github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
+	relationdomain "github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/repository"
@@ -30,6 +31,8 @@ var clientErrors = infraconnect.ClientErrors{
 	{Target: application.ErrEventStatusRequired, Code: connectrpc.CodeInvalidArgument, Message: "to is required"},
 	{Target: application.ErrSubdomainRequired, Code: connectrpc.CodeInvalidArgument, Message: "subdomain is required"},
 	{Target: domain.ErrInvalidSubdomain, Code: connectrpc.CodeInvalidArgument, Message: "subdomain is invalid"},
+	{Target: relationdomain.ErrDisplayNameRequired, Code: connectrpc.CodeInvalidArgument, Message: "display_name is required"},
+	{Target: relationdomain.ErrDisplayNameTooLong, Code: connectrpc.CodeInvalidArgument, Message: "display_name is too long"},
 	{Target: repository.ErrTenantSubdomainExists, Code: connectrpc.CodeAlreadyExists, Message: "subdomain already exists"},
 	{Target: repository.ErrTenantPublicIDExists, Code: connectrpc.CodeAlreadyExists, Message: "generated tenant ID already exists; retry the request"},
 	{Target: repository.ErrEventPublicIDExists, Code: connectrpc.CodeAlreadyExists, Message: "generated event ID already exists; retry the request"},
@@ -101,6 +104,7 @@ func (s *Service) ClaimTenantOwnership(ctx context.Context, req *tenantv1.ClaimT
 		TenantPublicID: req.GetTenantId(),
 		ClaimToken:     req.GetOwnershipClaimToken(),
 		Subdomain:      req.GetSubdomain(),
+		DisplayName:    req.GetDisplayName(),
 	})
 	if err != nil {
 		return nil, clientErrors.For(ctx, err)

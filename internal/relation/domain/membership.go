@@ -1,5 +1,7 @@
 package domain
 
+import "time"
+
 // EventRole is a role a user holds on one event of the tenant they belong to.
 type EventRole struct {
 	eventID       string
@@ -23,23 +25,29 @@ type Membership struct {
 	tenantID       string
 	tenantPublicID string
 	tenantRole     Role
+	displayName    DisplayName
+	joinedAt       time.Time
 	eventRoles     []EventRole
 }
 
-func NewMembership(userID, tenantID, tenantPublicID string, tenantRole Role, eventRoles []EventRole) Membership {
+func NewMembership(userID, tenantID, tenantPublicID string, tenantRole Role, displayName DisplayName, joinedAt time.Time, eventRoles []EventRole) Membership {
 	return Membership{
 		userID:         userID,
 		tenantID:       tenantID,
 		tenantPublicID: tenantPublicID,
 		tenantRole:     tenantRole,
+		displayName:    displayName,
+		joinedAt:       joinedAt,
 		eventRoles:     append([]EventRole(nil), eventRoles...),
 	}
 }
 
-func (m Membership) UserID() string         { return m.userID }
-func (m Membership) TenantID() string       { return m.tenantID }
-func (m Membership) TenantPublicID() string { return m.tenantPublicID }
-func (m Membership) TenantRole() Role       { return m.tenantRole }
+func (m Membership) UserID() string           { return m.userID }
+func (m Membership) TenantID() string         { return m.tenantID }
+func (m Membership) TenantPublicID() string   { return m.tenantPublicID }
+func (m Membership) TenantRole() Role         { return m.tenantRole }
+func (m Membership) DisplayName() DisplayName { return m.displayName }
+func (m Membership) JoinedAt() time.Time      { return m.joinedAt }
 
 // EventRoles returns a copy of the event roles held in the tenant.
 func (m Membership) EventRoles() []EventRole { return append([]EventRole(nil), m.eventRoles...) }

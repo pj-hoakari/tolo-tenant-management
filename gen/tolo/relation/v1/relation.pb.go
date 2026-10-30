@@ -10,6 +10,7 @@ import (
 	_ "github.com/pj-hoakari/protoc-gen-authz-go/authz/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -81,6 +82,8 @@ type Membership struct {
 	TenantId      string                 `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"` // public ID
 	TenantRole    Role                   `protobuf:"varint,3,opt,name=tenant_role,json=tenantRole,proto3,enum=tolo.relation.v1.Role" json:"tenant_role,omitempty"`
 	EventRoles    []*EventRole           `protobuf:"bytes,4,rep,name=event_roles,json=eventRoles,proto3" json:"event_roles,omitempty"`
+	DisplayName   string                 `protobuf:"bytes,5,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	JoinedAt      *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=joined_at,json=joinedAt,proto3" json:"joined_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -143,6 +146,96 @@ func (x *Membership) GetEventRoles() []*EventRole {
 	return nil
 }
 
+func (x *Membership) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *Membership) GetJoinedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.JoinedAt
+	}
+	return nil
+}
+
+type TenantInvitation struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	InvitationId  string                 `protobuf:"bytes,1,opt,name=invitation_id,json=invitationId,proto3" json:"invitation_id,omitempty"`
+	TenantId      string                 `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	TenantRole    Role                   `protobuf:"varint,3,opt,name=tenant_role,json=tenantRole,proto3,enum=tolo.relation.v1.Role" json:"tenant_role,omitempty"`
+	DisplayName   string                 `protobuf:"bytes,4,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TenantInvitation) Reset() {
+	*x = TenantInvitation{}
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TenantInvitation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TenantInvitation) ProtoMessage() {}
+
+func (x *TenantInvitation) ProtoReflect() protoreflect.Message {
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TenantInvitation.ProtoReflect.Descriptor instead.
+func (*TenantInvitation) Descriptor() ([]byte, []int) {
+	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *TenantInvitation) GetInvitationId() string {
+	if x != nil {
+		return x.InvitationId
+	}
+	return ""
+}
+
+func (x *TenantInvitation) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *TenantInvitation) GetTenantRole() Role {
+	if x != nil {
+		return x.TenantRole
+	}
+	return Role_ROLE_UNSPECIFIED
+}
+
+func (x *TenantInvitation) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *TenantInvitation) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
 type EventRole struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	EventId       string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"` // public ID; the event belongs to the membership's tenant
@@ -153,7 +246,7 @@ type EventRole struct {
 
 func (x *EventRole) Reset() {
 	*x = EventRole{}
-	mi := &file_tolo_relation_v1_relation_proto_msgTypes[1]
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -165,7 +258,7 @@ func (x *EventRole) String() string {
 func (*EventRole) ProtoMessage() {}
 
 func (x *EventRole) ProtoReflect() protoreflect.Message {
-	mi := &file_tolo_relation_v1_relation_proto_msgTypes[1]
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -178,7 +271,7 @@ func (x *EventRole) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EventRole.ProtoReflect.Descriptor instead.
 func (*EventRole) Descriptor() ([]byte, []int) {
-	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{1}
+	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *EventRole) GetEventId() string {
@@ -195,18 +288,411 @@ func (x *EventRole) GetRole() Role {
 	return Role_ROLE_UNSPECIFIED
 }
 
+type CreateTenantInvitationRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	TenantRole    Role                   `protobuf:"varint,2,opt,name=tenant_role,json=tenantRole,proto3,enum=tolo.relation.v1.Role" json:"tenant_role,omitempty"`
+	DisplayName   string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateTenantInvitationRequest) Reset() {
+	*x = CreateTenantInvitationRequest{}
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateTenantInvitationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateTenantInvitationRequest) ProtoMessage() {}
+
+func (x *CreateTenantInvitationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateTenantInvitationRequest.ProtoReflect.Descriptor instead.
+func (*CreateTenantInvitationRequest) Descriptor() ([]byte, []int) {
+	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *CreateTenantInvitationRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *CreateTenantInvitationRequest) GetTenantRole() Role {
+	if x != nil {
+		return x.TenantRole
+	}
+	return Role_ROLE_UNSPECIFIED
+}
+
+func (x *CreateTenantInvitationRequest) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+type CreateTenantInvitationResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Invitation      *TenantInvitation      `protobuf:"bytes,1,opt,name=invitation,proto3" json:"invitation,omitempty"`
+	InvitationToken string                 `protobuf:"bytes,2,opt,name=invitation_token,json=invitationToken,proto3" json:"invitation_token,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *CreateTenantInvitationResponse) Reset() {
+	*x = CreateTenantInvitationResponse{}
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateTenantInvitationResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateTenantInvitationResponse) ProtoMessage() {}
+
+func (x *CreateTenantInvitationResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateTenantInvitationResponse.ProtoReflect.Descriptor instead.
+func (*CreateTenantInvitationResponse) Descriptor() ([]byte, []int) {
+	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *CreateTenantInvitationResponse) GetInvitation() *TenantInvitation {
+	if x != nil {
+		return x.Invitation
+	}
+	return nil
+}
+
+func (x *CreateTenantInvitationResponse) GetInvitationToken() string {
+	if x != nil {
+		return x.InvitationToken
+	}
+	return ""
+}
+
+type ListTenantInvitationsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListTenantInvitationsRequest) Reset() {
+	*x = ListTenantInvitationsRequest{}
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTenantInvitationsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTenantInvitationsRequest) ProtoMessage() {}
+
+func (x *ListTenantInvitationsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTenantInvitationsRequest.ProtoReflect.Descriptor instead.
+func (*ListTenantInvitationsRequest) Descriptor() ([]byte, []int) {
+	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ListTenantInvitationsRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+type ListTenantInvitationsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Invitations   []*TenantInvitation    `protobuf:"bytes,1,rep,name=invitations,proto3" json:"invitations,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListTenantInvitationsResponse) Reset() {
+	*x = ListTenantInvitationsResponse{}
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTenantInvitationsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTenantInvitationsResponse) ProtoMessage() {}
+
+func (x *ListTenantInvitationsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTenantInvitationsResponse.ProtoReflect.Descriptor instead.
+func (*ListTenantInvitationsResponse) Descriptor() ([]byte, []int) {
+	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ListTenantInvitationsResponse) GetInvitations() []*TenantInvitation {
+	if x != nil {
+		return x.Invitations
+	}
+	return nil
+}
+
+type RevokeTenantInvitationRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	InvitationId  string                 `protobuf:"bytes,2,opt,name=invitation_id,json=invitationId,proto3" json:"invitation_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeTenantInvitationRequest) Reset() {
+	*x = RevokeTenantInvitationRequest{}
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeTenantInvitationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeTenantInvitationRequest) ProtoMessage() {}
+
+func (x *RevokeTenantInvitationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeTenantInvitationRequest.ProtoReflect.Descriptor instead.
+func (*RevokeTenantInvitationRequest) Descriptor() ([]byte, []int) {
+	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *RevokeTenantInvitationRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *RevokeTenantInvitationRequest) GetInvitationId() string {
+	if x != nil {
+		return x.InvitationId
+	}
+	return ""
+}
+
+type RevokeTenantInvitationResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Invitation    *TenantInvitation      `protobuf:"bytes,1,opt,name=invitation,proto3" json:"invitation,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeTenantInvitationResponse) Reset() {
+	*x = RevokeTenantInvitationResponse{}
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeTenantInvitationResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeTenantInvitationResponse) ProtoMessage() {}
+
+func (x *RevokeTenantInvitationResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeTenantInvitationResponse.ProtoReflect.Descriptor instead.
+func (*RevokeTenantInvitationResponse) Descriptor() ([]byte, []int) {
+	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *RevokeTenantInvitationResponse) GetInvitation() *TenantInvitation {
+	if x != nil {
+		return x.Invitation
+	}
+	return nil
+}
+
+type AcceptTenantInvitationRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	TenantId        string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	InvitationToken string                 `protobuf:"bytes,2,opt,name=invitation_token,json=invitationToken,proto3" json:"invitation_token,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *AcceptTenantInvitationRequest) Reset() {
+	*x = AcceptTenantInvitationRequest{}
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AcceptTenantInvitationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AcceptTenantInvitationRequest) ProtoMessage() {}
+
+func (x *AcceptTenantInvitationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AcceptTenantInvitationRequest.ProtoReflect.Descriptor instead.
+func (*AcceptTenantInvitationRequest) Descriptor() ([]byte, []int) {
+	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *AcceptTenantInvitationRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *AcceptTenantInvitationRequest) GetInvitationToken() string {
+	if x != nil {
+		return x.InvitationToken
+	}
+	return ""
+}
+
+type AcceptTenantInvitationResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Membership    *Membership            `protobuf:"bytes,1,opt,name=membership,proto3" json:"membership,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AcceptTenantInvitationResponse) Reset() {
+	*x = AcceptTenantInvitationResponse{}
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AcceptTenantInvitationResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AcceptTenantInvitationResponse) ProtoMessage() {}
+
+func (x *AcceptTenantInvitationResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AcceptTenantInvitationResponse.ProtoReflect.Descriptor instead.
+func (*AcceptTenantInvitationResponse) Descriptor() ([]byte, []int) {
+	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *AcceptTenantInvitationResponse) GetMembership() *Membership {
+	if x != nil {
+		return x.Membership
+	}
+	return nil
+}
+
 type AddTenantMemberRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	TenantRole    Role                   `protobuf:"varint,3,opt,name=tenant_role,json=tenantRole,proto3,enum=tolo.relation.v1.Role" json:"tenant_role,omitempty"`
+	DisplayName   string                 `protobuf:"bytes,4,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AddTenantMemberRequest) Reset() {
 	*x = AddTenantMemberRequest{}
-	mi := &file_tolo_relation_v1_relation_proto_msgTypes[2]
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -218,7 +704,7 @@ func (x *AddTenantMemberRequest) String() string {
 func (*AddTenantMemberRequest) ProtoMessage() {}
 
 func (x *AddTenantMemberRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tolo_relation_v1_relation_proto_msgTypes[2]
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -231,7 +717,7 @@ func (x *AddTenantMemberRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddTenantMemberRequest.ProtoReflect.Descriptor instead.
 func (*AddTenantMemberRequest) Descriptor() ([]byte, []int) {
-	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{2}
+	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *AddTenantMemberRequest) GetTenantId() string {
@@ -255,6 +741,13 @@ func (x *AddTenantMemberRequest) GetTenantRole() Role {
 	return Role_ROLE_UNSPECIFIED
 }
 
+func (x *AddTenantMemberRequest) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
 type AddTenantMemberResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Membership    *Membership            `protobuf:"bytes,1,opt,name=membership,proto3" json:"membership,omitempty"`
@@ -264,7 +757,7 @@ type AddTenantMemberResponse struct {
 
 func (x *AddTenantMemberResponse) Reset() {
 	*x = AddTenantMemberResponse{}
-	mi := &file_tolo_relation_v1_relation_proto_msgTypes[3]
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -276,7 +769,7 @@ func (x *AddTenantMemberResponse) String() string {
 func (*AddTenantMemberResponse) ProtoMessage() {}
 
 func (x *AddTenantMemberResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tolo_relation_v1_relation_proto_msgTypes[3]
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -289,7 +782,7 @@ func (x *AddTenantMemberResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddTenantMemberResponse.ProtoReflect.Descriptor instead.
 func (*AddTenantMemberResponse) Descriptor() ([]byte, []int) {
-	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{3}
+	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *AddTenantMemberResponse) GetMembership() *Membership {
@@ -310,7 +803,7 @@ type ChangeTenantRoleRequest struct {
 
 func (x *ChangeTenantRoleRequest) Reset() {
 	*x = ChangeTenantRoleRequest{}
-	mi := &file_tolo_relation_v1_relation_proto_msgTypes[4]
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -322,7 +815,7 @@ func (x *ChangeTenantRoleRequest) String() string {
 func (*ChangeTenantRoleRequest) ProtoMessage() {}
 
 func (x *ChangeTenantRoleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tolo_relation_v1_relation_proto_msgTypes[4]
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -335,7 +828,7 @@ func (x *ChangeTenantRoleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChangeTenantRoleRequest.ProtoReflect.Descriptor instead.
 func (*ChangeTenantRoleRequest) Descriptor() ([]byte, []int) {
-	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{4}
+	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ChangeTenantRoleRequest) GetTenantId() string {
@@ -368,7 +861,7 @@ type ChangeTenantRoleResponse struct {
 
 func (x *ChangeTenantRoleResponse) Reset() {
 	*x = ChangeTenantRoleResponse{}
-	mi := &file_tolo_relation_v1_relation_proto_msgTypes[5]
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -380,7 +873,7 @@ func (x *ChangeTenantRoleResponse) String() string {
 func (*ChangeTenantRoleResponse) ProtoMessage() {}
 
 func (x *ChangeTenantRoleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tolo_relation_v1_relation_proto_msgTypes[5]
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -393,7 +886,7 @@ func (x *ChangeTenantRoleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChangeTenantRoleResponse.ProtoReflect.Descriptor instead.
 func (*ChangeTenantRoleResponse) Descriptor() ([]byte, []int) {
-	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{5}
+	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ChangeTenantRoleResponse) GetMembership() *Membership {
@@ -414,7 +907,7 @@ type GrantEventRoleRequest struct {
 
 func (x *GrantEventRoleRequest) Reset() {
 	*x = GrantEventRoleRequest{}
-	mi := &file_tolo_relation_v1_relation_proto_msgTypes[6]
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -426,7 +919,7 @@ func (x *GrantEventRoleRequest) String() string {
 func (*GrantEventRoleRequest) ProtoMessage() {}
 
 func (x *GrantEventRoleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tolo_relation_v1_relation_proto_msgTypes[6]
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -439,7 +932,7 @@ func (x *GrantEventRoleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GrantEventRoleRequest.ProtoReflect.Descriptor instead.
 func (*GrantEventRoleRequest) Descriptor() ([]byte, []int) {
-	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{6}
+	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *GrantEventRoleRequest) GetEventId() string {
@@ -472,7 +965,7 @@ type GrantEventRoleResponse struct {
 
 func (x *GrantEventRoleResponse) Reset() {
 	*x = GrantEventRoleResponse{}
-	mi := &file_tolo_relation_v1_relation_proto_msgTypes[7]
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -484,7 +977,7 @@ func (x *GrantEventRoleResponse) String() string {
 func (*GrantEventRoleResponse) ProtoMessage() {}
 
 func (x *GrantEventRoleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tolo_relation_v1_relation_proto_msgTypes[7]
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -497,7 +990,7 @@ func (x *GrantEventRoleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GrantEventRoleResponse.ProtoReflect.Descriptor instead.
 func (*GrantEventRoleResponse) Descriptor() ([]byte, []int) {
-	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{7}
+	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *GrantEventRoleResponse) GetMembership() *Membership {
@@ -521,7 +1014,7 @@ type RevokeRoleRequest struct {
 
 func (x *RevokeRoleRequest) Reset() {
 	*x = RevokeRoleRequest{}
-	mi := &file_tolo_relation_v1_relation_proto_msgTypes[8]
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -533,7 +1026,7 @@ func (x *RevokeRoleRequest) String() string {
 func (*RevokeRoleRequest) ProtoMessage() {}
 
 func (x *RevokeRoleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tolo_relation_v1_relation_proto_msgTypes[8]
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -546,7 +1039,7 @@ func (x *RevokeRoleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeRoleRequest.ProtoReflect.Descriptor instead.
 func (*RevokeRoleRequest) Descriptor() ([]byte, []int) {
-	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{8}
+	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *RevokeRoleRequest) GetUserId() string {
@@ -605,7 +1098,7 @@ type RevokeRoleResponse struct {
 
 func (x *RevokeRoleResponse) Reset() {
 	*x = RevokeRoleResponse{}
-	mi := &file_tolo_relation_v1_relation_proto_msgTypes[9]
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -617,7 +1110,7 @@ func (x *RevokeRoleResponse) String() string {
 func (*RevokeRoleResponse) ProtoMessage() {}
 
 func (x *RevokeRoleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tolo_relation_v1_relation_proto_msgTypes[9]
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -630,7 +1123,7 @@ func (x *RevokeRoleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeRoleResponse.ProtoReflect.Descriptor instead.
 func (*RevokeRoleResponse) Descriptor() ([]byte, []int) {
-	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{9}
+	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{18}
 }
 
 type ListMembershipsRequest struct {
@@ -646,7 +1139,7 @@ type ListMembershipsRequest struct {
 
 func (x *ListMembershipsRequest) Reset() {
 	*x = ListMembershipsRequest{}
-	mi := &file_tolo_relation_v1_relation_proto_msgTypes[10]
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -658,7 +1151,7 @@ func (x *ListMembershipsRequest) String() string {
 func (*ListMembershipsRequest) ProtoMessage() {}
 
 func (x *ListMembershipsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tolo_relation_v1_relation_proto_msgTypes[10]
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -671,7 +1164,7 @@ func (x *ListMembershipsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMembershipsRequest.ProtoReflect.Descriptor instead.
 func (*ListMembershipsRequest) Descriptor() ([]byte, []int) {
-	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{10}
+	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ListMembershipsRequest) GetFilter() isListMembershipsRequest_Filter {
@@ -724,7 +1217,7 @@ type ListMembershipsResponse struct {
 
 func (x *ListMembershipsResponse) Reset() {
 	*x = ListMembershipsResponse{}
-	mi := &file_tolo_relation_v1_relation_proto_msgTypes[11]
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -736,7 +1229,7 @@ func (x *ListMembershipsResponse) String() string {
 func (*ListMembershipsResponse) ProtoMessage() {}
 
 func (x *ListMembershipsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tolo_relation_v1_relation_proto_msgTypes[11]
+	mi := &file_tolo_relation_v1_relation_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -749,7 +1242,7 @@ func (x *ListMembershipsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMembershipsResponse.ProtoReflect.Descriptor instead.
 func (*ListMembershipsResponse) Descriptor() ([]byte, []int) {
-	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{11}
+	return file_tolo_relation_v1_relation_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ListMembershipsResponse) GetMemberships() []*Membership {
@@ -763,7 +1256,7 @@ var File_tolo_relation_v1_relation_proto protoreflect.FileDescriptor
 
 const file_tolo_relation_v1_relation_proto_rawDesc = "" +
 	"\n" +
-	"\x1ftolo/relation/v1/relation.proto\x12\x10tolo.relation.v1\x1a\x16authz/v1/options.proto\"\xb9\x01\n" +
+	"\x1ftolo/relation/v1/relation.proto\x12\x10tolo.relation.v1\x1a\x16authz/v1/options.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x95\x02\n" +
 	"\n" +
 	"Membership\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1b\n" +
@@ -771,15 +1264,54 @@ const file_tolo_relation_v1_relation_proto_rawDesc = "" +
 	"\vtenant_role\x18\x03 \x01(\x0e2\x16.tolo.relation.v1.RoleR\n" +
 	"tenantRole\x12<\n" +
 	"\vevent_roles\x18\x04 \x03(\v2\x1b.tolo.relation.v1.EventRoleR\n" +
-	"eventRoles\"R\n" +
+	"eventRoles\x12!\n" +
+	"\fdisplay_name\x18\x05 \x01(\tR\vdisplayName\x127\n" +
+	"\tjoined_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\bjoinedAt\"\xeb\x01\n" +
+	"\x10TenantInvitation\x12#\n" +
+	"\rinvitation_id\x18\x01 \x01(\tR\finvitationId\x12\x1b\n" +
+	"\ttenant_id\x18\x02 \x01(\tR\btenantId\x127\n" +
+	"\vtenant_role\x18\x03 \x01(\x0e2\x16.tolo.relation.v1.RoleR\n" +
+	"tenantRole\x12!\n" +
+	"\fdisplay_name\x18\x04 \x01(\tR\vdisplayName\x129\n" +
+	"\n" +
+	"expires_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"R\n" +
 	"\tEventRole\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12*\n" +
-	"\x04role\x18\x02 \x01(\x0e2\x16.tolo.relation.v1.RoleR\x04role\"\x87\x01\n" +
+	"\x04role\x18\x02 \x01(\x0e2\x16.tolo.relation.v1.RoleR\x04role\"\x98\x01\n" +
+	"\x1dCreateTenantInvitationRequest\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x127\n" +
+	"\vtenant_role\x18\x02 \x01(\x0e2\x16.tolo.relation.v1.RoleR\n" +
+	"tenantRole\x12!\n" +
+	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\"\x8f\x01\n" +
+	"\x1eCreateTenantInvitationResponse\x12B\n" +
+	"\n" +
+	"invitation\x18\x01 \x01(\v2\".tolo.relation.v1.TenantInvitationR\n" +
+	"invitation\x12)\n" +
+	"\x10invitation_token\x18\x02 \x01(\tR\x0finvitationToken\";\n" +
+	"\x1cListTenantInvitationsRequest\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\"e\n" +
+	"\x1dListTenantInvitationsResponse\x12D\n" +
+	"\vinvitations\x18\x01 \x03(\v2\".tolo.relation.v1.TenantInvitationR\vinvitations\"a\n" +
+	"\x1dRevokeTenantInvitationRequest\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12#\n" +
+	"\rinvitation_id\x18\x02 \x01(\tR\finvitationId\"d\n" +
+	"\x1eRevokeTenantInvitationResponse\x12B\n" +
+	"\n" +
+	"invitation\x18\x01 \x01(\v2\".tolo.relation.v1.TenantInvitationR\n" +
+	"invitation\"g\n" +
+	"\x1dAcceptTenantInvitationRequest\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12)\n" +
+	"\x10invitation_token\x18\x02 \x01(\tR\x0finvitationToken\"^\n" +
+	"\x1eAcceptTenantInvitationResponse\x12<\n" +
+	"\n" +
+	"membership\x18\x01 \x01(\v2\x1c.tolo.relation.v1.MembershipR\n" +
+	"membership\"\xaa\x01\n" +
 	"\x16AddTenantMemberRequest\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x127\n" +
 	"\vtenant_role\x18\x03 \x01(\x0e2\x16.tolo.relation.v1.RoleR\n" +
-	"tenantRole\"W\n" +
+	"tenantRole\x12!\n" +
+	"\fdisplay_name\x18\x04 \x01(\tR\vdisplayName\"W\n" +
 	"\x17AddTenantMemberResponse\x12<\n" +
 	"\n" +
 	"membership\x18\x01 \x01(\v2\x1c.tolo.relation.v1.MembershipR\n" +
@@ -820,9 +1352,14 @@ const file_tolo_relation_v1_relation_proto_rawDesc = "" +
 	"\n" +
 	"ROLE_STAFF\x10\x02\x12\x0e\n" +
 	"\n" +
-	"ROLE_ADMIN\x10\x032\xcb\x05\n" +
-	"\x14RelationAdminService\x12\x8b\x01\n" +
-	"\x0fAddTenantMember\x12(.tolo.relation.v1.AddTenantMemberRequest\x1a).tolo.relation.v1.AddTenantMemberResponse\"#\x8a\xb5\x18\x1f\b\x02\x12\ftenant.write\x1a\rtenant_access\x12\x8e\x01\n" +
+	"ROLE_ADMIN\x10\x032\xb4\n" +
+	"\n" +
+	"\x14RelationAdminService\x12\xa0\x01\n" +
+	"\x16CreateTenantInvitation\x12/.tolo.relation.v1.CreateTenantInvitationRequest\x1a0.tolo.relation.v1.CreateTenantInvitationResponse\"#\x8a\xb5\x18\x1f\b\x02\x12\ftenant.write\x1a\rtenant_access\x12\x9d\x01\n" +
+	"\x15ListTenantInvitations\x12..tolo.relation.v1.ListTenantInvitationsRequest\x1a/.tolo.relation.v1.ListTenantInvitationsResponse\"#\x8a\xb5\x18\x1f\b\x02\x12\ftenant.write\x1a\rtenant_access\x12\xa0\x01\n" +
+	"\x16RevokeTenantInvitation\x12/.tolo.relation.v1.RevokeTenantInvitationRequest\x1a0.tolo.relation.v1.RevokeTenantInvitationResponse\"#\x8a\xb5\x18\x1f\b\x02\x12\ftenant.write\x1a\rtenant_access\x12\x9e\x01\n" +
+	"\x16AcceptTenantInvitation\x12/.tolo.relation.v1.AcceptTenantInvitationRequest\x1a0.tolo.relation.v1.AcceptTenantInvitationResponse\"!\x8a\xb5\x18\x1d\b\x02\x12\vtenant.join\x1a\fregistration\x12n\n" +
+	"\x0fAddTenantMember\x12(.tolo.relation.v1.AddTenantMemberRequest\x1a).tolo.relation.v1.AddTenantMemberResponse\"\x06\x8a\xb5\x18\x02\b\x03\x12\x8e\x01\n" +
 	"\x10ChangeTenantRole\x12).tolo.relation.v1.ChangeTenantRoleRequest\x1a*.tolo.relation.v1.ChangeTenantRoleResponse\"#\x8a\xb5\x18\x1f\b\x02\x12\ftenant.write\x1a\rtenant_access\x12\x88\x01\n" +
 	"\x0eGrantEventRole\x12'.tolo.relation.v1.GrantEventRoleRequest\x1a(.tolo.relation.v1.GrantEventRoleResponse\"#\x8a\xb5\x18\x1f\b\x02\x12\ftenant.write\x1a\rtenant_access\x12|\n" +
 	"\n" +
@@ -843,48 +1380,74 @@ func file_tolo_relation_v1_relation_proto_rawDescGZIP() []byte {
 }
 
 var file_tolo_relation_v1_relation_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_tolo_relation_v1_relation_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_tolo_relation_v1_relation_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_tolo_relation_v1_relation_proto_goTypes = []any{
-	(Role)(0),                        // 0: tolo.relation.v1.Role
-	(*Membership)(nil),               // 1: tolo.relation.v1.Membership
-	(*EventRole)(nil),                // 2: tolo.relation.v1.EventRole
-	(*AddTenantMemberRequest)(nil),   // 3: tolo.relation.v1.AddTenantMemberRequest
-	(*AddTenantMemberResponse)(nil),  // 4: tolo.relation.v1.AddTenantMemberResponse
-	(*ChangeTenantRoleRequest)(nil),  // 5: tolo.relation.v1.ChangeTenantRoleRequest
-	(*ChangeTenantRoleResponse)(nil), // 6: tolo.relation.v1.ChangeTenantRoleResponse
-	(*GrantEventRoleRequest)(nil),    // 7: tolo.relation.v1.GrantEventRoleRequest
-	(*GrantEventRoleResponse)(nil),   // 8: tolo.relation.v1.GrantEventRoleResponse
-	(*RevokeRoleRequest)(nil),        // 9: tolo.relation.v1.RevokeRoleRequest
-	(*RevokeRoleResponse)(nil),       // 10: tolo.relation.v1.RevokeRoleResponse
-	(*ListMembershipsRequest)(nil),   // 11: tolo.relation.v1.ListMembershipsRequest
-	(*ListMembershipsResponse)(nil),  // 12: tolo.relation.v1.ListMembershipsResponse
+	(Role)(0),                              // 0: tolo.relation.v1.Role
+	(*Membership)(nil),                     // 1: tolo.relation.v1.Membership
+	(*TenantInvitation)(nil),               // 2: tolo.relation.v1.TenantInvitation
+	(*EventRole)(nil),                      // 3: tolo.relation.v1.EventRole
+	(*CreateTenantInvitationRequest)(nil),  // 4: tolo.relation.v1.CreateTenantInvitationRequest
+	(*CreateTenantInvitationResponse)(nil), // 5: tolo.relation.v1.CreateTenantInvitationResponse
+	(*ListTenantInvitationsRequest)(nil),   // 6: tolo.relation.v1.ListTenantInvitationsRequest
+	(*ListTenantInvitationsResponse)(nil),  // 7: tolo.relation.v1.ListTenantInvitationsResponse
+	(*RevokeTenantInvitationRequest)(nil),  // 8: tolo.relation.v1.RevokeTenantInvitationRequest
+	(*RevokeTenantInvitationResponse)(nil), // 9: tolo.relation.v1.RevokeTenantInvitationResponse
+	(*AcceptTenantInvitationRequest)(nil),  // 10: tolo.relation.v1.AcceptTenantInvitationRequest
+	(*AcceptTenantInvitationResponse)(nil), // 11: tolo.relation.v1.AcceptTenantInvitationResponse
+	(*AddTenantMemberRequest)(nil),         // 12: tolo.relation.v1.AddTenantMemberRequest
+	(*AddTenantMemberResponse)(nil),        // 13: tolo.relation.v1.AddTenantMemberResponse
+	(*ChangeTenantRoleRequest)(nil),        // 14: tolo.relation.v1.ChangeTenantRoleRequest
+	(*ChangeTenantRoleResponse)(nil),       // 15: tolo.relation.v1.ChangeTenantRoleResponse
+	(*GrantEventRoleRequest)(nil),          // 16: tolo.relation.v1.GrantEventRoleRequest
+	(*GrantEventRoleResponse)(nil),         // 17: tolo.relation.v1.GrantEventRoleResponse
+	(*RevokeRoleRequest)(nil),              // 18: tolo.relation.v1.RevokeRoleRequest
+	(*RevokeRoleResponse)(nil),             // 19: tolo.relation.v1.RevokeRoleResponse
+	(*ListMembershipsRequest)(nil),         // 20: tolo.relation.v1.ListMembershipsRequest
+	(*ListMembershipsResponse)(nil),        // 21: tolo.relation.v1.ListMembershipsResponse
+	(*timestamppb.Timestamp)(nil),          // 22: google.protobuf.Timestamp
 }
 var file_tolo_relation_v1_relation_proto_depIdxs = []int32{
 	0,  // 0: tolo.relation.v1.Membership.tenant_role:type_name -> tolo.relation.v1.Role
-	2,  // 1: tolo.relation.v1.Membership.event_roles:type_name -> tolo.relation.v1.EventRole
-	0,  // 2: tolo.relation.v1.EventRole.role:type_name -> tolo.relation.v1.Role
-	0,  // 3: tolo.relation.v1.AddTenantMemberRequest.tenant_role:type_name -> tolo.relation.v1.Role
-	1,  // 4: tolo.relation.v1.AddTenantMemberResponse.membership:type_name -> tolo.relation.v1.Membership
-	0,  // 5: tolo.relation.v1.ChangeTenantRoleRequest.tenant_role:type_name -> tolo.relation.v1.Role
-	1,  // 6: tolo.relation.v1.ChangeTenantRoleResponse.membership:type_name -> tolo.relation.v1.Membership
-	0,  // 7: tolo.relation.v1.GrantEventRoleRequest.role:type_name -> tolo.relation.v1.Role
-	1,  // 8: tolo.relation.v1.GrantEventRoleResponse.membership:type_name -> tolo.relation.v1.Membership
-	1,  // 9: tolo.relation.v1.ListMembershipsResponse.memberships:type_name -> tolo.relation.v1.Membership
-	3,  // 10: tolo.relation.v1.RelationAdminService.AddTenantMember:input_type -> tolo.relation.v1.AddTenantMemberRequest
-	5,  // 11: tolo.relation.v1.RelationAdminService.ChangeTenantRole:input_type -> tolo.relation.v1.ChangeTenantRoleRequest
-	7,  // 12: tolo.relation.v1.RelationAdminService.GrantEventRole:input_type -> tolo.relation.v1.GrantEventRoleRequest
-	9,  // 13: tolo.relation.v1.RelationAdminService.RevokeRole:input_type -> tolo.relation.v1.RevokeRoleRequest
-	11, // 14: tolo.relation.v1.RelationAdminService.ListMemberships:input_type -> tolo.relation.v1.ListMembershipsRequest
-	4,  // 15: tolo.relation.v1.RelationAdminService.AddTenantMember:output_type -> tolo.relation.v1.AddTenantMemberResponse
-	6,  // 16: tolo.relation.v1.RelationAdminService.ChangeTenantRole:output_type -> tolo.relation.v1.ChangeTenantRoleResponse
-	8,  // 17: tolo.relation.v1.RelationAdminService.GrantEventRole:output_type -> tolo.relation.v1.GrantEventRoleResponse
-	10, // 18: tolo.relation.v1.RelationAdminService.RevokeRole:output_type -> tolo.relation.v1.RevokeRoleResponse
-	12, // 19: tolo.relation.v1.RelationAdminService.ListMemberships:output_type -> tolo.relation.v1.ListMembershipsResponse
-	15, // [15:20] is the sub-list for method output_type
-	10, // [10:15] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	3,  // 1: tolo.relation.v1.Membership.event_roles:type_name -> tolo.relation.v1.EventRole
+	22, // 2: tolo.relation.v1.Membership.joined_at:type_name -> google.protobuf.Timestamp
+	0,  // 3: tolo.relation.v1.TenantInvitation.tenant_role:type_name -> tolo.relation.v1.Role
+	22, // 4: tolo.relation.v1.TenantInvitation.expires_at:type_name -> google.protobuf.Timestamp
+	0,  // 5: tolo.relation.v1.EventRole.role:type_name -> tolo.relation.v1.Role
+	0,  // 6: tolo.relation.v1.CreateTenantInvitationRequest.tenant_role:type_name -> tolo.relation.v1.Role
+	2,  // 7: tolo.relation.v1.CreateTenantInvitationResponse.invitation:type_name -> tolo.relation.v1.TenantInvitation
+	2,  // 8: tolo.relation.v1.ListTenantInvitationsResponse.invitations:type_name -> tolo.relation.v1.TenantInvitation
+	2,  // 9: tolo.relation.v1.RevokeTenantInvitationResponse.invitation:type_name -> tolo.relation.v1.TenantInvitation
+	1,  // 10: tolo.relation.v1.AcceptTenantInvitationResponse.membership:type_name -> tolo.relation.v1.Membership
+	0,  // 11: tolo.relation.v1.AddTenantMemberRequest.tenant_role:type_name -> tolo.relation.v1.Role
+	1,  // 12: tolo.relation.v1.AddTenantMemberResponse.membership:type_name -> tolo.relation.v1.Membership
+	0,  // 13: tolo.relation.v1.ChangeTenantRoleRequest.tenant_role:type_name -> tolo.relation.v1.Role
+	1,  // 14: tolo.relation.v1.ChangeTenantRoleResponse.membership:type_name -> tolo.relation.v1.Membership
+	0,  // 15: tolo.relation.v1.GrantEventRoleRequest.role:type_name -> tolo.relation.v1.Role
+	1,  // 16: tolo.relation.v1.GrantEventRoleResponse.membership:type_name -> tolo.relation.v1.Membership
+	1,  // 17: tolo.relation.v1.ListMembershipsResponse.memberships:type_name -> tolo.relation.v1.Membership
+	4,  // 18: tolo.relation.v1.RelationAdminService.CreateTenantInvitation:input_type -> tolo.relation.v1.CreateTenantInvitationRequest
+	6,  // 19: tolo.relation.v1.RelationAdminService.ListTenantInvitations:input_type -> tolo.relation.v1.ListTenantInvitationsRequest
+	8,  // 20: tolo.relation.v1.RelationAdminService.RevokeTenantInvitation:input_type -> tolo.relation.v1.RevokeTenantInvitationRequest
+	10, // 21: tolo.relation.v1.RelationAdminService.AcceptTenantInvitation:input_type -> tolo.relation.v1.AcceptTenantInvitationRequest
+	12, // 22: tolo.relation.v1.RelationAdminService.AddTenantMember:input_type -> tolo.relation.v1.AddTenantMemberRequest
+	14, // 23: tolo.relation.v1.RelationAdminService.ChangeTenantRole:input_type -> tolo.relation.v1.ChangeTenantRoleRequest
+	16, // 24: tolo.relation.v1.RelationAdminService.GrantEventRole:input_type -> tolo.relation.v1.GrantEventRoleRequest
+	18, // 25: tolo.relation.v1.RelationAdminService.RevokeRole:input_type -> tolo.relation.v1.RevokeRoleRequest
+	20, // 26: tolo.relation.v1.RelationAdminService.ListMemberships:input_type -> tolo.relation.v1.ListMembershipsRequest
+	5,  // 27: tolo.relation.v1.RelationAdminService.CreateTenantInvitation:output_type -> tolo.relation.v1.CreateTenantInvitationResponse
+	7,  // 28: tolo.relation.v1.RelationAdminService.ListTenantInvitations:output_type -> tolo.relation.v1.ListTenantInvitationsResponse
+	9,  // 29: tolo.relation.v1.RelationAdminService.RevokeTenantInvitation:output_type -> tolo.relation.v1.RevokeTenantInvitationResponse
+	11, // 30: tolo.relation.v1.RelationAdminService.AcceptTenantInvitation:output_type -> tolo.relation.v1.AcceptTenantInvitationResponse
+	13, // 31: tolo.relation.v1.RelationAdminService.AddTenantMember:output_type -> tolo.relation.v1.AddTenantMemberResponse
+	15, // 32: tolo.relation.v1.RelationAdminService.ChangeTenantRole:output_type -> tolo.relation.v1.ChangeTenantRoleResponse
+	17, // 33: tolo.relation.v1.RelationAdminService.GrantEventRole:output_type -> tolo.relation.v1.GrantEventRoleResponse
+	19, // 34: tolo.relation.v1.RelationAdminService.RevokeRole:output_type -> tolo.relation.v1.RevokeRoleResponse
+	21, // 35: tolo.relation.v1.RelationAdminService.ListMemberships:output_type -> tolo.relation.v1.ListMembershipsResponse
+	27, // [27:36] is the sub-list for method output_type
+	18, // [18:27] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_tolo_relation_v1_relation_proto_init() }
@@ -892,11 +1455,11 @@ func file_tolo_relation_v1_relation_proto_init() {
 	if File_tolo_relation_v1_relation_proto != nil {
 		return
 	}
-	file_tolo_relation_v1_relation_proto_msgTypes[8].OneofWrappers = []any{
+	file_tolo_relation_v1_relation_proto_msgTypes[17].OneofWrappers = []any{
 		(*RevokeRoleRequest_TenantId)(nil),
 		(*RevokeRoleRequest_EventId)(nil),
 	}
-	file_tolo_relation_v1_relation_proto_msgTypes[10].OneofWrappers = []any{
+	file_tolo_relation_v1_relation_proto_msgTypes[19].OneofWrappers = []any{
 		(*ListMembershipsRequest_TenantId)(nil),
 		(*ListMembershipsRequest_UserId)(nil),
 	}
@@ -906,7 +1469,7 @@ func file_tolo_relation_v1_relation_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tolo_relation_v1_relation_proto_rawDesc), len(file_tolo_relation_v1_relation_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   12,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

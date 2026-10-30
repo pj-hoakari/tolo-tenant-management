@@ -9,7 +9,7 @@ import (
 // TenantServicePolicies is the effective policy of every procedure of tolo.tenant.v1.TenantService.
 var TenantServicePolicies = authz.Policies{
 	TenantServiceStartTenantRegistrationProcedure: {Level: authz.LevelPublic},
-	TenantServiceClaimTenantOwnershipProcedure:    {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.claim"}, TokenUses: []string{"registration"}},
+	TenantServiceClaimTenantOwnershipProcedure:    {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.join"}, TokenUses: []string{"registration"}},
 	TenantServiceResolveTenantSubdomainProcedure:  {Level: authz.LevelPublic},
 	TenantServiceChangeTenantContractProcedure:    {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.write"}, TokenUses: []string{"tenant_access"}},
 	TenantServiceArchiveTenantProcedure:           {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.write"}, TokenUses: []string{"tenant_access"}},

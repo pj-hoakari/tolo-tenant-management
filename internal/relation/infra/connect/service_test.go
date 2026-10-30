@@ -10,6 +10,7 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"time"
 
 	connectrpc "connectrpc.com/connect/v2"
 
@@ -75,7 +76,13 @@ func TestRoleConversions(t *testing.T) {
 func TestMembershipProto(t *testing.T) {
 	t.Parallel()
 
-	membership := relationdomain.NewMembership("user-1", "00000000-0000-0000-0000-0000000000a1", "aaaaaaaaaaaaaaa1", relationdomain.RoleStaff, []relationdomain.EventRole{
+	displayName, err := relationdomain.ParseDisplayName("Hanako")
+	if err != nil {
+		t.Fatalf("ParseDisplayName() error = %v", err)
+	}
+
+	joinedAt := time.Date(2026, 10, 30, 9, 0, 0, 0, time.UTC)
+	membership := relationdomain.NewMembership("user-1", "00000000-0000-0000-0000-0000000000a1", "aaaaaaaaaaaaaaa1", relationdomain.RoleStaff, displayName, joinedAt, []relationdomain.EventRole{
 		relationdomain.NewEventRole("00000000-0000-0000-0000-0000000000a2", "aaaaaaaaaaaaaaa2", relationdomain.RoleStaff),
 		relationdomain.NewEventRole("00000000-0000-0000-0000-0000000000a3", "aaaaaaaaaaaaaaa3", relationdomain.RoleOwner),
 	})
@@ -84,6 +91,10 @@ func TestMembershipProto(t *testing.T) {
 
 	if got.GetUserId() != "user-1" || got.GetTenantId() != "aaaaaaaaaaaaaaa1" || got.GetTenantRole() != relationv1.Role_ROLE_STAFF {
 		t.Errorf("membershipProto() = %v, want user-1 as staff of aaaaaaaaaaaaaaa1", got)
+	}
+
+	if got.GetDisplayName() != "Hanako" || !got.GetJoinedAt().AsTime().Equal(joinedAt) {
+		t.Errorf("membershipProto() display name, joined at = %q, %v, want Hanako, %v", got.GetDisplayName(), got.GetJoinedAt().AsTime(), joinedAt)
 	}
 
 	wantRoles := []*relationv1.EventRole{
@@ -109,7 +120,7 @@ func TestMembershipProto(t *testing.T) {
 	t.Run("without event roles", func(t *testing.T) {
 		t.Parallel()
 
-		got := membershipProto(relationdomain.NewMembership("user-2", "00000000-0000-0000-0000-0000000000b1", "bbbbbbbbbbbbbbb1", relationdomain.RoleOwner, nil))
+		got := membershipProto(relationdomain.NewMembership("user-2", "00000000-0000-0000-0000-0000000000b1", "bbbbbbbbbbbbbbb1", relationdomain.RoleOwner, displayName, joinedAt, nil))
 		if roles := got.GetEventRoles(); len(roles) != 0 {
 			t.Errorf("EventRoles = %v, want none", roles)
 		}
@@ -127,6 +138,8 @@ func TestConnectError(t *testing.T) {
 	}{
 		{err: application.ErrTenantIDRequired, want: connectrpc.CodeInvalidArgument},
 		{err: relationdomain.ErrRoleReserved, want: connectrpc.CodeInvalidArgument},
+		{err: relationdomain.ErrDisplayNameRequired, want: connectrpc.CodeInvalidArgument},
+		{err: relationdomain.ErrDisplayNameTooLong, want: connectrpc.CodeInvalidArgument},
 		{err: relationrepository.ErrMembershipNotFound, want: connectrpc.CodeNotFound},
 		{err: relationrepository.ErrMembershipAlreadyExists, want: connectrpc.CodeFailedPrecondition},
 		{err: tenantrepository.ErrTenantArchived, want: connectrpc.CodeFailedPrecondition},

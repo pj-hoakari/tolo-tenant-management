@@ -19,6 +19,7 @@ import (
 	tenantv1 "github.com/pj-hoakari/tolo-tenant-management/gen/tolo/tenant/v1"
 	infradb "github.com/pj-hoakari/tolo-tenant-management/internal/infra/db"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/logging"
+	relationdomain "github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/repository"
@@ -42,7 +43,7 @@ type membershipRecorder struct {
 	calls    int
 }
 
-func (r *membershipRecorder) AddOwner(_ context.Context, tenantID, userID string) error {
+func (r *membershipRecorder) AddOwner(_ context.Context, tenantID, userID string, _ relationdomain.DisplayName) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -402,7 +403,7 @@ func TestEveryHandlerHidesInternalErrorDetail(t *testing.T) {
 			return err
 		},
 		"ClaimTenantOwnership": func() error {
-			_, err := service.ClaimTenantOwnership(ctx, &tenantv1.ClaimTenantOwnershipRequest{TenantId: tenant.PublicID(), OwnershipClaimToken: "token", Subdomain: "acme"})
+			_, err := service.ClaimTenantOwnership(ctx, &tenantv1.ClaimTenantOwnershipRequest{TenantId: tenant.PublicID(), OwnershipClaimToken: "token", Subdomain: "acme", DisplayName: "Hanako"})
 
 			return err
 		},
@@ -498,7 +499,7 @@ func TestErrorMessageOmitsTheErrorChain(t *testing.T) {
 				repo.EXPECT().FindTenantByPublicIDForUpdate(gomock.Any(), tenant.PublicID()).Return(domain.Tenant{}, domain.OwnershipClaim{}, fmt.Errorf("lock tenant: %w", errors.Join(dbErr, infradb.ErrTransactionAborted)))
 			},
 			call: func(service *Service) error {
-				_, err := service.ClaimTenantOwnership(ctx, &tenantv1.ClaimTenantOwnershipRequest{TenantId: tenant.PublicID(), OwnershipClaimToken: "token", Subdomain: "acme"})
+				_, err := service.ClaimTenantOwnership(ctx, &tenantv1.ClaimTenantOwnershipRequest{TenantId: tenant.PublicID(), OwnershipClaimToken: "token", Subdomain: "acme", DisplayName: "Hanako"})
 
 				return err
 			},
