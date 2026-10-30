@@ -27,7 +27,8 @@ var (
 	// ErrRoleRequired rejects an unspecified role.
 	ErrRoleRequired = errors.New("role is required")
 	// ErrRoleReserved rejects the reserved admin role.
-	ErrRoleReserved = errors.New("role is reserved and cannot be granted")
+	ErrRoleReserved     = errors.New("role is reserved and cannot be granted")
+	ErrRoleNotInvitable = errors.New("invitations grant the staff role only")
 )
 
 // ParseRole maps a string representation (as produced by String) back to a
@@ -55,4 +56,12 @@ func (r Role) Grantable() error {
 	default:
 		return fmt.Errorf("invalid role %d", r)
 	}
+}
+
+func (r Role) Invitable() error {
+	if r != RoleStaff {
+		return ErrRoleNotInvitable
+	}
+
+	return nil
 }

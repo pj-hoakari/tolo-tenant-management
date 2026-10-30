@@ -219,6 +219,7 @@ func (r *jwksRegistry) nextKeyID(prefix string) string {
 type process struct {
 	tenants        *tenantdb.PostgresTenantRepository
 	memberships    *relationdb.PostgresMembershipRepository
+	invitations    *relationdb.PostgresInvitationRepository
 	jwks           *jwksRegistry
 	tenantClient   tenantv1connect.TenantServiceClient
 	relationClient relationv1connect.RelationAdminServiceClient
@@ -242,8 +243,9 @@ func newProcess(t *testing.T, options ...application.Option) *process {
 
 	tenants := tenantdb.NewPostgresTenantRepository(testDB)
 	memberships := relationdb.NewPostgresMembershipRepository(testDB)
+	invitations := relationdb.NewPostgresInvitationRepository(testDB)
 	tenantService := application.NewTenantService(tenants, tenants, memberships, relationapplication.NewAuthorizer(memberships), options...)
-	relationService := relationapplication.NewRelationService(tenants, memberships, memberships)
+	relationService := relationapplication.NewRelationService(tenants, memberships, invitations, memberships)
 
 	registry := &jwksRegistry{}
 	registry.add(internalJWTs(t).jwks.Keys...)
@@ -282,6 +284,7 @@ func newProcess(t *testing.T, options ...application.Option) *process {
 	return &process{
 		tenants:        tenants,
 		memberships:    memberships,
+		invitations:    invitations,
 		jwks:           registry,
 		tenantClient:   tenantv1connect.NewTenantServiceClient(connectrpc.NewClient(connecthttp.NewTransport(httpServer.Client(), httpServer.URL))),
 		relationClient: relationv1connect.NewRelationAdminServiceClient(connectrpc.NewClient(connecthttp.NewTransport(httpServer.Client(), httpServer.URL))),

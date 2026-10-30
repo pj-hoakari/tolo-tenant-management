@@ -94,7 +94,7 @@ func run() error {
 	// The membership repository is also the transactor of the relation use
 	// cases, so the caller's current-permission check and the write it guards
 	// run in one transaction.
-	relationService := relationapplication.NewRelationService(tenantRepository, membershipRepository, membershipRepository)
+	relationService := relationapplication.NewRelationService(tenantRepository, membershipRepository, relationdb.NewPostgresInvitationRepository(db), membershipRepository)
 
 	// Every service of the process is mounted on one handler; each one is
 	// guarded by an interceptor built from its own generated policy table.

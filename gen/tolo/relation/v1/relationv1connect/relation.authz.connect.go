@@ -8,9 +8,13 @@ import (
 
 // RelationAdminServicePolicies is the effective policy of every procedure of tolo.relation.v1.RelationAdminService.
 var RelationAdminServicePolicies = authz.Policies{
-	RelationAdminServiceAddTenantMemberProcedure:  {Level: authz.LevelInternal},
-	RelationAdminServiceChangeTenantRoleProcedure: {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.write"}, TokenUses: []string{"tenant_access"}},
-	RelationAdminServiceGrantEventRoleProcedure:   {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.write"}, TokenUses: []string{"tenant_access"}},
-	RelationAdminServiceRevokeRoleProcedure:       {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.write"}, TokenUses: []string{"tenant_access"}},
-	RelationAdminServiceListMembershipsProcedure:  {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.read"}, TokenUses: []string{"tenant_access"}},
+	RelationAdminServiceCreateTenantInvitationProcedure: {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.write"}, TokenUses: []string{"tenant_access"}},
+	RelationAdminServiceListTenantInvitationsProcedure:  {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.write"}, TokenUses: []string{"tenant_access"}},
+	RelationAdminServiceRevokeTenantInvitationProcedure: {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.write"}, TokenUses: []string{"tenant_access"}},
+	RelationAdminServiceAcceptTenantInvitationProcedure: {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.join"}, TokenUses: []string{"registration"}},
+	RelationAdminServiceAddTenantMemberProcedure:        {Level: authz.LevelInternal},
+	RelationAdminServiceChangeTenantRoleProcedure:       {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.write"}, TokenUses: []string{"tenant_access"}},
+	RelationAdminServiceGrantEventRoleProcedure:         {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.write"}, TokenUses: []string{"tenant_access"}},
+	RelationAdminServiceRevokeRoleProcedure:             {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.write"}, TokenUses: []string{"tenant_access"}},
+	RelationAdminServiceListMembershipsProcedure:        {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.read"}, TokenUses: []string{"tenant_access"}},
 }

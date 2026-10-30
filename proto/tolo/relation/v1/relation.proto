@@ -10,10 +10,40 @@ import "google/protobuf/timestamp.proto";
 // package, because it speaks the language of the auth context.
 //
 // tenant_id / event_id are the public IDs issued by the tenant context.
-// Every RPC but AddTenantMember requires token_use=tenant_access;
-// AddTenantMember requires token_use=service. The target tenant (or the
-// event's tenant) is cross-checked against the tenant_id claim.
+// Every RPC but AddTenantMember and AcceptTenantInvitation requires
+// token_use=tenant_access; AddTenantMember requires token_use=service and
+// AcceptTenantInvitation token_use=registration. The target tenant (or the
+// event's tenant) is cross-checked against the tenant_id claim, except by
+// AcceptTenantInvitation, whose token carries none.
 service RelationAdminService {
+  rpc CreateTenantInvitation(CreateTenantInvitationRequest) returns (CreateTenantInvitationResponse) {
+    option (authz.v1.auth_policy) = {
+      level: AUTH_LEVEL_AUTHENTICATED
+      required_scopes: "tenant.write"
+      token_uses: "tenant_access"
+    };
+  }
+  rpc ListTenantInvitations(ListTenantInvitationsRequest) returns (ListTenantInvitationsResponse) {
+    option (authz.v1.auth_policy) = {
+      level: AUTH_LEVEL_AUTHENTICATED
+      required_scopes: "tenant.write"
+      token_uses: "tenant_access"
+    };
+  }
+  rpc RevokeTenantInvitation(RevokeTenantInvitationRequest) returns (RevokeTenantInvitationResponse) {
+    option (authz.v1.auth_policy) = {
+      level: AUTH_LEVEL_AUTHENTICATED
+      required_scopes: "tenant.write"
+      token_uses: "tenant_access"
+    };
+  }
+  rpc AcceptTenantInvitation(AcceptTenantInvitationRequest) returns (AcceptTenantInvitationResponse) {
+    option (authz.v1.auth_policy) = {
+      level: AUTH_LEVEL_AUTHENTICATED
+      required_scopes: "tenant.join"
+      token_uses: "registration"
+    };
+  }
   // AddTenantMember makes a user a member of a tenant. A user may belong to
   // several tenants but only once to the same tenant. The owner membership
   // created by ClaimTenantOwnership does not go through this RPC. It
@@ -65,6 +95,14 @@ message Membership {
   google.protobuf.Timestamp joined_at = 6;
 }
 
+message TenantInvitation {
+  string invitation_id = 1;
+  string tenant_id = 2;
+  Role tenant_role = 3;
+  string display_name = 4;
+  google.protobuf.Timestamp expires_at = 5;
+}
+
 message EventRole {
   string event_id = 1;  // public ID; the event belongs to the membership's tenant
   Role role = 2;
@@ -76,6 +114,31 @@ enum Role {
   ROLE_STAFF = 2;
   ROLE_ADMIN = 3;  // reserved; cannot be granted
 }
+
+message CreateTenantInvitationRequest {
+  string tenant_id = 1;
+  Role tenant_role = 2;
+  string display_name = 3;
+}
+message CreateTenantInvitationResponse {
+  TenantInvitation invitation = 1;
+  string invitation_token = 2;
+}
+
+message ListTenantInvitationsRequest { string tenant_id = 1; }
+message ListTenantInvitationsResponse { repeated TenantInvitation invitations = 1; }
+
+message RevokeTenantInvitationRequest {
+  string tenant_id = 1;
+  string invitation_id = 2;
+}
+message RevokeTenantInvitationResponse { TenantInvitation invitation = 1; }
+
+message AcceptTenantInvitationRequest {
+  string tenant_id = 1;
+  string invitation_token = 2;
+}
+message AcceptTenantInvitationResponse { Membership membership = 1; }
 
 message AddTenantMemberRequest {
   string tenant_id = 1;

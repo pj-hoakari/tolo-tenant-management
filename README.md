@@ -195,10 +195,12 @@ proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16
 | AddTenantMember | `RelationAdminService` | 内部（`AUTH_LEVEL_INTERNAL`） | `service` | なし |
 | ChangeTenantRole、GrantEventRole、RevokeRole | `RelationAdminService` | 認証済み | `tenant_access` | `tenant.write` |
 | ListMemberships | `RelationAdminService` | 認証済み | `tenant_access` | `tenant.read` |
+| CreateTenantInvitation、ListTenantInvitations、RevokeTenantInvitation | `RelationAdminService` | 認証済み | `tenant_access` | `tenant.write` |
+| AcceptTenantInvitation | `RelationAdminService` | 認証済み | `registration` | `tenant.join` |
 
 ### 管理系書き込みの現在権限確認
 
-管理系の書き込み 5 RPC（`ArchiveTenant`、`ChangeTenantContract`、`ChangeTenantRole`、`GrantEventRole`、`RevokeRole`）は、JWT の scope 検証に加えて、呼び出し元自身の現在の所属とロールを書き込みと同じ DB トランザクション内で読み直す（`docs/tenant_management_spec.md` の「管理系書き込みの現在権限確認」）。
+管理系の書き込み 6 RPC（`ArchiveTenant`、`ChangeTenantContract`、`CreateTenantInvitation`、`ChangeTenantRole`、`GrantEventRole`、`RevokeRole`）は、JWT の scope 検証に加えて、呼び出し元自身の現在の所属とロールを書き込みと同じ DB トランザクション内で読み直す（`docs/tenant_management_spec.md` の「管理系書き込みの現在権限確認」）。
 `scope` はトークン発行時点で与えられた権限しか表さないため、剥奪や降格はトークンの期限切れを待たずにこの再確認で反映する。
 確認時に呼び出し元の所属行を `FOR SHARE` でロックするため、確認から書き込みの確定までの間に剥奪や降格が割り込むことはない。
 関係参照側の 4 RPC は、同じトランザクションの冒頭でテナント単位のアドバイザリロック（`pg_advisory_xact_lock`）を取得して同一テナントの所属書き込みを直列化するため、複数の管理者が互いを同時に剥奪、降格してもデッドロックしない。
@@ -308,7 +310,8 @@ draft はそのままアーカイブでき、これは作成した draft を破�
 `tolo.relation.v1.RelationAdminService`（`proto/tolo/relation/v1/relation.proto`）は TenantService と同じプロセスで配信し、内部 JWT の token verifier とトレースの interceptor を共有する。
 プロセスのハンドラは `internal/infra/connect` の `NewHandlerWithJWTSettings` が組み立て、各サービスは自身の `infra/connect` パッケージが返す `Mount`（`tenantconnect.Mount`／`relationconnect.Mount`）で同じ手順で登録される。
 認証・認可の interceptor は共有せず、サービスごとに自身の生成 policy 表（`tenantv1connect.TenantServicePolicies`／`relationv1connect.RelationAdminServicePolicies`）を `AuthInterceptor` に渡して組み立てる。
-`AddTenantMember` は `service`、ほかの RPC は `tenant_access` を要求し、リクエストの `tenant_id`（`GrantEventRole` とイベント指定の `RevokeRole` はイベントの所属テナント）をクレームと突合する。
+`AddTenantMember` は `service`、`AcceptTenantInvitation` は `registration`、ほかの RPC は `tenant_access` を要求する。
+`AcceptTenantInvitation` 以外は、リクエストの `tenant_id`（`GrantEventRole` とイベント指定の `RevokeRole` はイベントの所属テナント）をクレームと突合する。
 
 | RPC | 要求 scope | 主な応答コード |
 |---|---|---|

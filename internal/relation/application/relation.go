@@ -10,7 +10,10 @@ package application
 import (
 	"context"
 	"errors"
+	"time"
 
+	"github.com/pj-hoakari/tolo-tenant-management/internal/identifier"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/onetimetoken"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/repository"
 	tenantdomain "github.com/pj-hoakari/tolo-tenant-management/internal/tenant/domain"
@@ -19,16 +22,42 @@ import (
 )
 
 var (
-	ErrTenantIDRequired   = errors.New("tenant ID is required")
-	ErrEventIDRequired    = errors.New("event ID is required")
-	ErrUserIDRequired     = errors.New("user ID is required")
-	ErrScopeRequired      = errors.New("revoke scope is required")
-	ErrScopeAmbiguous     = errors.New("revoke scope must name either a tenant or an event")
-	ErrFilterRequired     = errors.New("list filter is required")
-	ErrFilterAmbiguous    = errors.New("list filter must name either a tenant or a user")
-	ErrTenantPendingOwner = errors.New("tenant is pending an owner")
-	ErrLastOwner          = errors.New("the tenant must keep at least one owner")
+	ErrTenantIDRequired        = errors.New("tenant ID is required")
+	ErrEventIDRequired         = errors.New("event ID is required")
+	ErrUserIDRequired          = errors.New("user ID is required")
+	ErrScopeRequired           = errors.New("revoke scope is required")
+	ErrScopeAmbiguous          = errors.New("revoke scope must name either a tenant or an event")
+	ErrFilterRequired          = errors.New("list filter is required")
+	ErrFilterAmbiguous         = errors.New("list filter must name either a tenant or a user")
+	ErrTenantPendingOwner      = errors.New("tenant is pending an owner")
+	ErrLastOwner               = errors.New("the tenant must keep at least one owner")
+	ErrInvitationIDRequired    = errors.New("invitation ID is required")
+	ErrInvitationTokenRequired = errors.New("invitation token is required")
+	ErrInvitationRejected      = errors.New("invitation rejected")
 )
+
+const DefaultInvitationTTL = 7 * 24 * time.Hour
+
+type CreateTenantInvitationInput struct {
+	TenantPublicID string
+	Role           domain.Role
+	DisplayName    string
+}
+
+type TenantInvitationCreation struct {
+	Invitation domain.Invitation
+	Token      string
+}
+
+type RevokeTenantInvitationInput struct {
+	TenantPublicID string
+	InvitationID   string
+}
+
+type AcceptTenantInvitationInput struct {
+	TenantPublicID string
+	Token          string
+}
 
 // AddTenantMemberInput identifies the membership to create.
 type AddTenantMemberInput struct {
@@ -75,23 +104,49 @@ type RelationUseCases interface {
 	GrantEventRole(context.Context, GrantEventRoleInput) (domain.Membership, error)
 	RevokeRole(context.Context, RevokeRoleInput) error
 	ListMemberships(context.Context, ListMembershipsInput) ([]domain.Membership, error)
+	CreateTenantInvitation(context.Context, CreateTenantInvitationInput) (TenantInvitationCreation, error)
+	ListTenantInvitations(context.Context, string) ([]domain.Invitation, error)
+	RevokeTenantInvitation(context.Context, RevokeTenantInvitationInput) (domain.Invitation, error)
+	AcceptTenantInvitation(context.Context, AcceptTenantInvitationInput) (domain.Membership, error)
 }
 
 // RelationService implements the relation use cases.
 type RelationService struct {
-	tenants     tenantrepository.TenantRepository
-	memberships repository.MembershipRepository
-	transactor  tenantrepository.Transactor
-	authorizer  *Authorizer
+	tenants       tenantrepository.TenantRepository
+	memberships   repository.MembershipRepository
+	invitations   repository.InvitationRepository
+	transactor    tenantrepository.Transactor
+	authorizer    *Authorizer
+	now           func() time.Time
+	invitationTTL time.Duration
 }
 
-func NewRelationService(tenants tenantrepository.TenantRepository, memberships repository.MembershipRepository, transactor tenantrepository.Transactor) *RelationService {
-	return &RelationService{
-		tenants:     tenants,
-		memberships: memberships,
-		transactor:  transactor,
-		authorizer:  NewAuthorizer(memberships),
+type Option func(*RelationService)
+
+func WithClock(now func() time.Time) Option {
+	return func(s *RelationService) { s.now = now }
+}
+
+func WithInvitationTTL(ttl time.Duration) Option {
+	return func(s *RelationService) { s.invitationTTL = ttl }
+}
+
+func NewRelationService(tenants tenantrepository.TenantRepository, memberships repository.MembershipRepository, invitations repository.InvitationRepository, transactor tenantrepository.Transactor, options ...Option) *RelationService {
+	service := &RelationService{
+		tenants:       tenants,
+		memberships:   memberships,
+		invitations:   invitations,
+		transactor:    transactor,
+		authorizer:    NewAuthorizer(memberships),
+		now:           time.Now,
+		invitationTTL: DefaultInvitationTTL,
 	}
+
+	for _, option := range options {
+		option(service)
+	}
+
+	return service
 }
 
 func (s *RelationService) AddTenantMember(ctx context.Context, input AddTenantMemberInput) (domain.Membership, error) {
@@ -235,6 +290,154 @@ func (s *RelationService) ListMemberships(ctx context.Context, input ListMembers
 	default:
 		return nil, ErrFilterRequired
 	}
+}
+
+func (s *RelationService) CreateTenantInvitation(ctx context.Context, input CreateTenantInvitationInput) (TenantInvitationCreation, error) {
+	if err := input.Role.Invitable(); err != nil {
+		return TenantInvitationCreation{}, err
+	}
+
+	displayName, err := domain.ParseDisplayName(input.DisplayName)
+	if err != nil {
+		return TenantInvitationCreation{}, err
+	}
+
+	tenant, err := s.writableTenant(ctx, input.TenantPublicID)
+	if err != nil {
+		return TenantInvitationCreation{}, err
+	}
+
+	id, err := identifier.NewUUIDv7()
+	if err != nil {
+		return TenantInvitationCreation{}, err
+	}
+
+	publicID, err := identifier.NewPublicID()
+	if err != nil {
+		return TenantInvitationCreation{}, err
+	}
+
+	token, tokenHash, err := onetimetoken.New()
+	if err != nil {
+		return TenantInvitationCreation{}, err
+	}
+
+	invitation := domain.NewInvitation(id, publicID, tenant.ID(), tenant.PublicID(), input.Role, displayName, s.now().Add(s.invitationTTL), domain.InvitationPending)
+
+	err = s.withCurrentPermission(ctx, tenant.ID(), func(ctx context.Context) error {
+		return s.invitations.CreateInvitation(ctx, invitation, tokenHash)
+	})
+	if err != nil {
+		return TenantInvitationCreation{}, err
+	}
+
+	return TenantInvitationCreation{Invitation: invitation, Token: token}, nil
+}
+
+func (s *RelationService) ListTenantInvitations(ctx context.Context, tenantPublicID string) ([]domain.Invitation, error) {
+	tenant, err := s.resolveTenant(ctx, tenantPublicID)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.invitations.ListOpenInvitations(ctx, tenant.ID(), s.now())
+}
+
+func (s *RelationService) RevokeTenantInvitation(ctx context.Context, input RevokeTenantInvitationInput) (domain.Invitation, error) {
+	if input.InvitationID == "" {
+		return domain.Invitation{}, ErrInvitationIDRequired
+	}
+
+	tenant, err := s.writableTenant(ctx, input.TenantPublicID)
+	if err != nil {
+		return domain.Invitation{}, err
+	}
+
+	var revoked domain.Invitation
+
+	err = s.transactor.WithinTransaction(ctx, func(ctx context.Context) error {
+		invitation, err := s.invitations.FindInvitationForUpdate(ctx, tenant.ID(), input.InvitationID)
+		if err != nil {
+			return err
+		}
+
+		now := s.now()
+
+		revoked, err = invitation.Revoke(now)
+		if err != nil {
+			return err
+		}
+
+		return s.invitations.MarkInvitationRevoked(ctx, invitation.ID(), now)
+	})
+	if err != nil {
+		return domain.Invitation{}, err
+	}
+
+	return revoked, nil
+}
+
+func (s *RelationService) AcceptTenantInvitation(ctx context.Context, input AcceptTenantInvitationInput) (domain.Membership, error) {
+	if input.TenantPublicID == "" {
+		return domain.Membership{}, ErrTenantIDRequired
+	}
+
+	if input.Token == "" {
+		return domain.Membership{}, ErrInvitationTokenRequired
+	}
+
+	subject, ok := tenantctx.SubjectFromContext(ctx)
+	if !ok {
+		return domain.Membership{}, tenantctx.ErrSubjectMissing
+	}
+
+	tenant, err := s.tenants.FindTenantByPublicID(ctx, input.TenantPublicID)
+	if err != nil {
+		return domain.Membership{}, err
+	}
+
+	var membership domain.Membership
+
+	err = s.transactor.WithinTransaction(ctx, func(ctx context.Context) error {
+		if err := s.memberships.LockTenantMemberships(ctx, tenant.ID()); err != nil {
+			return err
+		}
+
+		invitation, err := s.invitations.FindInvitationByTokenForUpdate(ctx, tenant.ID(), onetimetoken.HashOf(input.Token))
+		if errors.Is(err, repository.ErrInvitationNotFound) {
+			return ErrInvitationRejected
+		}
+
+		if err != nil {
+			return err
+		}
+
+		now := s.now()
+
+		if _, err := invitation.Accept(now); err != nil {
+			return ErrInvitationRejected
+		}
+
+		if !tenant.Owned() {
+			return ErrTenantPendingOwner
+		}
+
+		if tenant.Archived() {
+			return tenantrepository.ErrTenantArchived
+		}
+
+		membership, err = s.memberships.AddTenantMember(ctx, tenant.ID(), subject, invitation.Role(), invitation.DisplayName())
+		if err != nil {
+			return err
+		}
+
+		return s.invitations.MarkInvitationAccepted(ctx, invitation.ID(), subject, now)
+	})
+	if err != nil {
+		return domain.Membership{}, err
+	}
+
+	return membership, nil
 }
 
 // withCurrentPermission runs the caller's current-permission check and the
