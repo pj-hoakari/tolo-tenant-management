@@ -34,7 +34,7 @@ package: `tolo.tenant.v1`（テナント）、`tolo.relation.v1`（関係参照�
 | ListTenantInvitations | 受諾も取り消しもされておらず期限内の招待を一覧する。招待トークンは返さない | 管理 UI | `tenant_access` + tenant.write | （参照のみ） |
 | RevokeTenantInvitation | 招待を取り消す | 管理 UI | `tenant_access` + tenant.write | TenantInvitationRevoked |
 | AcceptTenantInvitation | 招待を受諾し、認証済みユーザーを招待で固定したテナントロールと表示名で所属させる | 管理 UI | `registration` + tenant.join（テナント文脈を持たない最小トークン。Auth（IdP）） | UserJoinedTenant |
-| AddTenantMember | ユーザーをテナントに所属させる（1ユーザーは複数テナントに所属しうる。同一テナントへの重複所属は不可）。管理 UI から人を加える経路は招待とし、本 RPC はサービス間に限る。ClaimTenantOwnership と AcceptTenantInvitation による所属は本サービス内部のローカルトランザクションで行い、本 RPC を経ない | サービス間 | サービス間（token_use=service） | UserJoinedTenant |
+| AddTenantMember | ユーザーをテナントに所属させる（1ユーザーは複数テナントに所属しうる。同一テナントへの重複所属は不可）。管理 UI から人を加える経路は招待とし、本 RPC はサービス間に限る。ClaimTenantOwnership と AcceptTenantInvitation による所属は本サービス内部のローカルトランザクションで行い、本 RPC を経ない | サービス間 | サービス間（token_use=service。テナント文脈必須） | UserJoinedTenant |
 | ChangeTenantRole | テナントロールを付与・変更する。オーナーへの昇格は本 RPC だけで行う。最後のオーナーの変更は拒否する | 管理 UI | `tenant_access` + tenant.write | TenantRoleChanged |
 | GrantEventRole | イベントロールを割り当てる（event∈tenant、event-role⇒tenant-role を検証） | 管理 UI | `tenant_access` + tenant.write | EventRoleGranted |
 | RevokeRole | メンバー削除またはロール解除。最後のオーナーのテナント所属の削除は拒否する | 管理 UI | `tenant_access` + tenant.write | RoleRevoked |
@@ -225,6 +225,7 @@ message AddTenantMemberRequest {
   string tenant_id = 1;
   string user_id = 2;
   Role tenant_role = 3;
+  string display_name = 4;  // 必須。規則は補足「表示名」
 }
 message ChangeTenantRoleRequest {
   string tenant_id = 1;
@@ -345,7 +346,7 @@ message ListMembershipsResponse {
   オーナーは、スタッフとして所属した後に ChangeTenantRole で昇格させる
   招待トークンは暗号論的に推測困難な一回限りの値とし、平文を応答で一度だけ返す
   永続化層にはトークンのハッシュだけを保存し、ログ、監査ログ、エラー本文へ平文を出さない
-  招待トークンの有効期限は実装フェーズで確定する
+  招待トークンの有効期限は作成から 7 日とする
 - ListTenantInvitations は、受諾も取り消しもされておらず期限内の招待を返し、招待トークンは返さない
 - RevokeTenantInvitation で取り消した招待は受諾できない。受諾済み、取り消し済み、期限切れの招待の取り消しは `failed_precondition` を返す
 - AcceptTenantInvitation は、IdP が認証済みユーザーへ発行した `registration` トークンと、CreateTenantInvitation が返した招待トークンの両方を要求する
@@ -362,9 +363,10 @@ message ListMembershipsResponse {
 ### 表示名
 
 - 所属は表示名を持つ。表示名はテナントの中だけで使う名前であり、IdP の UserInfo の profile は使わない（ADR-0118）
-- 招待による所属は招待で固定した表示名を、所有権取得によるオーナーの所属は ClaimTenantOwnership の要求の表示名を持つ
-- 表示名は空を許さず、一意である必要はない
-- 長さの上限と、表示名を変える手段は実装フェーズで確定する
+- 招待による所属は招待で固定した表示名を、所有権取得によるオーナーの所属は ClaimTenantOwnership の要求の表示名を、AddTenantMember による所属は要求の表示名を持つ
+- 表示名は前後の空白を除いて扱う。空を許さず、一意である必要はない
+- 表示名は 64 文字までとする。超える表示名は `invalid_argument` を返す
+- 表示名を変える手段は実装フェーズで確定する
 - 表示名だけでは受諾した人が本人かを確かめられないので、オーナーは昇格の前に本人へ別の経路で確かめる。受諾の時刻（`joined_at`）を手がかりにする
 
 ### 関係参照
@@ -401,7 +403,7 @@ message ListMembershipsResponse {
 | 存在しないテナント／イベント | `not_found` |
 | `pending_owner`またはアーカイブ済みテナント／イベントへの許可外の書き込み、許容外の状態遷移 | `failed_precondition` |
 | 匿名の仮作成がレート制限を超過 | `resource_exhausted` |
-| 必須項目の欠落、サブドメイン名が規則に合わない | `invalid_argument` |
+| 必須項目の欠落、サブドメイン名または表示名が規則に合わない | `invalid_argument` |
 | 内部 JWT が無効、`token_use` 不一致 | `unauthenticated` |
 | 内部 JWT の検証鍵を解決できない（JWKS の取得失敗、その再試行を控えている間） | `unavailable` |
 | scope 不足、認証テナント以外のイベントの指定 | `permission_denied` |
