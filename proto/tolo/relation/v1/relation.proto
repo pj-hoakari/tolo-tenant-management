@@ -10,18 +10,16 @@ import "google/protobuf/timestamp.proto";
 // package, because it speaks the language of the auth context.
 //
 // tenant_id / event_id are the public IDs issued by the tenant context.
-// Every RPC requires token_use=tenant_access; the target tenant (or the
+// Every RPC but AddTenantMember requires token_use=tenant_access;
+// AddTenantMember requires token_use=service. The target tenant (or the
 // event's tenant) is cross-checked against the tenant_id claim.
 service RelationAdminService {
   // AddTenantMember makes a user a member of a tenant. A user may belong to
   // several tenants but only once to the same tenant. The owner membership
-  // created by ClaimTenantOwnership does not go through this RPC.
+  // created by ClaimTenantOwnership does not go through this RPC. It
+  // requires token_use=service with tenant context.
   rpc AddTenantMember(AddTenantMemberRequest) returns (AddTenantMemberResponse) {
-    option (authz.v1.auth_policy) = {
-      level: AUTH_LEVEL_AUTHENTICATED
-      required_scopes: "tenant.write"
-      token_uses: "tenant_access"
-    };
+    option (authz.v1.auth_policy) = { level: AUTH_LEVEL_INTERNAL };
   }
   rpc ChangeTenantRole(ChangeTenantRoleRequest) returns (ChangeTenantRoleResponse) {
     option (authz.v1.auth_policy) = {

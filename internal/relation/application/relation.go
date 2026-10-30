@@ -113,9 +113,7 @@ func (s *RelationService) AddTenantMember(ctx context.Context, input AddTenantMe
 		return domain.Membership{}, err
 	}
 
-	return s.writeMembership(ctx, tenant.ID(), func(ctx context.Context) (domain.Membership, error) {
-		return s.memberships.AddTenantMember(ctx, tenant.ID(), input.UserID, input.Role, displayName)
-	})
+	return s.memberships.AddTenantMember(ctx, tenant.ID(), input.UserID, input.Role, displayName)
 }
 
 func (s *RelationService) ChangeTenantRole(ctx context.Context, input ChangeTenantRoleInput) (domain.Membership, error) {

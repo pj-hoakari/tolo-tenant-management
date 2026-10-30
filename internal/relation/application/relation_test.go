@@ -105,13 +105,7 @@ func TestAddTenantMember(t *testing.T) {
 	m := newMocks(t)
 	want := domain.NewMembership("user-1", ownedTenant.ID(), ownedTenant.PublicID(), domain.RoleStaff, hanako, time.Time{}, nil)
 	m.tenants.EXPECT().FindTenantByPublicID(gomock.Any(), ownedTenant.PublicID()).Return(ownedTenant, nil)
-	// The tenant is locked and the caller's current permission re-checked
-	// before the write.
-	gomock.InOrder(
-		m.expectLock(ownedTenant.ID()),
-		m.expectOwner(ownedTenant.ID()),
-		m.memberships.EXPECT().AddTenantMember(gomock.Any(), ownedTenant.ID(), "user-1", domain.RoleStaff, hanako).Return(want, nil),
-	)
+	m.memberships.EXPECT().AddTenantMember(gomock.Any(), ownedTenant.ID(), "user-1", domain.RoleStaff, hanako).Return(want, nil)
 
 	got, err := m.service.AddTenantMember(ownCtx(), application.AddTenantMemberInput{TenantPublicID: ownedTenant.PublicID(), UserID: "user-1", Role: domain.RoleStaff, DisplayName: "Hanako"})
 	if err != nil {
@@ -361,9 +355,9 @@ func TestCurrentPermissionGates(t *testing.T) {
 
 			// The write is never reached: it has no expectation, so a call
 			// would fail the test.
-			input := application.AddTenantMemberInput{TenantPublicID: ownedTenant.PublicID(), UserID: "user-1", Role: domain.RoleStaff, DisplayName: "Hanako"}
-			if _, err := m.service.AddTenantMember(tt.ctx, input); !errors.Is(err, tt.want) {
-				t.Fatalf("AddTenantMember() error = %v, want %v", err, tt.want)
+			input := application.ChangeTenantRoleInput{TenantPublicID: ownedTenant.PublicID(), UserID: "user-1", Role: domain.RoleOwner}
+			if _, err := m.service.ChangeTenantRole(tt.ctx, input); !errors.Is(err, tt.want) {
+				t.Fatalf("ChangeTenantRole() error = %v, want %v", err, tt.want)
 			}
 		})
 	}
@@ -379,11 +373,6 @@ func TestCurrentPermissionGatesEveryWrite(t *testing.T) {
 		event bool
 		call  func(context.Context, *application.RelationService) error
 	}{
-		{name: "AddTenantMember", call: func(ctx context.Context, s *application.RelationService) error {
-			_, err := s.AddTenantMember(ctx, application.AddTenantMemberInput{TenantPublicID: ownedTenant.PublicID(), UserID: "user-1", Role: domain.RoleStaff, DisplayName: "Hanako"})
-
-			return err
-		}},
 		{name: "ChangeTenantRole", call: func(ctx context.Context, s *application.RelationService) error {
 			_, err := s.ChangeTenantRole(ctx, application.ChangeTenantRoleInput{TenantPublicID: ownedTenant.PublicID(), UserID: "user-1", Role: domain.RoleOwner})
 

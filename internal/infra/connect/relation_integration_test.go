@@ -21,12 +21,14 @@ import (
 // subject.
 type relationFixture struct {
 	*process
-	tenantA tenantdomain.Tenant
-	tenantB tenantdomain.Tenant
-	eventA  string
-	eventB  string
-	tokenA  string
-	tokenB  string
+	tenantA  tenantdomain.Tenant
+	tenantB  tenantdomain.Tenant
+	eventA   string
+	eventB   string
+	tokenA   string
+	tokenB   string
+	serviceA string
+	serviceB string
 }
 
 func newRelationFixture(t *testing.T) relationFixture {
@@ -45,6 +47,8 @@ func newRelationFixture(t *testing.T) relationFixture {
 
 	f.tokenA = p.mintTenantAccessToken(t, f.tenantA.PublicID())
 	f.tokenB = p.mintTenantAccessToken(t, f.tenantB.PublicID())
+	f.serviceA = p.mintServiceToken(t, f.tenantA.PublicID())
+	f.serviceB = p.mintServiceToken(t, f.tenantB.PublicID())
 	f.eventA = p.createEvent(t, f.tokenA, f.tenantA.PublicID(), "Alpha Festival").GetEventId()
 	f.eventB = p.createEvent(t, f.tokenB, f.tenantB.PublicID(), "Beta Festival").GetEventId()
 
@@ -95,7 +99,7 @@ func membershipOf(memberships []*relationv1.Membership, userID string) *relation
 func TestAddTenantMemberOverTransport(t *testing.T) {
 	f := newRelationFixture(t)
 
-	membership, err := f.addMember(t, f.tokenA, f.tenantA.PublicID(), "user-1", relationv1.Role_ROLE_STAFF)
+	membership, err := f.addMember(t, f.serviceA, f.tenantA.PublicID(), "user-1", relationv1.Role_ROLE_STAFF)
 	if err != nil {
 		t.Fatalf("AddTenantMember() error = %v", err)
 	}
@@ -116,13 +120,14 @@ func TestAddTenantMemberOverTransport(t *testing.T) {
 		role     relationv1.Role
 		want     connectrpc.Code
 	}{
-		{name: "duplicate membership", token: f.tokenA, tenantID: f.tenantA.PublicID(), userID: "user-1", role: relationv1.Role_ROLE_OWNER, want: connectrpc.CodeFailedPrecondition},
-		{name: "reserved role", token: f.tokenA, tenantID: f.tenantA.PublicID(), userID: "user-2", role: relationv1.Role_ROLE_ADMIN, want: connectrpc.CodeInvalidArgument},
-		{name: "unspecified role", token: f.tokenA, tenantID: f.tenantA.PublicID(), userID: "user-2", role: relationv1.Role_ROLE_UNSPECIFIED, want: connectrpc.CodeInvalidArgument},
-		{name: "missing user", token: f.tokenA, tenantID: f.tenantA.PublicID(), userID: "", role: relationv1.Role_ROLE_STAFF, want: connectrpc.CodeInvalidArgument},
-		{name: "another tenant", token: f.tokenA, tenantID: f.tenantB.PublicID(), userID: "user-2", role: relationv1.Role_ROLE_STAFF, want: connectrpc.CodePermissionDenied},
-		{name: "unknown tenant", token: f.mintToken(t, "0000000000000000", "tenant.write"), tenantID: "0000000000000000", userID: "user-2", role: relationv1.Role_ROLE_STAFF, want: connectrpc.CodeNotFound},
-		{name: "missing scope", token: f.mintToken(t, f.tenantA.PublicID(), "tenant.read"), tenantID: f.tenantA.PublicID(), userID: "user-2", role: relationv1.Role_ROLE_STAFF, want: connectrpc.CodePermissionDenied},
+		{name: "duplicate membership", token: f.serviceA, tenantID: f.tenantA.PublicID(), userID: "user-1", role: relationv1.Role_ROLE_OWNER, want: connectrpc.CodeFailedPrecondition},
+		{name: "reserved role", token: f.serviceA, tenantID: f.tenantA.PublicID(), userID: "user-2", role: relationv1.Role_ROLE_ADMIN, want: connectrpc.CodeInvalidArgument},
+		{name: "unspecified role", token: f.serviceA, tenantID: f.tenantA.PublicID(), userID: "user-2", role: relationv1.Role_ROLE_UNSPECIFIED, want: connectrpc.CodeInvalidArgument},
+		{name: "missing user", token: f.serviceA, tenantID: f.tenantA.PublicID(), userID: "", role: relationv1.Role_ROLE_STAFF, want: connectrpc.CodeInvalidArgument},
+		{name: "another tenant", token: f.serviceA, tenantID: f.tenantB.PublicID(), userID: "user-2", role: relationv1.Role_ROLE_STAFF, want: connectrpc.CodePermissionDenied},
+		{name: "unknown tenant", token: f.mintServiceToken(t, "0000000000000000"), tenantID: "0000000000000000", userID: "user-2", role: relationv1.Role_ROLE_STAFF, want: connectrpc.CodeNotFound},
+		{name: "tenant_access token", token: f.tokenA, tenantID: f.tenantA.PublicID(), userID: "user-2", role: relationv1.Role_ROLE_STAFF, want: connectrpc.CodeUnauthenticated},
+		{name: "service token without tenant context", token: internalJWTs(t).service, tenantID: f.tenantA.PublicID(), userID: "user-2", role: relationv1.Role_ROLE_STAFF, want: connectrpc.CodeUnauthenticated},
 		{name: "no token", token: "", tenantID: f.tenantA.PublicID(), userID: "user-2", role: relationv1.Role_ROLE_STAFF, want: connectrpc.CodeUnauthenticated},
 	}
 
@@ -149,9 +154,7 @@ func TestFrozenTenantsRejectMembershipWrites(t *testing.T) {
 	pending := f.startRegistration(t, "Delta").GetTenant().GetTenantId()
 
 	for name, tenantID := range map[string]string{"archived": archived.PublicID(), "pending_owner": pending} {
-		token := f.mintToken(t, tenantID, "tenant.read tenant.write")
-
-		_, err := f.addMember(t, token, tenantID, "user-1", relationv1.Role_ROLE_STAFF)
+		_, err := f.addMember(t, f.mintServiceToken(t, tenantID), tenantID, "user-1", relationv1.Role_ROLE_STAFF)
 		if got, want := connectrpc.CodeOf(err), connectrpc.CodeFailedPrecondition; got != want {
 			t.Errorf("AddTenantMember(%s tenant) error code = %v, want %v", name, got, want)
 		}
@@ -167,7 +170,7 @@ func TestRolesOverTransport(t *testing.T) {
 	f := newRelationFixture(t)
 	ctx := context.Background()
 
-	if _, err := f.addMember(t, f.tokenA, f.tenantA.PublicID(), "user-1", relationv1.Role_ROLE_STAFF); err != nil {
+	if _, err := f.addMember(t, f.serviceA, f.tenantA.PublicID(), "user-1", relationv1.Role_ROLE_STAFF); err != nil {
 		t.Fatalf("AddTenantMember() error = %v", err)
 	}
 
@@ -283,9 +286,9 @@ func TestCurrentPermissionOverTransport(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			token := f.mintToken(t, tt.tenant.PublicID(), "tenant.read tenant.write")
 
-			_, err := f.addMember(t, token, tt.tenant.PublicID(), "user-1", relationv1.Role_ROLE_STAFF)
+			_, err := f.relationClient.ChangeTenantRole(authorized(context.Background(), token), &relationv1.ChangeTenantRoleRequest{TenantId: tt.tenant.PublicID(), UserId: callerSubject, TenantRole: relationv1.Role_ROLE_OWNER})
 			if got, want := connectrpc.CodeOf(err), connectrpc.CodePermissionDenied; got != want {
-				t.Fatalf("AddTenantMember() error code = %v, want %v", got, want)
+				t.Fatalf("ChangeTenantRole() error code = %v, want %v", got, want)
 			}
 		})
 	}

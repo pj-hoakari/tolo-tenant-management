@@ -79,11 +79,11 @@ func TestListMembershipsOverHTTP(t *testing.T) {
 
 	// The same user belongs to both tenants, so a read of one tenant that
 	// leaked into the other would show.
-	if _, err := f.addMember(t, f.tokenA, f.tenantA.PublicID(), "user-1", relationv1.Role_ROLE_STAFF); err != nil {
+	if _, err := f.addMember(t, f.serviceA, f.tenantA.PublicID(), "user-1", relationv1.Role_ROLE_STAFF); err != nil {
 		t.Fatalf("AddTenantMember(tenant A) error = %v", err)
 	}
 
-	if _, err := f.addMember(t, f.tokenB, f.tenantB.PublicID(), "user-1", relationv1.Role_ROLE_OWNER); err != nil {
+	if _, err := f.addMember(t, f.serviceB, f.tenantB.PublicID(), "user-1", relationv1.Role_ROLE_OWNER); err != nil {
 		t.Fatalf("AddTenantMember(tenant B) error = %v", err)
 	}
 

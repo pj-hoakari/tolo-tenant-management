@@ -848,9 +848,9 @@ const file_tolo_relation_v1_relation_proto_rawDesc = "" +
 	"\n" +
 	"ROLE_STAFF\x10\x02\x12\x0e\n" +
 	"\n" +
-	"ROLE_ADMIN\x10\x032\xcb\x05\n" +
-	"\x14RelationAdminService\x12\x8b\x01\n" +
-	"\x0fAddTenantMember\x12(.tolo.relation.v1.AddTenantMemberRequest\x1a).tolo.relation.v1.AddTenantMemberResponse\"#\x8a\xb5\x18\x1f\b\x02\x12\ftenant.write\x1a\rtenant_access\x12\x8e\x01\n" +
+	"ROLE_ADMIN\x10\x032\xad\x05\n" +
+	"\x14RelationAdminService\x12n\n" +
+	"\x0fAddTenantMember\x12(.tolo.relation.v1.AddTenantMemberRequest\x1a).tolo.relation.v1.AddTenantMemberResponse\"\x06\x8a\xb5\x18\x02\b\x03\x12\x8e\x01\n" +
 	"\x10ChangeTenantRole\x12).tolo.relation.v1.ChangeTenantRoleRequest\x1a*.tolo.relation.v1.ChangeTenantRoleResponse\"#\x8a\xb5\x18\x1f\b\x02\x12\ftenant.write\x1a\rtenant_access\x12\x88\x01\n" +
 	"\x0eGrantEventRole\x12'.tolo.relation.v1.GrantEventRoleRequest\x1a(.tolo.relation.v1.GrantEventRoleResponse\"#\x8a\xb5\x18\x1f\b\x02\x12\ftenant.write\x1a\rtenant_access\x12|\n" +
 	"\n" +

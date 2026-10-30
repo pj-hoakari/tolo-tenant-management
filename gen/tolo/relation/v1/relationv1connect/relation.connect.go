@@ -83,7 +83,8 @@ var (
 type RelationAdminServiceClient interface {
 	// AddTenantMember makes a user a member of a tenant. A user may belong to
 	// several tenants but only once to the same tenant. The owner membership
-	// created by ClaimTenantOwnership does not go through this RPC.
+	// created by ClaimTenantOwnership does not go through this RPC. It
+	// requires token_use=service with tenant context.
 	AddTenantMember(context.Context, *v1.AddTenantMemberRequest) (*v1.AddTenantMemberResponse, error)
 	ChangeTenantRole(context.Context, *v1.ChangeTenantRoleRequest) (*v1.ChangeTenantRoleResponse, error)
 	// GrantEventRole assigns an event role. The event must belong to the
@@ -106,7 +107,8 @@ func NewRelationAdminServiceClient(client *connect.Client) RelationAdminServiceC
 type RelationAdminServiceHandler interface {
 	// AddTenantMember makes a user a member of a tenant. A user may belong to
 	// several tenants but only once to the same tenant. The owner membership
-	// created by ClaimTenantOwnership does not go through this RPC.
+	// created by ClaimTenantOwnership does not go through this RPC. It
+	// requires token_use=service with tenant context.
 	AddTenantMember(context.Context, *v1.AddTenantMemberRequest) (*v1.AddTenantMemberResponse, error)
 	ChangeTenantRole(context.Context, *v1.ChangeTenantRoleRequest) (*v1.ChangeTenantRoleResponse, error)
 	// GrantEventRole assigns an event role. The event must belong to the

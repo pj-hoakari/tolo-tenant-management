@@ -8,7 +8,7 @@ import (
 
 // RelationAdminServicePolicies is the effective policy of every procedure of tolo.relation.v1.RelationAdminService.
 var RelationAdminServicePolicies = authz.Policies{
-	RelationAdminServiceAddTenantMemberProcedure:  {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.write"}, TokenUses: []string{"tenant_access"}},
+	RelationAdminServiceAddTenantMemberProcedure:  {Level: authz.LevelInternal},
 	RelationAdminServiceChangeTenantRoleProcedure: {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.write"}, TokenUses: []string{"tenant_access"}},
 	RelationAdminServiceGrantEventRoleProcedure:   {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.write"}, TokenUses: []string{"tenant_access"}},
 	RelationAdminServiceRevokeRoleProcedure:       {Level: authz.LevelAuthenticated, RequiredScopes: []string{"tenant.write"}, TokenUses: []string{"tenant_access"}},
