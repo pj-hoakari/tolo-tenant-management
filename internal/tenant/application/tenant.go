@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/pj-hoakari/tolo-tenant-management/internal/identifier"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/onetimetoken"
 	relationdomain "github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/repository"
@@ -204,17 +206,17 @@ func (s *TenantService) StartTenantRegistration(ctx context.Context, input Start
 		return TenantRegistration{}, fmt.Errorf("sweep expired pending tenants: %w", err)
 	}
 
-	tenantID, err := newUUIDv7()
+	tenantID, err := identifier.NewUUIDv7()
 	if err != nil {
 		return TenantRegistration{}, err
 	}
 
-	publicID, err := newPublicID()
+	publicID, err := identifier.NewPublicID()
 	if err != nil {
 		return TenantRegistration{}, err
 	}
 
-	claimToken, tokenHash, err := domain.NewOwnershipClaimToken()
+	claimToken, tokenHash, err := onetimetoken.New()
 	if err != nil {
 		return TenantRegistration{}, err
 	}
@@ -433,12 +435,12 @@ func (s *TenantService) CreateEvent(ctx context.Context, input CreateEventInput)
 		return domain.Event{}, repository.ErrTenantArchived
 	}
 
-	eventID, err := newUUIDv7()
+	eventID, err := identifier.NewUUIDv7()
 	if err != nil {
 		return domain.Event{}, err
 	}
 
-	publicID, err := newPublicID()
+	publicID, err := identifier.NewPublicID()
 	if err != nil {
 		return domain.Event{}, err
 	}

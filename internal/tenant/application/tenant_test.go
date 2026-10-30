@@ -13,6 +13,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	internaljwt "github.com/pj-hoakari/internal-jwt-handling"
+	"github.com/pj-hoakari/tolo-tenant-management/internal/onetimetoken"
 	relationdomain "github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/application"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenant/domain"
@@ -444,9 +445,9 @@ func TestClaimTenantOwnership(t *testing.T) {
 
 	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
 
-	token, hash, err := domain.NewOwnershipClaimToken()
+	token, hash, err := onetimetoken.New()
 	if err != nil {
-		t.Fatalf("NewOwnershipClaimToken() error = %v", err)
+		t.Fatalf("onetimetoken.New() error = %v", err)
 	}
 
 	pending := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStatePendingOwner, domain.Subdomain{}, false)
@@ -504,9 +505,9 @@ func TestClaimTenantOwnershipRejections(t *testing.T) {
 
 	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
 
-	token, hash, err := domain.NewOwnershipClaimToken()
+	token, hash, err := onetimetoken.New()
 	if err != nil {
-		t.Fatalf("NewOwnershipClaimToken() error = %v", err)
+		t.Fatalf("onetimetoken.New() error = %v", err)
 	}
 
 	pending := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStatePendingOwner, domain.Subdomain{}, false)
@@ -567,9 +568,9 @@ func TestClaimTenantOwnershipDoesNotMarkOwnedWhenMembershipFails(t *testing.T) {
 
 	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
 
-	token, hash, err := domain.NewOwnershipClaimToken()
+	token, hash, err := onetimetoken.New()
 	if err != nil {
-		t.Fatalf("NewOwnershipClaimToken() error = %v", err)
+		t.Fatalf("onetimetoken.New() error = %v", err)
 	}
 
 	pending := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStatePendingOwner, domain.Subdomain{}, false)
