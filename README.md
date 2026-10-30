@@ -186,7 +186,7 @@ proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16
 | RPC | サービス | 公開面 | 要求する `token_use` | 要求 scope |
 |---|---|---|---|---|
 | StartTenantRegistration | `TenantService` | 未認証（`AUTH_LEVEL_PUBLIC`） | なし | なし |
-| ClaimTenantOwnership | `TenantService` | 認証済み | `registration` | `tenant.claim` |
+| ClaimTenantOwnership | `TenantService` | 認証済み | `registration` | `tenant.join` |
 | ResolveTenantSubdomain | `TenantService` | 未認証（`AUTH_LEVEL_PUBLIC`） | なし | なし |
 | ChangeTenantContract、ArchiveTenant | `TenantService` | 認証済み | `tenant_access` | `tenant.write` |
 | CreateEvent、TransitionEventStatus | `TenantService` | 認証済み | `tenant_access` | `events.manage` |
@@ -222,7 +222,7 @@ proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16
 1. `StartTenantRegistration`（未認証）が `pending_owner` のテナントを作成し、所有権取得トークンの平文をこの応答でのみ返す。
    永続化するのは SHA-256 ハッシュだけで、トークンの有効期限は既定 1 時間（`application.DefaultOwnershipClaimTTL`）である。
    `contract_plan` の欠落は `invalid_argument` で拒否する。
-2. `ClaimTenantOwnership`（`registration` トークン、scope `tenant.claim`）が、対象が期限内の `pending_owner` であることとトークンのハッシュ一致を検証し、内部 JWT の `sub` をオーナーとして所属させ、`owned` へ遷移させ、要求の `subdomain` をサブドメイン名として確定し、トークンを消費する。
+2. `ClaimTenantOwnership`（`registration` トークン、scope `tenant.join`）が、対象が期限内の `pending_owner` であることとトークンのハッシュ一致を検証し、内部 JWT の `sub` をオーナーとして所属させ、`owned` へ遷移させ、要求の `subdomain` をサブドメイン名として確定し、トークンを消費する。
    これらは 1 つの DB トランザクションで確定する。
    サブドメイン名が既に使われている場合は `already_exists` を返し、トランザクションを取り消すのでトークンは消費しない。
    呼び出し側は同じトークンで別の名前を指定して再試行できる。

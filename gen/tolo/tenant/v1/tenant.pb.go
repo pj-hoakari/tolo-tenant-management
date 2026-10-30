@@ -1223,10 +1223,10 @@ const file_tolo_tenant_v1_tenant_proto_rawDesc = "" +
 	"\x11EVENT_STATUS_OPEN\x10\x02\x12\x17\n" +
 	"\x13EVENT_STATUS_LOCKED\x10\x03\x12\x17\n" +
 	"\x13EVENT_STATUS_CLOSED\x10\x04\x12\x19\n" +
-	"\x15EVENT_STATUS_ARCHIVED\x10\x052\xb5\t\n" +
+	"\x15EVENT_STATUS_ARCHIVED\x10\x052\xb4\t\n" +
 	"\rTenantService\x12\x82\x01\n" +
-	"\x17StartTenantRegistration\x12..tolo.tenant.v1.StartTenantRegistrationRequest\x1a/.tolo.tenant.v1.StartTenantRegistrationResponse\"\x06\x8a\xb5\x18\x02\b\x01\x12\x95\x01\n" +
-	"\x14ClaimTenantOwnership\x12+.tolo.tenant.v1.ClaimTenantOwnershipRequest\x1a,.tolo.tenant.v1.ClaimTenantOwnershipResponse\"\"\x8a\xb5\x18\x1e\b\x02\x12\ftenant.claim\x1a\fregistration\x12\x7f\n" +
+	"\x17StartTenantRegistration\x12..tolo.tenant.v1.StartTenantRegistrationRequest\x1a/.tolo.tenant.v1.StartTenantRegistrationResponse\"\x06\x8a\xb5\x18\x02\b\x01\x12\x94\x01\n" +
+	"\x14ClaimTenantOwnership\x12+.tolo.tenant.v1.ClaimTenantOwnershipRequest\x1a,.tolo.tenant.v1.ClaimTenantOwnershipResponse\"!\x8a\xb5\x18\x1d\b\x02\x12\vtenant.join\x1a\fregistration\x12\x7f\n" +
 	"\x16ResolveTenantSubdomain\x12-.tolo.tenant.v1.ResolveTenantSubdomainRequest\x1a..tolo.tenant.v1.ResolveTenantSubdomainResponse\"\x06\x8a\xb5\x18\x02\b\x01\x12\x96\x01\n" +
 	"\x14ChangeTenantContract\x12+.tolo.tenant.v1.ChangeTenantContractRequest\x1a,.tolo.tenant.v1.ChangeTenantContractResponse\"#\x8a\xb5\x18\x1f\b\x02\x12\ftenant.write\x1a\rtenant_access\x12\x81\x01\n" +
 	"\rArchiveTenant\x12$.tolo.tenant.v1.ArchiveTenantRequest\x1a%.tolo.tenant.v1.ArchiveTenantResponse\"#\x8a\xb5\x18\x1f\b\x02\x12\ftenant.write\x1a\rtenant_access\x12|\n" +

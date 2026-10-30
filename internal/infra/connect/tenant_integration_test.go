@@ -289,7 +289,7 @@ func TestResolveTenantSubdomainOverTransport(t *testing.T) {
 // TestClaimTenantOwnershipOverTransportRejectsMissingScope checks that a
 // procedure whose policy names its own token_uses still has its required
 // scopes enforced: the credential is of the accepted class (registration), but
-// tenant.claim was not granted to it.
+// tenant.join was not granted to it.
 func TestClaimTenantOwnershipOverTransportRejectsMissingScope(t *testing.T) {
 	p := newProcess(t)
 	registration := p.startRegistration(t, "Acme")
