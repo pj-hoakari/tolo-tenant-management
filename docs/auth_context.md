@@ -20,7 +20,7 @@
 | TenantInvitationRevoked | Tenant Management: RelationAdminService.RevokeTenantInvitation |
 | UserJoinedTenant | Tenant Management: RelationAdminService.AcceptTenantInvitation（サービス間の RelationAdminService.AddTenantMember でも成立） |
 | TenantRoleChanged | Tenant Management: RelationAdminService.ChangeTenantRole |
-| EventRoleGranted | Tenant Management: RelationAdminService.GrantEventRole |
+| EventRoleGranted | Tenant Management: RelationAdminService.GrantEventRole、TenantService.CreateEvent（作成者へのイベントロールの付与） |
 | RoleRevoked | Tenant Management: RelationAdminService.RevokeRole |
 | RelationCacheUpdated／RelationCachePurged | 対象外（Auth と関係参照の間） |
 

@@ -19,7 +19,7 @@ package: `tolo.tenant.v1`（テナント）、`tolo.relation.v1`（関係参照�
 | ResolveTenantSubdomain | サブドメイン名からテナントの公開 ID を引く。Web がホスト名からテナントを決めるために使う | 管理 UI、ゲスト（いずれも BFF のホスト名の解決） | 未認証（Service Gatewayの公開経路） | （参照のみ） |
 | ChangeTenantContract | テナントの契約プランを変更する | 管理 UI | `tenant_access` + tenant.write | TenantContractChanged |
 | ArchiveTenant | テナントを論理削除（アーカイブ）する。識別子と配下データは保持 | 管理 UI | `tenant_access` + tenant.write | TenantArchived |
-| CreateEvent | テナント配下にイベント（催事／設置）を新設する | 管理 UI | `tenant_access` + events.manage | EventCreated |
+| CreateEvent | テナント配下にイベント（催事／設置）を新設し、作成者にイベントロールを付ける | 管理 UI | `tenant_access` + events.manage | EventCreated／EventRoleGranted |
 | TransitionEventStatus | イベント状態を遷移させる（許容遷移は補足の遷移表） | 管理 UI | `tenant_access` + events.manage | EventOpened／EventLocked／EventClosed／EventUnlocked／EventReopened／EventArchived／EventUnarchived |
 | GetEvent | イベントの存在と所属テナントを参照する。存在しない ID へのグラフ作成を防ぐ参照整合の要（関係参照の存在確認はサービス内部で行い RPC を経ない） | グラフ編集 | サービス間（token_use=service。テナント文脈必須） | （参照のみ） |
 | ListEvents | テナント配下のイベントを一覧する | 管理 UI、スタッフアプリ | `tenant_access` + events.read | （参照のみ） |
@@ -302,6 +302,8 @@ message ListMembershipsResponse {
 ### イベント
 
 - CreateEvent は `owned` かつアーカイブされていないテナントにのみ作成し、初期状態は `draft` とする
+- CreateEvent は、イベントの作成と同じローカルトランザクションで、作成者に作成者の現在のテナントロールと同じイベントロールを付ける（ADR-0123）
+  作成者の現在の所属は同じトランザクションで同一 DB から確かめ、所属していなければイベントを作らずに `failed_precondition` を返す
   存在しないテナントは `not_found`、`pending_owner`またはアーカイブ済みのテナントは `failed_precondition` を返す
 - 許容する状態遷移は次の8つに限り、これ以外は `failed_precondition` を返す
   自状態への遷移（open→open 等）も許容しない
@@ -358,7 +360,7 @@ message ListMembershipsResponse {
   認証済みユーザーがすでにそのテナントに所属している場合は `failed_precondition` を返し、招待トークンを消費しない
 - 招待の受諾は「招待 URL を開く → サインアップまたはログイン → テナント未指定の認可で`registration`トークンを取得 → 招待の受諾と所属の確定 → tenantId指定の再認可で`tenant_access`取得」の流れとする（Auth（IdP）補足）
 - 使用済みの招待トークンで受諾しようとした人には、Web がオーナーへ連絡するよう案内する
-- 招待 URL はテナントの公開 ID と招待トークンから管理 UI が作る。Web は招待 URL で受け取った招待トークンをすぐにサーバ側のセッションへ移し、招待トークンを含まない URL へリダイレクトする。招待トークンを含むページには `Referrer-Policy: no-referrer` を付け、URL をログに残さない
+- 招待 URL は、管理 UI がリクエストのホスト（招待先のテナントのホスト）と招待トークンから作り、テナントの公開 ID を含めない（ADR-0121）。受諾は招待先のテナントのホストで行い、Web はホスト名から照会したテナントの公開 ID を AcceptTenantInvitation の `tenant_id` に入れる。Web は招待 URL で受け取った招待トークンをすぐにサーバ側のセッションへ移し、招待トークンを含まない URL へリダイレクトする。招待トークンを含むページには `Referrer-Policy: no-referrer` を付け、URL をログに残さない
 
 ### 表示名
 

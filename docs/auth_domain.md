@@ -19,12 +19,13 @@
 | scope | tenant.read／tenant.write／events.read と、権限クラスで分けた書き込み scope<br>events.manage（設計・構成）／events.operate（現場運用）／events.report（計測報告・稼働通知と、エッジ端末の観測点の参照） |
 | 送信者拘束 / sender constraint | public client へ発行する外部トークンは、クライアントの鍵の所持証明（DPoP）で提示者を束縛する<br>鍵はクライアントの保護領域に取り出せない形で保持する<br>confidential client（BFF）は client 認証で代替し対象にしない |
 | client scope 上限 / client scope cap | client ごとに許可する scope の上限。ロールから導いた scope との積を発行する |
-| resource / audience | 対象イベント（URI）／バックエンド API 全体の論理 audience（例 backend-api。登録は1つ）<br>検証は Service Gateway と Edge Bridge Service が行う |
+| resource / audience | 認可要求では対象テナント（テナント URI）、Token Exchange では対象イベント（イベント URI）／バックエンド API 全体の論理 audience（例 backend-api。登録は1つ）<br>検証は Service Gateway と Edge Bridge Service が行う |
 | テナント参加用の最小トークン / registration token | テナント文脈なしで、まだ所属していないテナントに入るためのトークン<br>scope は `tenant.join` のみで、仮テナントの所有権取得（ClaimTenantOwnership）と招待の受諾（AcceptTenantInvitation）に限定 |
 | 招待 / tenant invitation | テナント、テナントロール（スタッフに限る）、表示名を固定し、一回限りの招待トークンで受諾させる参加の申し出<br>オーナーが作成、一覧、取り消しを行い、受諾した時点で所属が確定する |
 | 表示名 / display name | 所属ごとに持つ、テナントの中だけで使う名前<br>招待またはオーナーの所有権取得で決まり、IdP の profile は使わない |
 | 関係参照サービス / relation service | 所属とロールを所有し参照を返す |
 | login challenge | IdP がログイン状態のない認可要求ごとに発行する一回限りの値<br>Web のログイン画面でのログインをその認可要求に結び付け、`prompt=login` はその challenge の認証でだけ満たす |
+| 引き渡しコード / handoff code | ルートドメインでのログインの往復の後に、BFF がテナントのホストへ渡す一回限りの値<br>テナントのホストでログインを始めたブラウザでだけ使え、そのホストのセッションを作る |
 
 ロール→scope：オーナー＝全scope／スタッフ＝tenant.write を除く全scope／管理者（予約）＝オーナー相当
 発行する scope はロールとクライアント種別の両方から決める（client scope 上限との積）
@@ -48,7 +49,7 @@
 | 招待が取り消された | TenantInvitationRevoked | オーナーによる招待の取り消し |
 | ユーザーがテナントに所属した | UserJoinedTenant | 招待の受諾、メンバー追加 |
 | テナントロール変更された | TenantRoleChanged | テナントロール付与・変更 |
-| イベントロール付与された | EventRoleGranted | 割り当て |
+| イベントロール付与された | EventRoleGranted | 割り当て、イベントの作成（作成者） |
 | ロール剥奪された | RoleRevoked | メンバー削除／ロール解除 |
 | 関係参照キャッシュ更新された | RelationCacheUpdated | 参照成功 |
 | 関係参照キャッシュパージされた | RelationCachePurged | 所属変更時 |
@@ -57,6 +58,7 @@
 
 - relation model 制約：1ユーザーは複数テナントに所属しうる／event∈tenant／event-role⇒tenant-role／tenant-role と event-role は独立
 - Token Exchange は tenant→event の一方向のみ
+- event_access は対象イベントのイベントロールを持つユーザーにだけ発行する。イベントを作ったユーザーは作成と同時にイベントロールを持つ
 - 発行する scope は client scope 上限とロール由来 scope の積を超えない
 - ロールは scope の発行判定にのみ使う（claim に載せない）
 - 識別子はテナントが所有し、存在しないIDへは所属を作らない
