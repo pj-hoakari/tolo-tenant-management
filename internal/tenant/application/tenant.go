@@ -32,6 +32,7 @@ var (
 	// the tenant is not pending, the token is wrong, expired, or already used.
 	// The reasons are deliberately not distinguished.
 	ErrOwnershipClaimRejected = errors.New("ownership claim rejected")
+	ErrCreatorNotMember       = errors.New("event creator does not belong to the tenant")
 )
 
 // DefaultOwnershipClaimTTL is how long a pending_owner tenant waits for
@@ -435,6 +436,11 @@ func (s *TenantService) CreateEvent(ctx context.Context, input CreateEventInput)
 		return domain.Event{}, repository.ErrTenantArchived
 	}
 
+	subject, ok := tenantctx.SubjectFromContext(ctx)
+	if !ok {
+		return domain.Event{}, tenantctx.ErrSubjectMissing
+	}
+
 	eventID, err := identifier.NewUUIDv7()
 	if err != nil {
 		return domain.Event{}, err
@@ -446,7 +452,26 @@ func (s *TenantService) CreateEvent(ctx context.Context, input CreateEventInput)
 	}
 
 	event := domain.NewEvent(eventID, publicID, tenant.ID(), tenant.PublicID(), input.Name, domain.EventStatusDraft)
-	if err := s.tenantRepository.CreateEvent(ctx, event); err != nil {
+
+	err = s.transactor.WithinTransaction(ctx, func(ctx context.Context) error {
+		role, member, err := s.permissions.CurrentRole(ctx, tenant.ID())
+		if err != nil {
+			return err
+		}
+
+		if !member {
+			return ErrCreatorNotMember
+		}
+
+		if err := s.tenantRepository.CreateEvent(ctx, event); err != nil {
+			return err
+		}
+
+		_, err = s.memberships.GrantEventRole(ctx, event.ID(), subject, role)
+
+		return err
+	})
+	if err != nil {
 		return domain.Event{}, err
 	}
 

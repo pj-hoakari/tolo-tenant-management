@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/relation/repository"
 	"github.com/pj-hoakari/tolo-tenant-management/internal/tenantctx"
 )
@@ -36,21 +37,30 @@ func NewAuthorizer(memberships repository.MembershipRepository) *Authorizer {
 // repositories use it. A caller who no longer belongs to the tenant holds no
 // permission, which is an answer rather than an error.
 func (a *Authorizer) Allowed(ctx context.Context, tenantID, scope string) (bool, error) {
-	subject, ok := tenantctx.SubjectFromContext(ctx)
-	if !ok {
-		return false, tenantctx.ErrSubjectMissing
-	}
-
-	role, err := a.memberships.FindTenantRoleForShare(ctx, tenantID, subject)
-	if errors.Is(err, repository.ErrMembershipNotFound) {
-		return false, nil
-	}
-
-	if err != nil {
+	role, member, err := a.CurrentRole(ctx, tenantID)
+	if err != nil || !member {
 		return false, err
 	}
 
 	return role.Grants(scope), nil
+}
+
+func (a *Authorizer) CurrentRole(ctx context.Context, tenantID string) (domain.Role, bool, error) {
+	subject, ok := tenantctx.SubjectFromContext(ctx)
+	if !ok {
+		return domain.RoleUnspecified, false, tenantctx.ErrSubjectMissing
+	}
+
+	role, err := a.memberships.FindTenantRoleForShare(ctx, tenantID, subject)
+	if errors.Is(err, repository.ErrMembershipNotFound) {
+		return domain.RoleUnspecified, false, nil
+	}
+
+	if err != nil {
+		return domain.RoleUnspecified, false, err
+	}
+
+	return role, true, nil
 }
 
 // Require reports ErrPermissionDenied unless the authenticated subject's

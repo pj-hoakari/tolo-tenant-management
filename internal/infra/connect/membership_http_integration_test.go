@@ -34,7 +34,7 @@ type httpResponse struct {
 // callers do: the endpoint carries no authentication. The tenant and the user
 // are path segments, so they are escaped into the route. The raw body is
 // returned next to the decoded one, so a test can pin the JSON itself.
-func (f relationFixture) getMemberships(t *testing.T, tenantPublicID, userID string) (int, httpResponse, string) {
+func (f *process) getMemberships(t *testing.T, tenantPublicID, userID string) (int, httpResponse, string) {
 	t.Helper()
 
 	return f.get(t, "/tenants/"+url.PathEscape(tenantPublicID)+"/users/"+url.PathEscape(userID)+"/memberships")
@@ -42,7 +42,7 @@ func (f relationFixture) getMemberships(t *testing.T, tenantPublicID, userID str
 
 // get calls the plain HTTP API at an arbitrary path, so a test can also drive
 // a path the route does not match.
-func (f relationFixture) get(t *testing.T, path string) (int, httpResponse, string) {
+func (f *process) get(t *testing.T, path string) (int, httpResponse, string) {
 	t.Helper()
 
 	res, err := f.httpClient.Get(f.baseURL + path)

@@ -263,6 +263,13 @@ Web はこれでホスト名からテナントを決める。
 どちらの RPC も、JWT の scope 検証に加えて呼び出し元の現在権限を確認する（「管理系書き込みの現在権限確認」）。
 `pending_owner` のテナントへの操作は `failed_precondition`、存在しないテナントは `not_found` で拒否する。
 
+### イベントの作成
+
+`CreateEvent` はイベントの作成と同じ DB トランザクションで、作成者に作成者の現在のテナントロールと同じイベントロールを付ける（`docs/tenant_management_spec.md` の「イベント」）。
+作成者の所属は同じトランザクションの中で `FOR SHARE` でロックして読み直すため、所属の剥奪やテナントロールの変更は付与の確定を待ってから反映される。
+作成者がテナントに所属していない場合は、イベントを作らずに `failed_precondition` を返す。
+作成と付与は同時に確定するので、作成の直後から `ListMemberships` と所属参照の HTTP API が作成者のイベントロールを返す。
+
 ### イベントの状態遷移と一覧
 
 `TransitionEventStatus` が許容する状態遷移は次の 8 つだけで、自状態への遷移を含むそれ以外はすべて `failed_precondition` で拒否する（`docs/tenant_management_spec.md` の「イベント」）。
@@ -291,7 +298,8 @@ draft はそのままアーカイブでき、これは作成した draft を破�
 
 所属とロールの真実の源は `internal/relation` 配下に置き、テナント側（`internal/tenant/domain`、`internal/tenant/application`）とはパッケージを分ける。
 テナント側は `internal/relation` を直接参照せず、自身が宣言する `application.MembershipWriter` と `application.CurrentPermissionChecker` の 2 つのポートを通じてのみ関係参照側に到達する。
-`MembershipWriter` は `ClaimTenantOwnership` のオーナー所属の書き込みに、`CurrentPermissionChecker` は管理系書き込みの現在権限確認に使う。
+`MembershipWriter` は `ClaimTenantOwnership` のオーナー所属の書き込みと、`CreateEvent` が作成者にイベントロールを付けるときに使う。
+`CurrentPermissionChecker` は管理系書き込みの現在権限確認と、`CreateEvent` が作成者の現在のテナントロールを読むときに使う。
 前者は `internal/relation/infra/db` の所属リポジトリが、後者は `internal/relation/application` の `Authorizer` が実装する。
 所属リポジトリはテナント側と同じ接続プールと context 上のトランザクションを共有するため、オーナー所属と `owned` への遷移は同時に確定する。
 関係参照側は、公開 ID の解決と書き込み可否を決めるテナントの状態（`pending_owner`、アーカイブ済み）の判定のために、テナント側のリポジトリを読み取り専用で参照する。

@@ -3,6 +3,8 @@ package application
 import (
 	"context"
 	"errors"
+
+	relationdomain "github.com/pj-hoakari/tolo-tenant-management/internal/relation/domain"
 )
 
 // ScopeTenantWrite is the scope the administrative tenant writes require. It
@@ -27,4 +29,5 @@ type CurrentPermissionChecker interface {
 	// currently holds, in the tenant identified by its internal ID, a role that
 	// can issue the scope.
 	Allowed(ctx context.Context, tenantID, scope string) (bool, error)
+	CurrentRole(ctx context.Context, tenantID string) (relationdomain.Role, bool, error)
 }

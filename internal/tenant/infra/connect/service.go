@@ -42,6 +42,7 @@ var clientErrors = infraconnect.ClientErrors{
 	{Target: repository.ErrTenantArchived, Code: connectrpc.CodeFailedPrecondition, Message: "tenant is archived"},
 	{Target: domain.ErrTenantAlreadyArchived, Code: connectrpc.CodeFailedPrecondition, Message: "tenant is already archived"},
 	{Target: domain.ErrInvalidEventStatusTransition, Code: connectrpc.CodeFailedPrecondition, Message: "event status transition is not allowed"},
+	{Target: application.ErrCreatorNotMember, Code: connectrpc.CodeFailedPrecondition, Message: "caller does not belong to the tenant"},
 	{Target: application.ErrPermissionDenied, Code: connectrpc.CodePermissionDenied, Message: "permission denied"},
 	{Target: tenantctx.ErrMismatch, Code: connectrpc.CodePermissionDenied, Message: "tenant does not match the token"},
 	{Target: application.ErrOwnershipClaimRejected, Code: connectrpc.CodeUnauthenticated, Message: "ownership claim rejected"},

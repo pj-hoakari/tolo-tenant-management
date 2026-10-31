@@ -15,4 +15,5 @@ type MembershipWriter interface {
 	// AddOwner records userID as the owner of the tenant identified by its
 	// internal ID.
 	AddOwner(ctx context.Context, tenantID, userID string, displayName relationdomain.DisplayName) error
+	GrantEventRole(ctx context.Context, eventID, userID string, role relationdomain.Role) (relationdomain.Membership, error)
 }
