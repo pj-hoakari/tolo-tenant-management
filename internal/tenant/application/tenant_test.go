@@ -36,6 +36,13 @@ func withSubject(ctx context.Context, subject string) context.Context {
 	})
 }
 
+func withTenantSubject(ctx context.Context, tenantPublicID, subject string) context.Context {
+	return internaljwt.ContextWithClaims(ctx, internaljwt.Claims{
+		TenantPublicID:   tenantPublicID,
+		RegisteredClaims: jwt.RegisteredClaims{Subject: subject},
+	})
+}
+
 // passthroughTransactor runs the unit of work directly; the repository mocks
 // do not observe transactions.
 type passthroughTransactor struct{}
@@ -51,6 +58,9 @@ type membershipRecorder struct {
 	userID      string
 	displayName relationdomain.DisplayName
 	calls       int
+	eventID     string
+	role        relationdomain.Role
+	grants      int
 }
 
 func (r *membershipRecorder) AddOwner(_ context.Context, tenantID, userID string, displayName relationdomain.DisplayName) error {
@@ -60,13 +70,22 @@ func (r *membershipRecorder) AddOwner(_ context.Context, tenantID, userID string
 	return r.err
 }
 
+func (r *membershipRecorder) GrantEventRole(_ context.Context, eventID, userID string, role relationdomain.Role) (relationdomain.Membership, error) {
+	r.grants++
+	r.eventID, r.userID, r.role = eventID, userID, role
+
+	return relationdomain.Membership{}, r.err
+}
+
 // permissionStub stands in for the relation side's current-permission check.
 type permissionStub struct {
 	err      error
 	tenantID string
-	scope    string
-	calls    int
-	allowed  bool
+	scope     string
+	calls     int
+	allowed   bool
+	role      relationdomain.Role
+	notMember bool
 }
 
 func (s *permissionStub) Allowed(_ context.Context, tenantID, scope string) (bool, error) {
@@ -76,6 +95,12 @@ func (s *permissionStub) Allowed(_ context.Context, tenantID, scope string) (boo
 	return s.allowed, s.err
 }
 
+func (s *permissionStub) CurrentRole(_ context.Context, tenantID string) (relationdomain.Role, bool, error) {
+	s.tenantID = tenantID
+
+	return s.role, !s.notMember, s.err
+}
+
 func newService(repo *MockTenantRepository, options ...application.Option) *application.TenantService {
 	return application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{}, &permissionStub{allowed: true}, options...)
 }
@@ -83,44 +108,84 @@ func newService(repo *MockTenantRepository, options ...application.Option) *appl
 func TestCreateEvent(t *testing.T) {
 	t.Parallel()
 
+	for _, role := range []relationdomain.Role{relationdomain.RoleOwner, relationdomain.RoleStaff} {
+		t.Run(role.String(), func(t *testing.T) {
+			t.Parallel()
+
+			tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, domain.Subdomain{}, false)
+			ctrl := gomock.NewController(t)
+			repo := NewMockTenantRepository(ctrl)
+			repo.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(tenant, nil)
+
+			var createdEvent domain.Event
+
+			repo.EXPECT().CreateEvent(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, event domain.Event) error {
+				createdEvent = event
+
+				return nil
+			})
+
+			memberships := &membershipRecorder{}
+			permissions := &permissionStub{role: role}
+			service := application.NewTenantService(repo, passthroughTransactor{}, memberships, permissions)
+
+			ctx := withTenantSubject(context.Background(), tenant.PublicID(), "user-1")
+
+			event, err := service.CreateEvent(ctx, application.CreateEventInput{
+				TenantPublicID: tenant.PublicID(),
+				Name:           "Festival",
+			})
+			if err != nil {
+				t.Fatalf("CreateEvent() error = %v", err)
+			}
+
+			if got, want := event.TenantID(), tenant.ID(); got != want {
+				t.Errorf("TenantID() = %q, want %q", got, want)
+			}
+
+			if got, want := event.TenantPublicID(), tenant.PublicID(); got != want {
+				t.Errorf("TenantPublicID() = %q, want %q", got, want)
+			}
+
+			if got, want := event.Status(), domain.EventStatusDraft; got != want {
+				t.Errorf("Status() = %q, want %q", got, want)
+			}
+
+			if got, want := createdEvent, event; got != want {
+				t.Errorf("created event = %#v, want %#v", got, want)
+			}
+
+			if got, want := permissions.tenantID, tenant.ID(); got != want {
+				t.Errorf("current role looked up in tenant %q, want %q", got, want)
+			}
+
+			if memberships.grants != 1 || memberships.eventID != event.ID() || memberships.userID != "user-1" || memberships.role != role {
+				t.Errorf("event role grants = %d (event %q, user %q, role %v), want one %v grant to user-1 on %q", memberships.grants, memberships.eventID, memberships.userID, memberships.role, role, event.ID())
+			}
+		})
+	}
+}
+
+func TestCreateEventRejectsCreatorWithoutMembership(t *testing.T) {
+	t.Parallel()
+
 	tenant := domain.NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", domain.TenantOwnershipStateOwned, domain.Subdomain{}, false)
 	ctrl := gomock.NewController(t)
 	repo := NewMockTenantRepository(ctrl)
 	repo.EXPECT().FindTenantByPublicID(gomock.Any(), tenant.PublicID()).Return(tenant, nil)
 
-	var createdEvent domain.Event
+	memberships := &membershipRecorder{}
+	service := application.NewTenantService(repo, passthroughTransactor{}, memberships, &permissionStub{notMember: true})
 
-	repo.EXPECT().CreateEvent(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, event domain.Event) error {
-		createdEvent = event
+	ctx := withTenantSubject(context.Background(), tenant.PublicID(), "user-1")
 
-		return nil
-	})
-	service := newService(repo)
-
-	ctx := withTenant(context.Background(), tenant.PublicID())
-
-	event, err := service.CreateEvent(ctx, application.CreateEventInput{
-		TenantPublicID: tenant.PublicID(),
-		Name:           "Festival",
-	})
-	if err != nil {
-		t.Fatalf("CreateEvent() error = %v", err)
+	_, err := service.CreateEvent(ctx, application.CreateEventInput{TenantPublicID: tenant.PublicID(), Name: "Festival"})
+	if !errors.Is(err, application.ErrCreatorNotMember) {
+		t.Fatalf("CreateEvent() error = %v, want %v", err, application.ErrCreatorNotMember)
 	}
 
-	if got, want := event.TenantID(), tenant.ID(); got != want {
-		t.Errorf("TenantID() = %q, want %q", got, want)
-	}
-
-	if got, want := event.TenantPublicID(), tenant.PublicID(); got != want {
-		t.Errorf("TenantPublicID() = %q, want %q", got, want)
-	}
-
-	if got, want := event.Status(), domain.EventStatusDraft; got != want {
-		t.Errorf("Status() = %q, want %q", got, want)
-	}
-
-	if got, want := createdEvent, event; got != want {
-		t.Errorf("created event = %#v, want %#v", got, want)
+	if memberships.grants != 0 {
+		t.Errorf("event role grants = %d, want none", memberships.grants)
 	}
 }
 

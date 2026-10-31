@@ -53,6 +53,10 @@ func (r *membershipRecorder) AddOwner(_ context.Context, tenantID, userID string
 	return r.err
 }
 
+func (r *membershipRecorder) GrantEventRole(context.Context, string, string, relationdomain.Role) (relationdomain.Membership, error) {
+	return relationdomain.Membership{}, r.err
+}
+
 // permissionStub stands in for the relation side's current-permission check.
 // It holds no mutable state, so the handler goroutines can share one.
 type permissionStub struct {
@@ -62,6 +66,10 @@ type permissionStub struct {
 
 func (s permissionStub) Allowed(context.Context, string, string) (bool, error) {
 	return s.allowed, s.err
+}
+
+func (s permissionStub) CurrentRole(context.Context, string) (relationdomain.Role, bool, error) {
+	return relationdomain.RoleOwner, true, s.err
 }
 
 func TestEventStatusConversions(t *testing.T) {
@@ -202,7 +210,7 @@ func TestCreateEventPublicIDCollision(t *testing.T) {
 	repo.EXPECT().CreateEvent(gomock.Any(), gomock.Any()).Return(repository.ErrEventPublicIDExists)
 
 	service := NewService(application.NewTenantService(repo, passthroughTransactor{}, &membershipRecorder{}, permissionStub{allowed: true}))
-	ctx := internaljwt.ContextWithClaims(context.Background(), internaljwt.Claims{TenantPublicID: tenant.PublicID()})
+	ctx := internaljwt.ContextWithClaims(context.Background(), internaljwt.Claims{TenantPublicID: tenant.PublicID(), RegisteredClaims: jwt.RegisteredClaims{Subject: "user-1"}})
 
 	_, err := service.CreateEvent(ctx, &tenantv1.CreateEventRequest{
 		TenantId: tenant.PublicID(),

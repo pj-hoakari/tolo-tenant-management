@@ -3,6 +3,7 @@ package connect_test
 import (
 	"context"
 	"errors"
+	"net/http"
 	"regexp"
 	"slices"
 	"strings"
@@ -368,35 +369,75 @@ func TestClaimTenantOwnershipOverTransportRollsBackWhenMembershipFails(t *testin
 }
 
 func TestCreateEventOverTransport(t *testing.T) {
+	for _, role := range []relationdomain.Role{relationdomain.RoleOwner, relationdomain.RoleStaff} {
+		t.Run("created by "+role.String(), func(t *testing.T) {
+			p := newProcess(t)
+			tenant := p.createTenant(t, "0123456789abcdef", "Event Host")
+			p.addTenantMember(t, tenant.ID(), callerSubject, role)
+			token := p.mintTenantAccessToken(t, tenant.PublicID())
+
+			res, err := p.tenantClient.CreateEvent(authorized(context.Background(), token), &tenantv1.CreateEventRequest{
+				TenantId: tenant.PublicID(),
+				Name:     "Summer Festival",
+			})
+			if err != nil {
+				t.Fatalf("CreateEvent() error = %v", err)
+			}
+
+			event := res.GetEvent()
+			if got, want := event.GetTenantId(), tenant.PublicID(); got != want {
+				t.Errorf("Event.TenantId = %q, want %q", got, want)
+			}
+
+			if got, want := event.GetName(), "Summer Festival"; got != want {
+				t.Errorf("Event.Name = %q, want %q", got, want)
+			}
+
+			if got, want := event.GetStatus(), tenantv1.EventStatus_EVENT_STATUS_DRAFT; got != want {
+				t.Errorf("Event.Status = %v, want %v", got, want)
+			}
+
+			// Only the public ID is exposed; the internal UUIDv7 never leaves the
+			// service.
+			if got := event.GetEventId(); !publicIDPattern.MatchString(got) {
+				t.Errorf("Event.EventId = %q, want 16-character hex", got)
+			}
+
+			status, body, raw := p.getMemberships(t, tenant.PublicID(), callerSubject)
+			if status != http.StatusOK || len(body.Memberships) != 1 {
+				t.Fatalf("GET memberships = %d %s, want the creator's membership", status, raw)
+			}
+
+			roles := body.Memberships[0].EventRoles
+			if len(roles) != 1 || roles[0].EventID != event.GetEventId() || roles[0].Role != role.String() {
+				t.Errorf("creator event roles = %s, want %s on %q", raw, role, event.GetEventId())
+			}
+		})
+	}
+}
+
+func TestCreateEventOverTransportRejectsCreatorWhoLostMembership(t *testing.T) {
 	p := newProcess(t)
 	tenant := p.createTenant(t, "0123456789abcdef", "Event Host")
+	p.addTenantMember(t, tenant.ID(), callerSubject, relationdomain.RoleOwner)
 	token := p.mintTenantAccessToken(t, tenant.PublicID())
 
-	res, err := p.tenantClient.CreateEvent(authorized(context.Background(), token), &tenantv1.CreateEventRequest{
-		TenantId: tenant.PublicID(),
-		Name:     "Summer Festival",
-	})
+	if err := p.memberships.RevokeTenantMembership(context.Background(), tenant.ID(), callerSubject); err != nil {
+		t.Fatalf("RevokeTenantMembership() error = %v", err)
+	}
+
+	_, err := p.tenantClient.CreateEvent(authorized(context.Background(), token), &tenantv1.CreateEventRequest{TenantId: tenant.PublicID(), Name: "Festival"})
+	if got, want := connectrpc.CodeOf(err), connectrpc.CodeFailedPrecondition; got != want {
+		t.Fatalf("CreateEvent() error code = %v, want %v", got, want)
+	}
+
+	res, err := p.tenantClient.ListEvents(authorized(context.Background(), token), &tenantv1.ListEventsRequest{TenantId: tenant.PublicID(), IncludeArchived: true})
 	if err != nil {
-		t.Fatalf("CreateEvent() error = %v", err)
+		t.Fatalf("ListEvents() error = %v", err)
 	}
 
-	event := res.GetEvent()
-	if got, want := event.GetTenantId(), tenant.PublicID(); got != want {
-		t.Errorf("Event.TenantId = %q, want %q", got, want)
-	}
-
-	if got, want := event.GetName(), "Summer Festival"; got != want {
-		t.Errorf("Event.Name = %q, want %q", got, want)
-	}
-
-	if got, want := event.GetStatus(), tenantv1.EventStatus_EVENT_STATUS_DRAFT; got != want {
-		t.Errorf("Event.Status = %v, want %v", got, want)
-	}
-
-	// Only the public ID is exposed; the internal UUIDv7 never leaves the
-	// service.
-	if got := event.GetEventId(); !publicIDPattern.MatchString(got) {
-		t.Errorf("Event.EventId = %q, want 16-character hex", got)
+	if events := res.GetEvents(); len(events) != 0 {
+		t.Errorf("ListEvents() = %v, want no event", events)
 	}
 }
 
@@ -447,6 +488,8 @@ func TestListEventsOverTransport(t *testing.T) {
 	p := newProcess(t)
 	tenant := p.createTenant(t, "0123456789abcdef", "List Host")
 	other := p.createTenant(t, "fedcba9876543210", "Other Tenant")
+	p.addTenantMember(t, tenant.ID(), callerSubject, relationdomain.RoleOwner)
+	p.addTenantMember(t, other.ID(), callerSubject, relationdomain.RoleOwner)
 	token := p.mintTenantAccessToken(t, tenant.PublicID())
 	otherToken := p.mintTenantAccessToken(t, other.PublicID())
 
@@ -528,6 +571,7 @@ func TestGetEventOverTransport(t *testing.T) {
 	p := newProcess(t)
 	tenant := p.createTenant(t, "0123456789abcdef", "Get Host")
 	other := p.createTenant(t, "fedcba9876543210", "Other Tenant")
+	p.addTenantMember(t, tenant.ID(), callerSubject, relationdomain.RoleOwner)
 	token := p.mintTenantAccessToken(t, tenant.PublicID())
 	created := p.createEvent(t, token, tenant.PublicID(), "Festival")
 
@@ -571,6 +615,7 @@ func TestGetEventOverTransport(t *testing.T) {
 func TestTransitionEventStatusOverTransport(t *testing.T) {
 	p := newProcess(t)
 	tenant := p.createTenant(t, "0123456789abcdef", "Status Host")
+	p.addTenantMember(t, tenant.ID(), callerSubject, relationdomain.RoleOwner)
 	token := p.mintTenantAccessToken(t, tenant.PublicID())
 	eventID := p.createEvent(t, token, tenant.PublicID(), "Status Event").GetEventId()
 
@@ -635,6 +680,7 @@ func TestTransitionEventStatusOverTransportRejectsForeignEvent(t *testing.T) {
 	p := newProcess(t)
 	tenant := p.createTenant(t, "0123456789abcdef", "Own Tenant")
 	other := p.createTenant(t, "fedcba9876543210", "Other Tenant")
+	p.addTenantMember(t, other.ID(), callerSubject, relationdomain.RoleOwner)
 	otherEvent := p.createEvent(t, p.mintTenantAccessToken(t, other.PublicID()), other.PublicID(), "Other Festival")
 
 	_, err := p.tenantClient.TransitionEventStatus(authorized(context.Background(), p.mintTenantAccessToken(t, tenant.PublicID())), &tenantv1.TransitionEventStatusRequest{
