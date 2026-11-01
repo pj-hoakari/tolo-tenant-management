@@ -8,11 +8,11 @@
 
 | ドメインイベント | 対応 |
 |---|---|
-| UserRegistered | Auth 独自 API: `POST /api/signup`（アカウント作成。テナント紐づけ前） |
+| UserRegistered | Auth 独自 API: `POST /api/signup`（認可要求のテナントにアカウントを作成。所属は作らない） |
 | UserLoggedIn／LoginFailed | Auth 独自 API: `POST /api/login`（Web のログイン画面から呼ぶ）。`POST /api/signup` の成功時も UserLoggedIn が成立する |
 | UserLoggedOut | Auth: Discovery の `end_session_endpoint` |
 | TenantAccessTokenIssued | Auth: Discovery の `token_endpoint`（authorization_code） |
-| RegistrationTokenIssued | Auth: Discovery の `token_endpoint`（authorization_code、テナント未指定。仮テナントの所有権取得と招待の受諾に使う最小トークン） |
+| RegistrationTokenIssued | Auth: Discovery の `token_endpoint`（authorization_code、`tenant.join` を求める認可。仮テナントの所有権取得と招待の受諾に使う最小トークン） |
 | EventAccessTokenIssued／TokenExchangeDenied | Auth: Discovery の `token_endpoint`（token-exchange） |
 | TokenRevoked | Auth: Authorization Server Metadata の `revocation_endpoint` |
 | AuditLogRecorded | Auth 内部（全操作について成否を記録） |
