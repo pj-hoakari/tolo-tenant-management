@@ -13,7 +13,11 @@
 | UserLoggedOut | Auth: Discovery の `end_session_endpoint` |
 | TenantAccessTokenIssued | Auth: Discovery の `token_endpoint`（authorization_code） |
 | RegistrationTokenIssued | Auth: Discovery の `token_endpoint`（authorization_code、`tenant.join` を求める認可。仮テナントの所有権取得と招待の受諾に使う最小トークン） |
-| EventAccessTokenIssued／TokenExchangeDenied | Auth: Discovery の `token_endpoint`（token-exchange） |
+| EventAccessTokenIssued／TokenExchangeDenied | Auth: Discovery の `token_endpoint`（token-exchange）。EventAccessTokenIssued は Device Authorization の token endpoint（device_code）でも成立する |
+| DeviceAuthorizationRequested | Auth: Discovery の `device_authorization_endpoint` |
+| DeviceAuthorizationApproved | Auth 独自 API: `POST /api/device-authorization/approve`（BFF だけが呼ぶ） |
+| DeviceGrantRevoked | Auth 独自 API: `POST /api/device-authorization/revoke`（BFF だけが呼ぶ） |
+| ConnectionDelegationCreated／ConnectionDelegationRevoked | BFF（仕様対象外。BFF が接続委任を保持する） |
 | TokenRevoked | Auth: Authorization Server Metadata の `revocation_endpoint` |
 | AuditLogRecorded | Auth 内部（全操作について成否を記録） |
 | TenantInvitationCreated | Tenant Management: RelationAdminService.CreateTenantInvitation |
@@ -30,3 +34,4 @@
 |---|---|
 | 全サービスの認可 | JWT（`tenant_access`／`event_access`）＋ scope。IdP 発行 JWT は原則 Service Gateway が検証して内部 JWT へ変換し、各サービスは Service Gateway の JWKS で内部 JWT をローカル検証する（service_gateway.md）。明示例外は Edge Bridge Service で、`event_access` を直接検証する（Edge Bridge Service） |
 | 識別子の参照整合（テナントが所有） | 関係参照は同一サービス（Tenant Management）内の参照で存在確認する（RPC を経ない） |
+| ESP カメラの認可 | Auth の Device Authorization で `event_access` を発行し、Edge Bridge Service が直接検証する。接続委任は BFF が保持し、Auth は接続用 client の `event_access` を発行する（Auth（IdP）、Edge Bridge Service） |

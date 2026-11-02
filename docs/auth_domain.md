@@ -14,11 +14,15 @@
 | ユーザー / User | IdP の認証主体<br>user_id（`sub`）は IdP がアカウントの作成時に発行する不変の識別子で、ログインに使う識別子とは別に持つ<br>アカウントは1つのテナントに属し、ログインに使う識別子はテナントの中で一意とする。アカウントのテナントと所属は別のもの<br>複数のテナントに入る人は、テナントごとに別のアカウントを持つ |
 | 所属 / Membership | どのテナント／イベントにどのロールで属すか<br>Relation が読み書き所有 |
 | `tenant_access` token | テナント文脈の JWT |
-| `event_access` token | Token Exchange で発行するイベント文脈トークン |
+| `event_access` token | イベント文脈の JWT<br>通常は Token Exchange で発行し、ESP カメラはデバイス認可から直接発行する<br>ESP カメラと観測ページのedge用トークンは `edge_device_id` を持つ |
 | Token Exchange | tenant_access→event_access の一方向のみ<br>subject_token の発行先 client と要求 client の一致を検証し、public client も自ら交換する |
-| scope | tenant.read／tenant.write／events.read と、権限クラスで分けた書き込み scope<br>events.manage（設計・構成）／events.operate（現場運用）／events.report（計測報告・稼働通知と、エッジ端末の観測点の参照） |
-| 送信者拘束 / sender constraint | public client へ発行する外部トークンは、クライアントの鍵の所持証明（DPoP）で提示者を束縛する<br>鍵はクライアントの保護領域に取り出せない形で保持する<br>confidential client（BFF）は client 認証で代替し対象にしない |
-| client scope 上限 / client scope cap | client ごとに許可する scope の上限。ロールから導いた scope との積を発行する |
+| Device Authorization Grant | 入力手段の乏しい機器が、別の端末で承認した利用者を主体として `event_access` を得る手順 |
+| デバイス認可 / Device Grant | Device Authorization Grant で承認されたカメラの認可<br>tenant、event、`edge_device_id`、承認したスタッフ、有効期限を持つ<br>Refresh Token を持ち、失効させるまで更新できる |
+| 失効済み端末 / Revoked Device | 登録解除などで認可を失効させたエッジ端末<br>tenant、event、`edge_device_id` で識別する<br>IdP はこの組への新しい承認と Refresh を拒否する |
+| 接続委任 / Connection Delegation | 観測ページ端末が接続できるカメラの範囲を、登録・再認可時にスタッフが委任したもの<br>tenant、event、観測ページ端末、カメラの一覧、有効期限を持ち、BFF が保持する |
+| scope | tenant.read／tenant.write／events.read／events.stream と、権限クラスで分けた書き込み scope<br>events.manage（設計・構成）／events.operate（現場運用）／events.report（計測報告・稼働通知と、エッジ端末の観測点の参照）／events.stream（ESP カメラの signaling への参加。カメラ client だけに許可する） |
+| 送信者拘束 / sender constraint | public client へ発行する外部トークンは、クライアントの鍵の所持証明（DPoP）で提示者を束縛する<br>鍵はクライアントの保護領域に取り出せない形で保持する<br>confidential client（BFF）は client 認証で代替し対象にしない<br>ESP カメラは public client だが bearer とする（Edge Bridge Service が `cnf` を拒否するため） |
+| client scope 上限 / client scope cap | client ごとに許可する scope の上限。通常はロールから導いた scope との積を発行する<br>ESP カメラのデバイス認可は積を使わず、承認者のイベントロールとカメラ client の上限で発行する |
 | resource / audience | 認可要求では対象テナント（テナント URI）、Token Exchange では対象イベント（イベント URI）／バックエンド API 全体の論理 audience（例 backend-api。登録は1つ）<br>検証は Service Gateway と Edge Bridge Service が行う |
 | テナント参加用の最小トークン / registration token | テナント文脈なしで、まだ所属していないテナントに入るためのトークン<br>scope は `tenant.join` のみで、仮テナントの所有権取得（ClaimTenantOwnership）と招待の受諾（AcceptTenantInvitation）に限定 |
 | 招待 / tenant invitation | テナント、テナントロール（スタッフに限る）、表示名を固定し、一回限りの招待トークンで受諾させる参加の申し出<br>オーナーが作成、一覧、取り消しを行い、受諾した時点で所属が確定する |
@@ -28,7 +32,7 @@
 | 引き渡しコード / handoff code | ルートドメインでのログインの往復の後に、BFF がテナントのホストへ渡す一回限りの値<br>テナントのホストでログインを始めたブラウザでだけ使え、そのホストのセッションを作る |
 
 ロール→scope：オーナー＝全scope／スタッフ＝tenant.write を除く全scope／管理者（予約）＝オーナー相当
-発行する scope はロールとクライアント種別の両方から決める（client scope 上限との積）
+発行する scope は通常、ロールとクライアント種別の両方から決める（client scope 上限との積）。ESP カメラのデバイス認可は例外とし、承認者のイベントロールとカメラ client の上限で決める
 ロールは JWT claim に載せない
 
 ## ドメインイベント
@@ -41,8 +45,13 @@
 | ログアウトした | UserLoggedOut | ログアウト |
 | テナントアクセストークン発行された | TenantAccessTokenIssued | 認可コードフロー |
 | テナント参加用トークン発行された | RegistrationTokenIssued | `tenant.join` を求める認可コードフロー（仮テナントの所有権取得、招待の受諾） |
-| イベントアクセストークン発行された | EventAccessTokenIssued | Token Exchange 成功 |
+| イベントアクセストークン発行された | EventAccessTokenIssued | Token Exchange 成功、またはデバイス認可からの発行 |
 | トークン交換拒否された | TokenExchangeDenied | 遷移／audience／scope 違反、subject_token の発行先 client と要求 client の不一致、archived イベントへの交換、DPoP の鍵不一致 |
+| デバイス認可が要求された | DeviceAuthorizationRequested | ESP カメラが Device Authorization を開始 |
+| デバイス認可が承認された | DeviceAuthorizationApproved | BFF が `user_code` と対象端末を承認 |
+| デバイス認可が失効した | DeviceGrantRevoked | 登録解除、イベント終了、紛失、管理操作、Refresh Token の使い直し |
+| 接続委任が作られた | ConnectionDelegationCreated | カメラの登録・紐づけ、観測ページの再認可 |
+| 接続委任が失効した | ConnectionDelegationRevoked | カメラの登録解除、観測ページ端末の登録解除、イベント終了、期限切れ、管理操作 |
 | トークン失効された | TokenRevoked | 失効要求 |
 | 監査ログ記録された | AuditLogRecorded | ログイン／ログアウト／発行／交換／失効の成否 |
 | 招待が作成された | TenantInvitationCreated | オーナーによる招待の作成 |
@@ -59,7 +68,12 @@
 - relation model 制約：1ユーザーは複数テナントに所属しうる／event∈tenant／event-role⇒tenant-role／tenant-role と event-role は独立
 - Token Exchange は tenant→event の一方向のみ
 - event_access は対象イベントのイベントロールを持つユーザーにだけ発行する。イベントを作ったユーザーは作成と同時にイベントロールを持つ
-- 発行する scope は client scope 上限とロール由来 scope の積を超えない
+- 通常の認可では、発行する scope は client scope 上限とロール由来 scope の積を超えない
+- `events.stream` はロール→scope の対応に含めない。ESP カメラの client と承認済みのデバイス認可にだけ、承認者のイベントロールとカメラ client の上限で発行する
+- デバイス認可の主体は、承認したスタッフとする。カメラは IdP の主体にならない
+- デバイス認可は、tenant、event、`edge_device_id` に結びつける。登録解除で端末を失効させ、失効済みの `edge_device_id` への承認と Refresh を拒否する
+- デバイス認可の承認は BFF だけが行い、スタッフのイベントロールと端末の登録状態を確認する
+- 接続委任は BFF が保持し、観測ページ端末、接続できるカメラ、イベント、有効期限に束縛する
 - ロールは scope の発行判定にのみ使う（claim に載せない）
 - 識別子はテナントが所有し、存在しないIDへは所属を作らない
 - イベント状態はテナントが所有し、本コンテキストは持たない
