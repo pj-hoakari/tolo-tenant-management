@@ -199,7 +199,7 @@ var clientErrors = infraconnect.ClientErrors{
 	{Target: repository.ErrInvitationNotFound, Code: connectrpc.CodeNotFound, Message: "invitation not found"},
 	{Target: repository.ErrInvitationPublicIDExists, Code: connectrpc.CodeAlreadyExists, Message: "generated invitation ID already exists; retry the request"},
 	{Target: domain.ErrInvitationNotPending, Code: connectrpc.CodeFailedPrecondition, Message: "invitation is accepted, revoked, or expired"},
-	{Target: application.ErrInvitationRejected, Code: connectrpc.CodeUnauthenticated, Message: "invitation token is invalid"},
+	{Target: application.ErrInvitationRejected, Code: connectrpc.CodePermissionDenied, Message: "invitation token is invalid"},
 	{Target: repository.ErrEventRoleNotFound, Code: connectrpc.CodeNotFound, Message: "event role not found"},
 	{Target: tenantrepository.ErrTenantArchived, Code: connectrpc.CodeFailedPrecondition, Message: "tenant is archived"},
 	{Target: tenantrepository.ErrEventArchived, Code: connectrpc.CodeFailedPrecondition, Message: "event is archived"},

@@ -129,7 +129,7 @@ func TestTenantInvitationOverTransport(t *testing.T) {
 
 	t.Run("the invitation token is consumed", func(t *testing.T) {
 		_, err := f.acceptInvitation(t, "invitee-2", f.tenantA.PublicID(), created.GetInvitationToken())
-		if got, want := connectrpc.CodeOf(err), connectrpc.CodeUnauthenticated; got != want {
+		if got, want := connectrpc.CodeOf(err), connectrpc.CodePermissionDenied; got != want {
 			t.Fatalf("second AcceptTenantInvitation() error code = %v, want %v", got, want)
 		}
 	})
@@ -173,8 +173,8 @@ func TestAcceptTenantInvitationOverTransportRejections(t *testing.T) {
 		{name: "missing bearer token", token: "", tenantID: f.tenantA.PublicID(), invitationToken: invitationToken, want: connectrpc.CodeUnauthenticated},
 		{name: "tenant_access token", token: f.tokenA, tenantID: f.tenantA.PublicID(), invitationToken: invitationToken, want: connectrpc.CodeUnauthenticated},
 		{name: "registration token without tenant.join", token: f.mintRegistrationTokenWithScope(t, "tenant.read"), tenantID: f.tenantA.PublicID(), invitationToken: invitationToken, want: connectrpc.CodePermissionDenied},
-		{name: "wrong invitation token", token: f.mintJoinToken(t, "invitee-1"), tenantID: f.tenantA.PublicID(), invitationToken: invitationToken + "x", want: connectrpc.CodeUnauthenticated},
-		{name: "invitation token of another tenant", token: f.mintJoinToken(t, "invitee-1"), tenantID: f.tenantB.PublicID(), invitationToken: invitationToken, want: connectrpc.CodeUnauthenticated},
+		{name: "wrong invitation token", token: f.mintJoinToken(t, "invitee-1"), tenantID: f.tenantA.PublicID(), invitationToken: invitationToken + "x", want: connectrpc.CodePermissionDenied},
+		{name: "invitation token of another tenant", token: f.mintJoinToken(t, "invitee-1"), tenantID: f.tenantB.PublicID(), invitationToken: invitationToken, want: connectrpc.CodePermissionDenied},
 		{name: "unknown tenant", token: f.mintJoinToken(t, "invitee-1"), tenantID: "0000000000000000", invitationToken: invitationToken, want: connectrpc.CodeNotFound},
 		{name: "missing invitation token", token: f.mintJoinToken(t, "invitee-1"), tenantID: f.tenantA.PublicID(), invitationToken: "", want: connectrpc.CodeInvalidArgument},
 		{name: "missing tenant", token: f.mintJoinToken(t, "invitee-1"), tenantID: "", invitationToken: invitationToken, want: connectrpc.CodeInvalidArgument},
@@ -251,8 +251,8 @@ func TestRevokeTenantInvitationOverTransport(t *testing.T) {
 		t.Errorf("RevokeTenantInvitation() = %v, want the revoked invitation", revoked)
 	}
 
-	if _, err := f.acceptInvitation(t, "invitee-1", f.tenantA.PublicID(), created.GetInvitationToken()); connectrpc.CodeOf(err) != connectrpc.CodeUnauthenticated {
-		t.Errorf("AcceptTenantInvitation(revoked) error = %v, want unauthenticated", err)
+	if _, err := f.acceptInvitation(t, "invitee-1", f.tenantA.PublicID(), created.GetInvitationToken()); connectrpc.CodeOf(err) != connectrpc.CodePermissionDenied {
+		t.Errorf("AcceptTenantInvitation(revoked) error = %v, want permission_denied", err)
 	}
 
 	accepted := f.mustCreateInvitation(t, "Taro")

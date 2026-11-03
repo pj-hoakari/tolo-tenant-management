@@ -144,6 +144,7 @@ func TestConnectError(t *testing.T) {
 		{err: relationrepository.ErrMembershipAlreadyExists, want: connectrpc.CodeFailedPrecondition},
 		{err: tenantrepository.ErrTenantArchived, want: connectrpc.CodeFailedPrecondition},
 		{err: application.ErrPermissionDenied, want: connectrpc.CodePermissionDenied},
+		{err: application.ErrInvitationRejected, want: connectrpc.CodePermissionDenied},
 		{err: tenantctx.ErrMismatch, want: connectrpc.CodePermissionDenied},
 		{err: tenantctx.ErrSubjectMissing, want: connectrpc.CodeUnauthenticated},
 		{err: tenantctx.ErrMissing, want: connectrpc.CodeUnauthenticated},
