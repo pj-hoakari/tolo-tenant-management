@@ -234,7 +234,7 @@ proto の `tenant_id`／`event_id` はいずれも公開 ID（ランダムな 16
 `pending_owner` のテナントは `ClaimTenantOwnership` 以外のテナント配下の RPC（`CreateEvent`、`ListEvents` など）を `failed_precondition` で拒否する。
 期限切れの `pending_owner` は次の `StartTenantRegistration` の際に物理削除する。
 テナント名は表示用で、重複を許す。
-トークンの不正、期限切れ、使用済みはいずれも `unauthenticated` で、理由は区別しない。
+トークンの不正、期限切れ、使用済みはいずれも `permission_denied` で、理由は区別しない。
 
 ### サブドメイン名
 

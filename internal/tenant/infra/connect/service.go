@@ -45,7 +45,7 @@ var clientErrors = infraconnect.ClientErrors{
 	{Target: application.ErrCreatorNotMember, Code: connectrpc.CodeFailedPrecondition, Message: "caller does not belong to the tenant"},
 	{Target: application.ErrPermissionDenied, Code: connectrpc.CodePermissionDenied, Message: "permission denied"},
 	{Target: tenantctx.ErrMismatch, Code: connectrpc.CodePermissionDenied, Message: "tenant does not match the token"},
-	{Target: application.ErrOwnershipClaimRejected, Code: connectrpc.CodeUnauthenticated, Message: "ownership claim rejected"},
+	{Target: application.ErrOwnershipClaimRejected, Code: connectrpc.CodePermissionDenied, Message: "ownership claim rejected"},
 	{Target: tenantctx.ErrSubjectMissing, Code: connectrpc.CodeUnauthenticated, Message: "subject is missing from the token"},
 	{Target: tenantctx.ErrMissing, Code: connectrpc.CodeUnauthenticated, Message: "tenant ID is missing from the token"},
 	{Target: infradb.ErrTransactionAborted, Code: connectrpc.CodeAborted, Message: "transaction aborted; retry the request"},
