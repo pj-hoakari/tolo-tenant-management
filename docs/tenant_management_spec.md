@@ -401,7 +401,7 @@ message ListMembershipsResponse {
 | 事象 | Connect エラーコード |
 |---|---|
 | サブドメイン名の重複、公開 ID の衝突 | `already_exists` |
-| 所有権取得トークンまたは招待トークンが不正、期限切れ、使用済み、取り消し済み | `unauthenticated` |
+| 所有権取得トークンまたは招待トークンが不正、期限切れ、使用済み、取り消し済み | `permission_denied` |
 | relation model 制約違反（同一テナントへの重複所属、event∈tenant・event-role⇒tenant-role の違反）、最後のオーナーの降格・削除、`ROLE_ADMIN` 以外の予約違反はそれぞれ上記「関係参照」のとおり | `failed_precondition`（`ROLE_ADMIN` の付与は `invalid_argument`） |
 | 存在しないテナント／イベント | `not_found` |
 | `pending_owner`またはアーカイブ済みテナント／イベントへの許可外の書き込み、許容外の状態遷移 | `failed_precondition` |
