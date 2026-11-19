@@ -19,7 +19,7 @@ require (
 	github.com/go-logr/logr v1.4.4
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
-	github.com/jackc/pgx/v5 v5.12.0
+	github.com/jackc/pgx/v5 v5.13.0
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/pj-hoakari/internal-jwt-handling v0.5.1
 	github.com/pj-hoakari/protoc-gen-authz-go v0.4.2
