@@ -383,6 +383,52 @@ GET /tenants/0123456789abcdef/users/user-1/memberships
 テナント境界は保たれるが、呼び出し元がそのテナントの関係者であることは確認していない。
 到達できるのは想定した呼び出し元だけになるよう、ネットワーク（VPC・ファイアウォール）または前段のゲートウェイで制限すること。
 
+### 登録許可の照会の HTTP API
+
+IdP は `tenant.join` の認可を続ける前に、招待トークンまたは所有権取得トークン（登録許可）が認可要求のテナントで有効かを照会する（ADR-0139）。
+この照会も `relationhttpapi.Mount` が所属参照と同じハンドラ・同じポートに登録する。
+
+| メソッドとパス | パスパラメータ |
+|---|---|
+| `POST /tenants/{tenant_id}/registration-grants/verify` | `tenant_id` |
+
+本文は JSON のオブジェクトで、`invitation_token` と `ownership_claim_token` のちょうど 1 つを空でない文字列で持つ。
+キーは認可要求のパラメータ名と同じである。
+トークンは URL に載せない。
+
+```
+POST /tenants/0123456789abcdef/registration-grants/verify
+Content-Type: application/json
+
+{"invitation_token": "<招待トークン>"}
+```
+
+判定はステータスではなく本文の `valid` で返す。
+応答は 200（`Content-Type: application/json; charset=utf-8`、`Cache-Control: no-store`）である。
+
+```json
+{"valid": true}
+```
+
+- 招待トークンは、指定したテナントの招待のトークンのハッシュと一致し、招待が期限内で、受諾も取り消しもされておらず、テナントが `owned` かつアーカイブされていないときに有効とする
+- 所有権取得トークンは、指定したテナントが期限内の `pending_owner` で、所有権取得トークンのハッシュと一致するときに有効とする
+- 無効の理由は区別しない。存在しないテナントにも 404 ではなく `{"valid": false}` を返す
+- 照会はトークンを消費せず、行のロックも取らない。消費は `AcceptTenantInvitation` と `ClaimTenantOwnership` が行う
+
+| 状態 | ステータス |
+|---|---|
+| 有効または無効（存在しないテナントを含む） | 200 |
+| 本文が JSON でない、未知のキーがある、後続のデータがある、4 KiB を超える | 400（`request body is malformed`） |
+| トークンが両方ある、どちらもない、空文字列である | 400（`exactly one of invitation_token and ownership_claim_token is required`） |
+| `tenant_id` が空白のみ | 400 |
+| タイムアウト | 504 |
+| その他の内部エラー | 500（原因はサーバーログにのみ出力し、本文は `internal error` 固定） |
+
+`valid` を真偽値で持つ 200 だけが判定である。
+呼び出し元は、それ以外の応答（ルートに一致しない 404 を含む）を照会の失敗として扱う。
+本文とトークンはログに出さない。
+到達の制限は所属参照と同じく、ネットワークまたは前段のゲートウェイで行う。
+
 ## 仕様文書
 
 - `docs/tenant_management_spec.md`: 本サービスの入出力仕様。TenantService と RelationAdminService の RPC 一覧と振る舞いの正本

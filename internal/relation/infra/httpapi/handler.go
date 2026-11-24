@@ -1,13 +1,15 @@
-// Package httpapi serves the memberships of one user over plain HTTP, next to
-// the Connect services of the same process.
+// Package httpapi serves the memberships of one user, and whether a
+// registration grant is valid, over plain HTTP, next to the Connect services
+// of the same process.
 //
 // The callers of this API — today the identity provider — hold no internal
 // JWT, so there is no verified claim to scope the read by and nothing in the
 // process restricts who may call it: reachability has to be limited by the
 // network or by the gateway in front of it. The tenant boundary is therefore
-// named by the request: the handler binds the tenant to the context and the
-// same use case the Connect transport calls answers inside it, so the boundary
-// is enforced in one place for both transports.
+// named by the request: each handler binds the tenant to the context and its
+// use case answers inside it; the memberships read is the same use case the
+// Connect transport calls, so the boundary is enforced in one place for both
+// transports.
 //
 // The transport is plain HTTP rather than Connect because these callers are
 // not Connect clients; the API therefore carries its own JSON representation
@@ -19,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -41,6 +44,15 @@ import (
 // any other method with 405 by itself.
 const ListMembershipsPattern = "GET /tenants/{tenant_id}/users/{user_id}/memberships"
 
+const VerifyRegistrationGrantPattern = "POST /tenants/{tenant_id}/registration-grants/verify"
+
+const maxRegistrationGrantBytes = 4 << 10
+
+var (
+	errGrantBodyMalformed = errors.New("request body is malformed")
+	errGrantRequired      = errors.New("exactly one of invitation_token and ownership_claim_token is required")
+)
+
 // The fixed messages the API answers with. The parameters are named as the
 // route names them, so a caller reads the message against the request it sent;
 // an internal failure says nothing at all, its cause staying in the log.
@@ -51,19 +63,20 @@ const (
 	messageInternal       = "internal error"
 )
 
-// membershipLister is the slice of the relation use cases this API serves. It
-// is the same operation the Connect transport calls, answered inside the
-// tenant the context is bound to.
-type membershipLister interface {
+// httpUseCases is the slice of the relation use cases this API serves, each
+// answered inside the tenant the context is bound to.
+type httpUseCases interface {
 	ListMemberships(context.Context, application.ListMembershipsInput) ([]domain.Membership, error)
+	VerifyRegistrationGrant(context.Context, application.VerifyRegistrationGrantInput) (bool, error)
 }
 
 // Mount registers the API on the process mux. The callers hold no internal
-// JWT, so the route is unauthenticated: the auth interceptor and the
-// process-wide Connect interceptors do not apply to it.
-func Mount(useCases membershipLister) infraconnect.Mount {
+// JWT, so the routes are unauthenticated: the auth interceptor and the
+// process-wide Connect interceptors do not apply to them.
+func Mount(useCases httpUseCases) infraconnect.Mount {
 	return func(mux *http.ServeMux, _ infraconnect.AuthInterceptor, _ ...connectrpc.ServerInterceptor) error {
 		mux.HandleFunc(ListMembershipsPattern, listMemberships(useCases))
+		mux.HandleFunc(VerifyRegistrationGrantPattern, verifyRegistrationGrant(useCases))
 
 		return nil
 	}
@@ -101,7 +114,7 @@ type errorResponse struct {
 // that leaves either segment out is refused by the mux before this runs. The
 // emptiness checks below therefore only catch a segment that is present but
 // holds nothing but whitespace.
-func listMemberships(useCases membershipLister) http.HandlerFunc {
+func listMemberships(useCases httpUseCases) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		tenantPublicID := strings.TrimSpace(r.PathValue("tenant_id"))
@@ -166,6 +179,75 @@ func membershipsBody(memberships []domain.Membership) []membership {
 	}
 
 	return body
+}
+
+type registrationGrantRequest struct {
+	InvitationToken     *string `json:"invitation_token"`
+	OwnershipClaimToken *string `json:"ownership_claim_token"`
+}
+
+type registrationGrantResponse struct {
+	Valid bool `json:"valid"`
+}
+
+func verifyRegistrationGrant(useCases httpUseCases) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+
+		ctx := r.Context()
+
+		tenantPublicID := strings.TrimSpace(r.PathValue("tenant_id"))
+		if tenantPublicID == "" {
+			writeJSON(ctx, w, http.StatusBadRequest, errorResponse{Error: messageTenantRequired})
+
+			return
+		}
+
+		kind, token, err := parseRegistrationGrant(http.MaxBytesReader(w, r.Body, maxRegistrationGrantBytes))
+		if err != nil {
+			writeJSON(ctx, w, http.StatusBadRequest, errorResponse{Error: err.Error()})
+
+			return
+		}
+
+		ctx = tenantctx.WithTenantPublicID(ctx, tenantPublicID)
+
+		valid, err := useCases.VerifyRegistrationGrant(ctx, application.VerifyRegistrationGrantInput{
+			TenantPublicID: tenantPublicID,
+			Kind:           kind,
+			Token:          token,
+		})
+		if err != nil {
+			writeError(ctx, w, err)
+
+			return
+		}
+
+		writeJSON(ctx, w, http.StatusOK, registrationGrantResponse{Valid: valid})
+	}
+}
+
+func parseRegistrationGrant(body io.Reader) (application.RegistrationGrantKind, string, error) {
+	decoder := json.NewDecoder(body)
+	decoder.DisallowUnknownFields()
+
+	var request registrationGrantRequest
+	if err := decoder.Decode(&request); err != nil {
+		return 0, "", errGrantBodyMalformed
+	}
+
+	if err := decoder.Decode(new(json.RawMessage)); !errors.Is(err, io.EOF) {
+		return 0, "", errGrantBodyMalformed
+	}
+
+	switch {
+	case request.InvitationToken != nil && request.OwnershipClaimToken == nil && *request.InvitationToken != "":
+		return application.InvitationGrant, *request.InvitationToken, nil
+	case request.OwnershipClaimToken != nil && request.InvitationToken == nil && *request.OwnershipClaimToken != "":
+		return application.OwnershipClaimGrant, *request.OwnershipClaimToken, nil
+	default:
+		return 0, "", errGrantRequired
+	}
 }
 
 // writeError maps a use case failure onto a status code. A failure the caller
