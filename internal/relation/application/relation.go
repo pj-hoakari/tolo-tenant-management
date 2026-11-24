@@ -59,6 +59,21 @@ type AcceptTenantInvitationInput struct {
 	Token          string
 }
 
+var ErrRegistrationGrantRequired = errors.New("registration grant is required")
+
+type RegistrationGrantKind uint8
+
+const (
+	InvitationGrant RegistrationGrantKind = iota + 1
+	OwnershipClaimGrant
+)
+
+type VerifyRegistrationGrantInput struct {
+	TenantPublicID string
+	Kind           RegistrationGrantKind
+	Token          string
+}
+
 // AddTenantMemberInput identifies the membership to create.
 type AddTenantMemberInput struct {
 	TenantPublicID string
@@ -430,6 +445,43 @@ func (s *RelationService) AcceptTenantInvitation(ctx context.Context, input Acce
 	}
 
 	return membership, nil
+}
+
+func (s *RelationService) VerifyRegistrationGrant(ctx context.Context, input VerifyRegistrationGrantInput) (bool, error) {
+	if input.TenantPublicID == "" {
+		return false, ErrTenantIDRequired
+	}
+
+	if input.Token == "" {
+		return false, ErrRegistrationGrantRequired
+	}
+
+	tenant, claim, err := s.tenants.FindTenantWithClaimByPublicID(ctx, input.TenantPublicID)
+	if errors.Is(err, tenantrepository.ErrTenantNotFound) {
+		return false, nil
+	}
+
+	if err != nil {
+		return false, err
+	}
+
+	switch input.Kind {
+	case InvitationGrant:
+		invitation, err := s.invitations.FindInvitationByToken(ctx, tenant.ID(), onetimetoken.HashOf(input.Token))
+		if errors.Is(err, repository.ErrInvitationNotFound) {
+			return false, nil
+		}
+
+		if err != nil {
+			return false, err
+		}
+
+		return admitInvitation(tenant, invitation, s.now()) == nil, nil
+	case OwnershipClaimGrant:
+		return tenant.AdmitsOwnershipClaim(claim, input.Token, s.now()), nil
+	}
+
+	return false, ErrRegistrationGrantRequired
 }
 
 func admitInvitation(tenant tenantdomain.Tenant, invitation domain.Invitation, now time.Time) error {
