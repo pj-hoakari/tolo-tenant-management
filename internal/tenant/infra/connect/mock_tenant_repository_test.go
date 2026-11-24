@@ -214,6 +214,22 @@ func (mr *MockTenantRepositoryMockRecorder) FindTenantPublicIDBySubdomain(arg0, 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindTenantPublicIDBySubdomain", reflect.TypeOf((*MockTenantRepository)(nil).FindTenantPublicIDBySubdomain), arg0, arg1)
 }
 
+// FindTenantWithClaimByPublicID mocks base method.
+func (m *MockTenantRepository) FindTenantWithClaimByPublicID(arg0 context.Context, arg1 string) (domain.Tenant, domain.OwnershipClaim, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FindTenantWithClaimByPublicID", arg0, arg1)
+	ret0, _ := ret[0].(domain.Tenant)
+	ret1, _ := ret[1].(domain.OwnershipClaim)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// FindTenantWithClaimByPublicID indicates an expected call of FindTenantWithClaimByPublicID.
+func (mr *MockTenantRepositoryMockRecorder) FindTenantWithClaimByPublicID(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindTenantWithClaimByPublicID", reflect.TypeOf((*MockTenantRepository)(nil).FindTenantWithClaimByPublicID), arg0, arg1)
+}
+
 // ListEventsByTenantID mocks base method.
 func (m *MockTenantRepository) ListEventsByTenantID(ctx context.Context, tenantID string, filter repository.ListEventsFilter) ([]domain.Event, error) {
 	m.ctrl.T.Helper()

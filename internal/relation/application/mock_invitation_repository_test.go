@@ -57,6 +57,21 @@ func (mr *MockInvitationRepositoryMockRecorder) CreateInvitation(ctx, invitation
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateInvitation", reflect.TypeOf((*MockInvitationRepository)(nil).CreateInvitation), ctx, invitation, tokenHash)
 }
 
+// FindInvitationByToken mocks base method.
+func (m *MockInvitationRepository) FindInvitationByToken(ctx context.Context, tenantID string, tokenHash onetimetoken.Hash) (domain.Invitation, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FindInvitationByToken", ctx, tenantID, tokenHash)
+	ret0, _ := ret[0].(domain.Invitation)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// FindInvitationByToken indicates an expected call of FindInvitationByToken.
+func (mr *MockInvitationRepositoryMockRecorder) FindInvitationByToken(ctx, tenantID, tokenHash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindInvitationByToken", reflect.TypeOf((*MockInvitationRepository)(nil).FindInvitationByToken), ctx, tenantID, tokenHash)
+}
+
 // FindInvitationByTokenForUpdate mocks base method.
 func (m *MockInvitationRepository) FindInvitationByTokenForUpdate(ctx context.Context, tenantID string, tokenHash onetimetoken.Hash) (domain.Invitation, error) {
 	m.ctrl.T.Helper()

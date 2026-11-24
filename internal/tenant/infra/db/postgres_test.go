@@ -567,6 +567,78 @@ func TestPostgresTenantRepositoryOwnershipClaim(t *testing.T) {
 	}
 }
 
+func TestPostgresTenantRepositoryFindTenantWithClaimByPublicID(t *testing.T) {
+	repository := newTestRepository(t)
+	ctx := context.Background()
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+
+	token, hash, err := onetimetoken.New()
+	if err != nil {
+		t.Fatalf("onetimetoken.New() error = %v", err)
+	}
+
+	pending := domain.NewTenant("00000000-0000-0000-0000-000000000001", "tenant-001", "Acme", "standard", domain.TenantOwnershipStatePendingOwner, domain.Subdomain{}, false)
+	if err := repository.CreatePendingTenant(ctx, pending, domain.OwnershipClaim{TokenHash: hash, ExpiresAt: now}); err != nil {
+		t.Fatalf("CreatePendingTenant() error = %v", err)
+	}
+
+	owned := newTenant(t, "00000000-0000-0000-0000-000000000002", "tenant-002", "Owned", false)
+	if err := repository.CreateTenant(ctx, owned); err != nil {
+		t.Fatalf("CreateTenant() error = %v", err)
+	}
+
+	tenant, claim, err := repository.FindTenantWithClaimByPublicID(ctx, pending.PublicID())
+	if err != nil {
+		t.Fatalf("FindTenantWithClaimByPublicID(pending) error = %v", err)
+	}
+
+	if tenant != pending {
+		t.Errorf("pending tenant = %#v, want %#v", tenant, pending)
+	}
+
+	if !claim.TokenHash.Matches(token) || !claim.ExpiresAt.Equal(now) {
+		t.Errorf("pending claim = %#v, want hash of token expiring at %v", claim, now)
+	}
+
+	tenant, claim, err = repository.FindTenantWithClaimByPublicID(ctx, owned.PublicID())
+	if err != nil {
+		t.Fatalf("FindTenantWithClaimByPublicID(owned) error = %v", err)
+	}
+
+	if tenant != owned || claim != (domain.OwnershipClaim{}) {
+		t.Errorf("owned tenant, claim = %#v, %#v, want %#v with no claim", tenant, claim, owned)
+	}
+
+	if _, _, err := repository.FindTenantWithClaimByPublicID(ctx, "tenant-999"); !errors.Is(err, repositorypkg.ErrTenantNotFound) {
+		t.Errorf("FindTenantWithClaimByPublicID(unknown) error = %v, want %v", err, repositorypkg.ErrTenantNotFound)
+	}
+
+	err = repository.WithinTransaction(ctx, func(locked context.Context) error {
+		if _, _, err := repository.FindTenantByPublicIDForUpdate(locked, pending.PublicID()); err != nil {
+			return err
+		}
+
+		readCtx, cancelRead := context.WithTimeout(ctx, 2*time.Second)
+		defer cancelRead()
+
+		if _, _, err := repository.FindTenantWithClaimByPublicID(readCtx, pending.PublicID()); err != nil {
+			t.Errorf("FindTenantWithClaimByPublicID() while the row is locked error = %v, want nil", err)
+		}
+
+		lockCtx, cancelLock := context.WithTimeout(ctx, 200*time.Millisecond)
+		defer cancelLock()
+
+		if _, _, err := repository.FindTenantByPublicIDForUpdate(lockCtx, pending.PublicID()); !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("FindTenantByPublicIDForUpdate() while the row is locked error = %v, want %v", err, context.DeadlineExceeded)
+		}
+
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("locking transaction error = %v", err)
+	}
+}
+
 func TestPostgresTenantRepositorySubdomainIsNeverReused(t *testing.T) {
 	repository := newTestRepository(t)
 	ctx := context.Background()

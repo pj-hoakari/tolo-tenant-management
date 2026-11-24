@@ -4,6 +4,7 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"time"
 )
 
 //go:generate go tool stringer -type=TenantOwnershipState -trimprefix=TenantOwnershipState -linecomment -output=tenant_enum_string.go
@@ -82,6 +83,17 @@ func (t Tenant) ClaimOwnership(subdomain Subdomain) (Tenant, error) {
 	t.subdomain = subdomain
 
 	return t, nil
+}
+
+func (t Tenant) AdmitsOwnershipClaim(claim OwnershipClaim, token string, now time.Time) bool {
+	// Evaluate every check without short-circuiting, so the response time
+	// does not reveal whether the tenant is still pending or the claim has
+	// expired; only the combined verdict is observable.
+	tokenMatches := claim.TokenHash.Matches(token)
+	pending := t.ownershipState == TenantOwnershipStatePendingOwner
+	expired := claim.Expired(now)
+
+	return pending && !expired && tokenMatches
 }
 
 // ChangeContractPlan returns a copy of the tenant on the given contract plan.

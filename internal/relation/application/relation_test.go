@@ -698,3 +698,134 @@ func TestAcceptTenantInvitationRejections(t *testing.T) {
 		}
 	})
 }
+
+func newLockFreeMocks(t *testing.T) mocks {
+	t.Helper()
+
+	ctrl := gomock.NewController(t)
+	m := mocks{
+		tenants:     NewMockTenantRepository(ctrl),
+		memberships: NewMockMembershipRepository(ctrl),
+		invitations: NewMockInvitationRepository(ctrl),
+	}
+	m.service = application.NewRelationService(m.tenants, m.memberships, m.invitations, NewMockTransactor(ctrl), application.WithClock(func() time.Time { return testNow }))
+
+	return m
+}
+
+func TestVerifyRegistrationGrant(t *testing.T) {
+	t.Parallel()
+
+	const token = "grant-token"
+
+	invitationIn := func(state domain.InvitationState, expiresAt time.Time) domain.Invitation {
+		return domain.NewInvitation("invitation-id", "invitation-public-id", ownedTenant.ID(), ownedTenant.PublicID(), domain.RoleStaff, hanako, expiresAt, state)
+	}
+	liveClaim := tenantdomain.OwnershipClaim{TokenHash: onetimetoken.HashOf(token), ExpiresAt: testNow.Add(time.Hour)}
+
+	tests := []struct {
+		name          string
+		kind          application.RegistrationGrantKind
+		tenant        tenantdomain.Tenant
+		claim         tenantdomain.OwnershipClaim
+		tenantErr     error
+		invitation    domain.Invitation
+		invitationErr error
+		want          bool
+	}{
+		{name: "open invitation of an owned tenant", kind: application.InvitationGrant, tenant: ownedTenant, invitation: invitationIn(domain.InvitationPending, testNow.Add(time.Hour)), want: true},
+		{name: "expired invitation", kind: application.InvitationGrant, tenant: ownedTenant, invitation: invitationIn(domain.InvitationPending, testNow), want: false},
+		{name: "accepted invitation", kind: application.InvitationGrant, tenant: ownedTenant, invitation: invitationIn(domain.InvitationAccepted, testNow.Add(time.Hour)), want: false},
+		{name: "revoked invitation", kind: application.InvitationGrant, tenant: ownedTenant, invitation: invitationIn(domain.InvitationRevoked, testNow.Add(time.Hour)), want: false},
+		{name: "invitation of a pending_owner tenant", kind: application.InvitationGrant, tenant: pendingTenant, invitation: invitationIn(domain.InvitationPending, testNow.Add(time.Hour)), want: false},
+		{name: "invitation of an archived tenant", kind: application.InvitationGrant, tenant: archivedTenant, invitation: invitationIn(domain.InvitationPending, testNow.Add(time.Hour)), want: false},
+		{name: "unknown invitation", kind: application.InvitationGrant, tenant: ownedTenant, invitationErr: repository.ErrInvitationNotFound, want: false},
+		{name: "invitation of an unknown tenant", kind: application.InvitationGrant, tenantErr: tenantrepository.ErrTenantNotFound, want: false},
+		{name: "live ownership claim", kind: application.OwnershipClaimGrant, tenant: pendingTenant, claim: liveClaim, want: true},
+		{name: "expired ownership claim", kind: application.OwnershipClaimGrant, tenant: pendingTenant, claim: tenantdomain.OwnershipClaim{TokenHash: onetimetoken.HashOf(token), ExpiresAt: testNow}, want: false},
+		{name: "ownership claim of an owned tenant", kind: application.OwnershipClaimGrant, tenant: ownedTenant, want: false},
+		{name: "ownership claim of an unknown tenant", kind: application.OwnershipClaimGrant, tenantErr: tenantrepository.ErrTenantNotFound, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			m := newLockFreeMocks(t)
+			m.tenants.EXPECT().FindTenantWithClaimByPublicID(gomock.Any(), ownedTenant.PublicID()).Return(tt.tenant, tt.claim, tt.tenantErr)
+
+			if tt.kind == application.InvitationGrant && tt.tenantErr == nil {
+				m.invitations.EXPECT().FindInvitationByToken(gomock.Any(), ownedTenant.ID(), onetimetoken.HashOf(token)).Return(tt.invitation, tt.invitationErr)
+			}
+
+			got, err := m.service.VerifyRegistrationGrant(context.Background(), application.VerifyRegistrationGrantInput{TenantPublicID: ownedTenant.PublicID(), Kind: tt.kind, Token: token})
+			if err != nil || got != tt.want {
+				t.Fatalf("VerifyRegistrationGrant() = %v, %v, want %v, nil", got, err, tt.want)
+			}
+		})
+	}
+}
+
+func TestVerifyRegistrationGrantKeepsFailuresApartFromVerdicts(t *testing.T) {
+	t.Parallel()
+
+	errStore := errors.New("connection refused")
+	input := application.VerifyRegistrationGrantInput{TenantPublicID: ownedTenant.PublicID(), Kind: application.InvitationGrant, Token: "grant-token"}
+
+	t.Run("tenant read fails", func(t *testing.T) {
+		t.Parallel()
+
+		m := newLockFreeMocks(t)
+		m.tenants.EXPECT().FindTenantWithClaimByPublicID(gomock.Any(), ownedTenant.PublicID()).Return(tenantdomain.Tenant{}, tenantdomain.OwnershipClaim{}, errStore)
+
+		if got, err := m.service.VerifyRegistrationGrant(context.Background(), input); got || !errors.Is(err, errStore) {
+			t.Fatalf("VerifyRegistrationGrant() = %v, %v, want false, %v", got, err, errStore)
+		}
+	})
+
+	t.Run("invitation read fails", func(t *testing.T) {
+		t.Parallel()
+
+		m := newLockFreeMocks(t)
+		m.tenants.EXPECT().FindTenantWithClaimByPublicID(gomock.Any(), ownedTenant.PublicID()).Return(ownedTenant, tenantdomain.OwnershipClaim{}, nil)
+		m.invitations.EXPECT().FindInvitationByToken(gomock.Any(), ownedTenant.ID(), gomock.Any()).Return(domain.Invitation{}, errStore)
+
+		if got, err := m.service.VerifyRegistrationGrant(context.Background(), input); got || !errors.Is(err, errStore) {
+			t.Fatalf("VerifyRegistrationGrant() = %v, %v, want false, %v", got, err, errStore)
+		}
+	})
+
+	t.Run("unknown grant kind", func(t *testing.T) {
+		t.Parallel()
+
+		m := newLockFreeMocks(t)
+		m.tenants.EXPECT().FindTenantWithClaimByPublicID(gomock.Any(), ownedTenant.PublicID()).Return(ownedTenant, tenantdomain.OwnershipClaim{}, nil)
+
+		unknown := input
+		unknown.Kind = 0
+
+		if got, err := m.service.VerifyRegistrationGrant(context.Background(), unknown); got || !errors.Is(err, application.ErrRegistrationGrantRequired) {
+			t.Fatalf("VerifyRegistrationGrant() = %v, %v, want false, %v", got, err, application.ErrRegistrationGrantRequired)
+		}
+	})
+
+	t.Run("input validation", func(t *testing.T) {
+		t.Parallel()
+
+		m := newLockFreeMocks(t)
+
+		noTenant := input
+		noTenant.TenantPublicID = ""
+
+		if got, err := m.service.VerifyRegistrationGrant(context.Background(), noTenant); got || !errors.Is(err, application.ErrTenantIDRequired) {
+			t.Errorf("VerifyRegistrationGrant(no tenant) = %v, %v, want false, %v", got, err, application.ErrTenantIDRequired)
+		}
+
+		noToken := input
+		noToken.Token = ""
+
+		if got, err := m.service.VerifyRegistrationGrant(context.Background(), noToken); got || !errors.Is(err, application.ErrRegistrationGrantRequired) {
+			t.Errorf("VerifyRegistrationGrant(no token) = %v, %v, want false, %v", got, err, application.ErrRegistrationGrantRequired)
+		}
+	})
+}

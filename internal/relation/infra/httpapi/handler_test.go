@@ -1,9 +1,12 @@
 package httpapi_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -23,7 +26,9 @@ import (
 // which is how the boundary the handler establishes is observed.
 type fakeUseCases struct {
 	list        func(context.Context, application.ListMembershipsInput) ([]domain.Membership, error)
+	verify      func(context.Context, application.VerifyRegistrationGrantInput) (bool, error)
 	input       application.ListMembershipsInput
+	grant       application.VerifyRegistrationGrantInput
 	boundTenant string
 	boundOK     bool
 }
@@ -33,6 +38,13 @@ func (f *fakeUseCases) ListMemberships(ctx context.Context, input application.Li
 	f.boundTenant, f.boundOK = tenantctx.TenantPublicIDFromContext(ctx)
 
 	return f.list(ctx, input)
+}
+
+func (f *fakeUseCases) VerifyRegistrationGrant(ctx context.Context, input application.VerifyRegistrationGrantInput) (bool, error) {
+	f.grant = input
+	f.boundTenant, f.boundOK = tenantctx.TenantPublicIDFromContext(ctx)
+
+	return f.verify(ctx, input)
 }
 
 // membershipsPath builds the route of one user's memberships in one tenant, as
@@ -48,13 +60,19 @@ func membershipsPath(tenantPublicID, userID string) string {
 func serve(t *testing.T, useCases *fakeUseCases, method, target string) *httptest.ResponseRecorder {
 	t.Helper()
 
+	return serveRequest(t, useCases, httptest.NewRequest(method, target, nil))
+}
+
+func serveRequest(t *testing.T, useCases *fakeUseCases, request *http.Request) *httptest.ResponseRecorder {
+	t.Helper()
+
 	mux := http.NewServeMux()
 	if err := httpapi.Mount(useCases)(mux, nil); err != nil {
 		t.Fatalf("Mount() error = %v", err)
 	}
 
 	recorder := httptest.NewRecorder()
-	mux.ServeHTTP(recorder, httptest.NewRequest(method, target, nil))
+	mux.ServeHTTP(recorder, request)
 
 	return recorder
 }
@@ -86,6 +104,11 @@ func unreachable(t *testing.T) *fakeUseCases {
 			t.Error("use cases called for a request that should not have reached them")
 
 			return nil, nil
+		},
+		verify: func(context.Context, application.VerifyRegistrationGrantInput) (bool, error) {
+			t.Error("use cases called for a request that should not have reached them")
+
+			return false, nil
 		},
 	}
 }
@@ -350,5 +373,190 @@ func TestListMembershipsRejectsOtherMethods(t *testing.T) {
 
 	if recorder.Code != http.StatusMethodNotAllowed {
 		t.Errorf("status = %d, want %d", recorder.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func verifyGrant(t *testing.T, useCases *fakeUseCases, tenantPublicID, body string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	target := "/tenants/" + url.PathEscape(tenantPublicID) + "/registration-grants/verify"
+
+	return serveRequest(t, useCases, httptest.NewRequest(http.MethodPost, target, strings.NewReader(body)))
+}
+
+func verdict(valid bool, err error) *fakeUseCases {
+	return &fakeUseCases{
+		verify: func(context.Context, application.VerifyRegistrationGrantInput) (bool, error) {
+			return valid, err
+		},
+	}
+}
+
+func TestVerifyRegistrationGrantAnswersTheVerdict(t *testing.T) {
+	t.Parallel()
+
+	for _, valid := range []bool{true, false} {
+		want := `{"valid":false}`
+		if valid {
+			want = `{"valid":true}`
+		}
+
+		t.Run(want, func(t *testing.T) {
+			t.Parallel()
+
+			recorder := verifyGrant(t, verdict(valid, nil), "tenant-public-id", `{"invitation_token":"grant-token"}`)
+
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d (body %s)", recorder.Code, http.StatusOK, recorder.Body.String())
+			}
+
+			if got := strings.TrimSpace(recorder.Body.String()); got != want {
+				t.Errorf("body = %s, want %s", got, want)
+			}
+
+			if got := recorder.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
+				t.Errorf("Content-Type = %q, want JSON", got)
+			}
+
+			if got := recorder.Header().Get("Cache-Control"); got != "no-store" {
+				t.Errorf("Cache-Control = %q, want no-store", got)
+			}
+		})
+	}
+}
+
+func TestVerifyRegistrationGrantAsksInTheNamedTenant(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		body string
+		kind application.RegistrationGrantKind
+		want string
+	}{
+		{name: "invitation token", body: `{"invitation_token":"invitation-grant"}`, kind: application.InvitationGrant, want: "invitation-grant"},
+		{name: "ownership claim token", body: `{"ownership_claim_token":"claim-grant"}`, kind: application.OwnershipClaimGrant, want: "claim-grant"},
+		{name: "token kept as sent", body: `{"invitation_token":" spaced "}`, kind: application.InvitationGrant, want: " spaced "},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			useCases := verdict(true, nil)
+
+			recorder := verifyGrant(t, useCases, "tenant-public-id", tt.body)
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d (body %s)", recorder.Code, http.StatusOK, recorder.Body.String())
+			}
+
+			want := application.VerifyRegistrationGrantInput{TenantPublicID: "tenant-public-id", Kind: tt.kind, Token: tt.want}
+			if useCases.grant != want {
+				t.Errorf("input = %#v, want %#v", useCases.grant, want)
+			}
+
+			if !useCases.boundOK || useCases.boundTenant != "tenant-public-id" {
+				t.Errorf("context tenant = %q, %v, want the tenant the path named", useCases.boundTenant, useCases.boundOK)
+			}
+		})
+	}
+}
+
+func TestVerifyRegistrationGrantRefusesMalformedRequests(t *testing.T) {
+	t.Parallel()
+
+	const (
+		malformed = "request body is malformed"
+		required  = "exactly one of invitation_token and ownership_claim_token is required"
+	)
+
+	tests := []struct {
+		name   string
+		tenant string
+		body   string
+		want   string
+	}{
+		{name: "empty body", tenant: "tenant-public-id", body: "", want: malformed},
+		{name: "not JSON", tenant: "tenant-public-id", body: "invitation_token=grant-token", want: malformed},
+		{name: "unknown field", tenant: "tenant-public-id", body: `{"invitation_token":"grant-token","tenant_id":"other"}`, want: malformed},
+		{name: "trailing data", tenant: "tenant-public-id", body: `{"invitation_token":"grant-token"}{}`, want: malformed},
+		{name: "more than 4 KiB", tenant: "tenant-public-id", body: `{"invitation_token":"` + strings.Repeat("a", 4<<10) + `"}`, want: malformed},
+		{name: "both tokens", tenant: "tenant-public-id", body: `{"invitation_token":"grant-token","ownership_claim_token":"grant-token"}`, want: required},
+		{name: "neither token", tenant: "tenant-public-id", body: `{}`, want: required},
+		{name: "empty token", tenant: "tenant-public-id", body: `{"invitation_token":""}`, want: required},
+		{name: "blank tenant", tenant: "   ", body: `{"invitation_token":"grant-token"}`, want: "tenant_id is required"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			recorder := verifyGrant(t, unreachable(t), tt.tenant, tt.body)
+
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d (body %s)", recorder.Code, http.StatusBadRequest, recorder.Body.String())
+			}
+
+			if got := strings.TrimSpace(recorder.Body.String()); got != `{"error":"`+tt.want+`"}` {
+				t.Errorf("body = %s, want the %q message", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestVerifyRegistrationGrantTimesOut(t *testing.T) {
+	t.Parallel()
+
+	recorder := verifyGrant(t, verdict(false, context.DeadlineExceeded), "tenant-public-id", `{"invitation_token":"grant-token"}`)
+
+	if recorder.Code != http.StatusGatewayTimeout {
+		t.Fatalf("status = %d, want %d (body %s)", recorder.Code, http.StatusGatewayTimeout, recorder.Body.String())
+	}
+
+	if got := strings.TrimSpace(recorder.Body.String()); got != `{"error":"request timed out"}` {
+		t.Errorf("body = %s, want the timeout message", got)
+	}
+}
+
+func TestVerifyRegistrationGrantRejectsOtherMethods(t *testing.T) {
+	t.Parallel()
+
+	recorder := serve(t, unreachable(t), http.MethodGet, "/tenants/tenant-public-id/registration-grants/verify")
+
+	if recorder.Code != http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, want %d", recorder.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestVerifyRegistrationGrantKeepsTheTokenOutOfFailures(t *testing.T) {
+	var logs bytes.Buffer
+
+	previous, previousWriter, previousFlags := slog.Default(), log.Writer(), log.Flags()
+
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() {
+		slog.SetDefault(previous)
+		log.SetOutput(previousWriter)
+		log.SetFlags(previousFlags)
+	})
+
+	const token = "secret-grant-token"
+
+	recorder := verifyGrant(t, verdict(false, errors.New("dial tcp 10.0.0.1:5432: connection refused")), "tenant-public-id", `{"invitation_token":"`+token+`"}`)
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusInternalServerError)
+	}
+
+	if body := strings.TrimSpace(recorder.Body.String()); body != `{"error":"internal error"}` {
+		t.Errorf("body = %s, want the fixed internal error", body)
+	}
+
+	if !strings.Contains(logs.String(), "connection refused") {
+		t.Fatalf("log = %q, want the internal error recorded", logs.String())
+	}
+
+	if strings.Contains(logs.String(), token) {
+		t.Errorf("log = %q, want no token", logs.String())
 	}
 }

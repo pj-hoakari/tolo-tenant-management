@@ -71,11 +71,20 @@ func (r *PostgresTenantRepository) DeleteExpiredPendingTenants(ctx context.Conte
 }
 
 func (r *PostgresTenantRepository) FindTenantByPublicIDForUpdate(ctx context.Context, publicID string) (domain.Tenant, domain.OwnershipClaim, error) {
-	var row tenantClaimRow
-	if err := sqlx.GetContext(ctx, r.executor(ctx), &row, `
+	return r.findTenantWithClaim(ctx, tenantClaimByPublicID+` FOR UPDATE`, publicID)
+}
+
+func (r *PostgresTenantRepository) FindTenantWithClaimByPublicID(ctx context.Context, publicID string) (domain.Tenant, domain.OwnershipClaim, error) {
+	return r.findTenantWithClaim(ctx, tenantClaimByPublicID, publicID)
+}
+
+const tenantClaimByPublicID = `
 		SELECT id, public_id, name, contract_plan, ownership_state, subdomain, archived, ownership_claim_token_hash, ownership_claim_expires_at
-		FROM tenants WHERE public_id = $1
-		FOR UPDATE`, publicID); err != nil {
+		FROM tenants WHERE public_id = $1`
+
+func (r *PostgresTenantRepository) findTenantWithClaim(ctx context.Context, query, publicID string) (domain.Tenant, domain.OwnershipClaim, error) {
+	var row tenantClaimRow
+	if err := sqlx.GetContext(ctx, r.executor(ctx), &row, query, publicID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Tenant{}, domain.OwnershipClaim{}, repository.ErrTenantNotFound
 		}
