@@ -20,7 +20,7 @@
 | デバイス認可 / Device Grant | Device Authorization Grant で承認されたカメラの認可<br>tenant、event、`edge_device_id`、承認したスタッフ、有効期限を持つ<br>Refresh Token を持ち、失効させるまで更新できる |
 | 失効済み端末 / Revoked Device | 登録解除などで認可を失効させたエッジ端末<br>tenant、event、`edge_device_id` で識別する<br>IdP はこの組への新しい承認と Refresh を拒否する |
 | 接続委任 / Connection Delegation | 観測ページ端末が接続できるカメラの範囲を、登録・再認可時にスタッフが委任したもの<br>tenant、event、観測ページ端末、カメラの一覧、有効期限を持ち、BFF が保持する |
-| scope | tenant.read／tenant.write／events.read／events.stream と、権限クラスで分けた書き込み scope<br>events.manage（設計・構成）／events.operate（現場運用）／events.report（計測報告・稼働通知と、エッジ端末の観測点の参照）／events.stream（ESP カメラの signaling への参加。カメラ client だけに許可する） |
+| scope | tenant.read／tenant.write／events.read／events.stream と、権限クラスで分けた書き込み scope<br>events.manage（設計・構成）／events.operate（現場運用）／events.report（計測報告・稼働通知と、エッジ端末の観測点の参照と追加）／events.stream（ESP カメラの signaling への参加。カメラ client だけに許可する） |
 | 送信者拘束 / sender constraint | public client へ発行する外部トークンは、クライアントの鍵の所持証明（DPoP）で提示者を束縛する<br>鍵はクライアントの保護領域に取り出せない形で保持する<br>confidential client（BFF）は client 認証で代替し対象にしない<br>ESP カメラは public client だが bearer とする（Edge Bridge Service が `cnf` を拒否するため） |
 | client scope 上限 / client scope cap | client ごとに許可する scope の上限。通常はロールから導いた scope との積を発行する<br>ESP カメラのデバイス認可は積を使わず、承認者のイベントロールとカメラ client の上限で発行する |
 | resource / audience | 認可要求では対象テナント（テナント URI）、Token Exchange では対象イベント（イベント URI）／バックエンド API 全体の論理 audience（例 backend-api。登録は1つ）<br>検証は Service Gateway と Edge Bridge Service が行う |
