@@ -414,16 +414,8 @@ func (s *RelationService) AcceptTenantInvitation(ctx context.Context, input Acce
 
 		now := s.now()
 
-		if _, err := invitation.Accept(now); err != nil {
-			return ErrInvitationRejected
-		}
-
-		if !tenant.Owned() {
-			return ErrTenantPendingOwner
-		}
-
-		if tenant.Archived() {
-			return tenantrepository.ErrTenantArchived
+		if err := admitInvitation(tenant, invitation, now); err != nil {
+			return err
 		}
 
 		membership, err = s.memberships.AddTenantMember(ctx, tenant.ID(), subject, invitation.Role(), invitation.DisplayName())
@@ -438,6 +430,22 @@ func (s *RelationService) AcceptTenantInvitation(ctx context.Context, input Acce
 	}
 
 	return membership, nil
+}
+
+func admitInvitation(tenant tenantdomain.Tenant, invitation domain.Invitation, now time.Time) error {
+	if !invitation.Open(now) {
+		return ErrInvitationRejected
+	}
+
+	if !tenant.Owned() {
+		return ErrTenantPendingOwner
+	}
+
+	if tenant.Archived() {
+		return tenantrepository.ErrTenantArchived
+	}
+
+	return nil
 }
 
 // withCurrentPermission runs the caller's current-permission check and the

@@ -3,6 +3,9 @@ package domain
 import (
 	"errors"
 	"testing"
+	"time"
+
+	"github.com/pj-hoakari/tolo-tenant-management/internal/onetimetoken"
 )
 
 func TestNewTenant(t *testing.T) {
@@ -71,6 +74,42 @@ func TestTenantClaimOwnership(t *testing.T) {
 
 	if _, err := owned.ClaimOwnership(subdomain); !errors.Is(err, ErrTenantNotPendingOwner) {
 		t.Errorf("second ClaimOwnership() error = %v, want %v", err, ErrTenantNotPendingOwner)
+	}
+}
+
+func TestTenantAdmitsOwnershipClaim(t *testing.T) {
+	t.Parallel()
+
+	const token = "ownership-claim-token"
+
+	expiresAt := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	pending := NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", TenantOwnershipStatePendingOwner, Subdomain{}, false)
+	owned := NewTenant("tenant-id", "tenant-public-id", "Acme", "standard", TenantOwnershipStateOwned, Subdomain{}, false)
+	live := OwnershipClaim{TokenHash: onetimetoken.HashOf(token), ExpiresAt: expiresAt}
+
+	tests := []struct {
+		name   string
+		tenant Tenant
+		claim  OwnershipClaim
+		token  string
+		now    time.Time
+		want   bool
+	}{
+		{name: "pending tenant, matching token before expiry", tenant: pending, claim: live, token: token, now: expiresAt.Add(-time.Second), want: true},
+		{name: "owned tenant with no claim", tenant: owned, claim: OwnershipClaim{}, token: token, now: expiresAt.Add(-time.Second), want: false},
+		{name: "at expiry", tenant: pending, claim: live, token: token, now: expiresAt, want: false},
+		{name: "after expiry", tenant: pending, claim: live, token: token, now: expiresAt.Add(time.Second), want: false},
+		{name: "wrong token", tenant: pending, claim: live, token: token + "x", now: expiresAt.Add(-time.Second), want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := tt.tenant.AdmitsOwnershipClaim(tt.claim, tt.token, tt.now); got != tt.want {
+				t.Errorf("AdmitsOwnershipClaim() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 

@@ -54,20 +54,12 @@ func (i Invitation) Open(now time.Time) bool {
 	return i.state == InvitationPending && now.Before(i.expiresAt)
 }
 
-func (i Invitation) Accept(now time.Time) (Invitation, error) {
-	return i.close(now, InvitationAccepted)
-}
-
 func (i Invitation) Revoke(now time.Time) (Invitation, error) {
-	return i.close(now, InvitationRevoked)
-}
-
-func (i Invitation) close(now time.Time, state InvitationState) (Invitation, error) {
 	if !i.Open(now) {
 		return Invitation{}, ErrInvitationNotPending
 	}
 
-	i.state = state
+	i.state = InvitationRevoked
 
 	return i, nil
 }
