@@ -69,10 +69,14 @@ func (r *PostgresInvitationRepository) ListOpenInvitations(ctx context.Context, 
 }
 
 func (r *PostgresInvitationRepository) FindInvitationForUpdate(ctx context.Context, tenantID, publicID string) (domain.Invitation, error) {
-	return r.findInvitation(ctx, `WHERE i.tenant_id = $1 AND i.public_id = $2`, tenantID, publicID)
+	return r.findInvitation(ctx, `WHERE i.tenant_id = $1 AND i.public_id = $2 FOR UPDATE OF i`, tenantID, publicID)
 }
 
 func (r *PostgresInvitationRepository) FindInvitationByTokenForUpdate(ctx context.Context, tenantID string, tokenHash onetimetoken.Hash) (domain.Invitation, error) {
+	return r.findInvitation(ctx, `WHERE i.tenant_id = $1 AND i.token_hash = $2 FOR UPDATE OF i`, tenantID, tokenHash[:])
+}
+
+func (r *PostgresInvitationRepository) FindInvitationByToken(ctx context.Context, tenantID string, tokenHash onetimetoken.Hash) (domain.Invitation, error) {
 	return r.findInvitation(ctx, `WHERE i.tenant_id = $1 AND i.token_hash = $2`, tenantID, tokenHash[:])
 }
 
@@ -109,7 +113,7 @@ const invitationSelect = `
 
 func (r *PostgresInvitationRepository) findInvitation(ctx context.Context, filter string, args ...any) (domain.Invitation, error) {
 	var row invitationRow
-	if err := sqlx.GetContext(ctx, r.executor(ctx), &row, invitationSelect+filter+` FOR UPDATE OF i`, args...); err != nil {
+	if err := sqlx.GetContext(ctx, r.executor(ctx), &row, invitationSelect+filter, args...); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Invitation{}, repository.ErrInvitationNotFound
 		}

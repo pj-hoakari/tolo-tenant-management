@@ -59,6 +59,7 @@ type TenantRepository interface {
 	// claim (zero for an owned tenant), locking the row for the rest of the
 	// surrounding transaction.
 	FindTenantByPublicIDForUpdate(context.Context, string) (domain.Tenant, domain.OwnershipClaim, error)
+	FindTenantWithClaimByPublicID(context.Context, string) (domain.Tenant, domain.OwnershipClaim, error)
 	// MarkTenantOwned records the ownership transition of a pending_owner
 	// tenant and consumes its claim token.
 	MarkTenantOwned(context.Context, domain.Tenant) error

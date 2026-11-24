@@ -19,6 +19,7 @@ type InvitationRepository interface {
 	ListOpenInvitations(ctx context.Context, tenantID string, now time.Time) ([]domain.Invitation, error)
 	FindInvitationForUpdate(ctx context.Context, tenantID, publicID string) (domain.Invitation, error)
 	FindInvitationByTokenForUpdate(ctx context.Context, tenantID string, tokenHash onetimetoken.Hash) (domain.Invitation, error)
+	FindInvitationByToken(ctx context.Context, tenantID string, tokenHash onetimetoken.Hash) (domain.Invitation, error)
 	MarkInvitationAccepted(ctx context.Context, invitationID, userID string, at time.Time) error
 	MarkInvitationRevoked(ctx context.Context, invitationID string, at time.Time) error
 }
